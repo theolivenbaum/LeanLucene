@@ -166,7 +166,7 @@ internal sealed class StoredFieldsReader : IDisposable
             _reader.BaseStream.ReadExactly(compData.AsSpan(0, compLength));
 
             var rawData = StoredFieldCompression.Decompress(
-                compData.AsSpan(0, compLength), rawLength, _compression);
+                compData, compLength, rawLength, _compression);
 
             _cachedBlockIndex = blockIndex;
             _cachedBlockData = rawData;

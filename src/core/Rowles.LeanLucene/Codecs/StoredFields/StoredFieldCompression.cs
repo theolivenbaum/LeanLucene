@@ -11,7 +11,13 @@ internal static class StoredFieldCompression
             return ([], 0);
         }
 
-        byte[] compressed = CompressionCodecRegistry.Get(policy).Compress(raw);
+        var codec = CompressionCodecRegistry.Get(policy);
+        if (codec is IBufferedFieldCompressionCodec bufferedCodec)
+        {
+            return bufferedCodec.CompressToBuffer(raw);
+        }
+
+        byte[] compressed = codec.Compress(raw);
         return (compressed, compressed.Length);
     }
 
@@ -32,4 +38,35 @@ internal static class StoredFieldCompression
 
         return CompressionCodecRegistry.Get(policy).Decompress(compressed, originalSize);
     }
+
+    /// <summary>Decompresses block data from an array-backed buffer using the specified policy.</summary>
+    internal static byte[] Decompress(byte[] compressed, int compressedLength, int originalSize, FieldCompressionPolicy policy)
+    {
+        if (originalSize == 0)
+        {
+            return [];
+        }
+
+        if (policy == FieldCompressionPolicy.None)
+        {
+            var raw = new byte[originalSize];
+            compressed.AsSpan(0, originalSize).CopyTo(raw);
+            return raw;
+        }
+
+        var codec = CompressionCodecRegistry.Get(policy);
+        if (codec is IBufferedFieldCompressionCodec bufferedCodec)
+        {
+            return bufferedCodec.Decompress(compressed, compressedLength, originalSize);
+        }
+
+        return codec.Decompress(compressed.AsSpan(0, compressedLength), originalSize);
+    }
+}
+
+internal interface IBufferedFieldCompressionCodec : IFieldCompressionCodec
+{
+    (byte[] Data, int Length) CompressToBuffer(ReadOnlySpan<byte> raw);
+
+    byte[] Decompress(byte[] compressed, int compressedLength, int originalSize);
 }
