@@ -50,9 +50,7 @@ public sealed partial class IndexWriter
             LiveDocCount = _bufferedDocCount,
             CommitGeneration = _commitGeneration,
             FieldNames = fieldNames,
-            IndexSortFields = _config.IndexSort is not null
-                ? _config.IndexSort.Fields.Select(f => $"{f.Type}:{f.FieldName}:{f.Descending}").ToList()
-                : null
+            IndexSortFields = _config.IndexSort?.SerialisedFields
         };
         segInfo.WriteTo(basePath + ".seg");
 
@@ -152,34 +150,31 @@ public sealed partial class IndexWriter
         // Write term dictionary (.dic)
         TermDictionaryWriter.Write(basePath + ".dic", _sortedTermsBuffer, postingsOffsets);
 
-        // Write per-field norms (.nrm) — use pre-tracked per-field token counts (O(1) per doc)
+        // Write per-field norms (.nrm) and exact field lengths (.fln) — fused single pass
+        // over per-field token counts so we read each `counts` array only once.
         var fieldNorms = new Dictionary<string, float[]>(_docTokenCounts.Count, StringComparer.Ordinal);
+        var fieldLengths = new Dictionary<string, int[]>(_docTokenCounts.Count, StringComparer.Ordinal);
         var normsReturnList = new List<float[]>(_docTokenCounts.Count);
+        var lengthsReturnList = new List<int[]>(_docTokenCounts.Count);
         foreach (var (fieldName, counts) in _docTokenCounts)
         {
             var norms = ArrayPool<float>.Shared.Rent(_bufferedDocCount);
+            var lengths = ArrayPool<int>.Shared.Rent(_bufferedDocCount);
+            int countsLen = counts.Length;
             for (int i = 0; i < _bufferedDocCount; i++)
             {
-                int tokenCount = i < counts.Length ? counts[i] : 0;
+                int tokenCount = i < countsLen ? counts[i] : 0;
+                lengths[i] = tokenCount;
                 norms[i] = 1.0f / (1.0f + Math.Max(1, tokenCount));
             }
             fieldNorms[fieldName] = norms;
+            fieldLengths[fieldName] = lengths;
             normsReturnList.Add(norms);
+            lengthsReturnList.Add(lengths);
         }
         NormsWriter.Write(basePath + ".nrm", fieldNorms, _bufferedDocCount);
         foreach (var arr in normsReturnList) ArrayPool<float>.Shared.Return(arr, clearArray: false);
 
-        // Write exact field lengths (.fln) for precise BM25 scoring
-        var fieldLengths = new Dictionary<string, int[]>(_docTokenCounts.Count, StringComparer.Ordinal);
-        var lengthsReturnList = new List<int[]>(_docTokenCounts.Count);
-        foreach (var (fieldName, counts) in _docTokenCounts)
-        {
-            var lengths = ArrayPool<int>.Shared.Rent(_bufferedDocCount);
-            for (int i = 0; i < _bufferedDocCount; i++)
-                lengths[i] = i < counts.Length ? counts[i] : 0;
-            fieldLengths[fieldName] = lengths;
-            lengthsReturnList.Add(lengths);
-        }
         FieldLengthWriter.Write(basePath + ".fln", fieldLengths, _bufferedDocCount);
         SegmentStats.FromFieldLengths(_bufferedDocCount, _bufferedDocCount, fieldNames, fieldLengths)
             .WriteTo(SegmentStats.GetStatsPath(_directory.DirectoryPath, segId));
@@ -319,9 +314,7 @@ public sealed partial class IndexWriter
         // Write term vectors (.tvd + .tvx) when enabled
         if (_config.StoreTermVectors)
         {
-            var tvDocs = new Dictionary<string, List<TermVectorEntry>>[_bufferedDocCount];
-            for (int d = 0; d < _bufferedDocCount; d++)
-                tvDocs[d] = new Dictionary<string, List<TermVectorEntry>>(StringComparer.Ordinal);
+            var tvDocs = new Dictionary<string, List<TermVectorEntry>>?[_bufferedDocCount];
 
             foreach (var (qt, acc) in _postings)
             {
@@ -336,10 +329,11 @@ public sealed partial class IndexWriter
                 {
                     int docId = ids[i];
                     if (docId >= _bufferedDocCount) continue;
-                    if (!tvDocs[docId].TryGetValue(fld, out var terms))
+                    var perDoc = tvDocs[docId] ??= new Dictionary<string, List<TermVectorEntry>>(StringComparer.Ordinal);
+                    if (!perDoc.TryGetValue(fld, out var terms))
                     {
                         terms = [];
-                        tvDocs[docId][fld] = terms;
+                        perDoc[fld] = terms;
                     }
                     int freq = acc.GetFreq(i);
                     var posSpan = acc.GetPositions(i);
@@ -615,16 +609,28 @@ public sealed partial class IndexWriter
     /// </summary>
     private void RemapDocTokenCounts(int[] sortPerm, int n)
     {
-        foreach (var field in _docTokenCounts.Keys.ToList())
+        if (_docTokenCounts.Count == 0) return;
+        var keysBuf = ArrayPool<string>.Shared.Rent(_docTokenCounts.Count);
+        try
         {
-            var old = _docTokenCounts[field];
-            var reordered = new int[old.Length];
-            for (int i = 0; i < n; i++)
+            int k = 0;
+            foreach (var key in _docTokenCounts.Keys) keysBuf[k++] = key;
+            for (int idx = 0; idx < k; idx++)
             {
-                int oldDoc = sortPerm[i];
-                reordered[i] = oldDoc < old.Length ? old[oldDoc] : 0;
+                var field = keysBuf[idx];
+                var old = _docTokenCounts[field];
+                var reordered = new int[old.Length];
+                for (int i = 0; i < n; i++)
+                {
+                    int oldDoc = sortPerm[i];
+                    reordered[i] = oldDoc < old.Length ? old[oldDoc] : 0;
+                }
+                _docTokenCounts[field] = reordered;
             }
-            _docTokenCounts[field] = reordered;
+        }
+        finally
+        {
+            ArrayPool<string>.Shared.Return(keysBuf, clearArray: true);
         }
     }
 }

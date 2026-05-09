@@ -9,7 +9,7 @@
 internal static class TermVectorsWriter
 {
     public static void Write(string tvdPath, string tvxPath,
-        IReadOnlyList<Dictionary<string, List<TermVectorEntry>>> docs)
+        IReadOnlyList<Dictionary<string, List<TermVectorEntry>>?> docs)
     {
         using var tvdFs = new FileStream(tvdPath, FileMode.Create, FileAccess.Write, FileShare.None);
         using var tvdWriter = new BinaryWriter(tvdFs, System.Text.Encoding.UTF8, leaveOpen: false);
@@ -22,6 +22,11 @@ internal static class TermVectorsWriter
         {
             offsets[d] = tvdFs.Position;
             var fields = docs[d];
+            if (fields is null)
+            {
+                tvdWriter.Write(0);
+                continue;
+            }
             tvdWriter.Write(fields.Count);
             foreach (var (fieldName, entries) in fields)
             {
