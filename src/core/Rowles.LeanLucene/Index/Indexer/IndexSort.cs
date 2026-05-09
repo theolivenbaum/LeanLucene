@@ -10,6 +10,12 @@ public sealed class IndexSort : IEquatable<IndexSort>
     public IReadOnlyList<SortField> Fields { get; }
 
     /// <summary>
+    /// Gets a pre-computed serialised representation of the sort fields used for
+    /// segment metadata persistence. Each entry encodes <c>Type:FieldName:Descending</c>.
+    /// </summary>
+    internal List<string> SerialisedFields { get; }
+
+    /// <summary>
     /// Initialises a new <see cref="IndexSort"/> with the specified sort fields.
     /// </summary>
     /// <param name="fields">One or more sort fields that define the document ordering. Score sort type is not allowed.</param>
@@ -24,6 +30,10 @@ public sealed class IndexSort : IEquatable<IndexSort>
                 throw new ArgumentException("Index sort cannot use Score sort type.", nameof(fields));
         }
         Fields = fields.ToArray();
+        var serialised = new List<string>(fields.Length);
+        foreach (var f in fields)
+            serialised.Add($"{f.Type}:{f.FieldName}:{f.Descending}");
+        SerialisedFields = serialised;
     }
 
     /// <inheritdoc/>
