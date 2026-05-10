@@ -2,6 +2,7 @@ using System.Text.Json;
 using Rowles.LeanLucene.Serialization;
 using Rowles.LeanLucene.Analysis.Analysers;
 using Rowles.LeanLucene.Document;
+using Rowles.LeanLucene.Index.Compatibility;
 using Rowles.LeanLucene.Store;
 
 namespace Rowles.LeanLucene.Index.Indexer;
@@ -419,7 +420,6 @@ public sealed partial class IndexWriter : IDisposable
     private void WriteCommitFile(int generation)
     {
         var commitFile = Path.Combine(_directory.DirectoryPath, $"segments_{generation}");
-        var tempFile = commitFile + ".tmp";
         var segmentIds = new List<string>(_committedSegments.Count);
         foreach (var seg in _committedSegments)
             segmentIds.Add(seg.SegmentId);
@@ -459,24 +459,12 @@ public sealed partial class IndexWriter : IDisposable
             // Sync the directory itself so any prior file creations are durable before the rename.
             Store.DirectoryFsync.Sync(_directory.DirectoryPath, strict: true);
 
-            // Write segments_N.tmp durably so its contents survive a crash before the rename.
-            using (var fs = new FileStream(tempFile, FileMode.Create, FileAccess.Write, FileShare.None))
-            using (var sw = new StreamWriter(fs))
-            {
-                sw.Write(fileContent);
-                sw.Flush();
-                fs.Flush(flushToDisk: true);
-            }
-            File.Move(tempFile, commitFile, overwrite: true);
-
-            // Sync the directory again so the rename itself is durable.
-            Store.DirectoryFsync.Sync(_directory.DirectoryPath, strict: true);
+            IndexAtomicFileWriter.WriteText(commitFile, fileContent, durable: true);
             _lastCommitFsyncUtc = DateTime.UtcNow;
         }
         else
         {
-            File.WriteAllText(tempFile, fileContent);
-            File.Move(tempFile, commitFile, overwrite: true);
+            IndexAtomicFileWriter.WriteText(commitFile, fileContent, durable: false);
         }
     }
 
@@ -671,8 +659,10 @@ public sealed partial class IndexWriter : IDisposable
 
     private void LoadLatestCommit()
     {
+        IndexOpenGuard.EnsureNoBlockingMigration(_directory, _config.CompatibilityMode);
         var recovery = IndexRecovery.RecoverLatestCommit(_directory.DirectoryPath);
         if (recovery is null) return;
+        IndexOpenGuard.EnsureCanOpenSegments(_directory, recovery.SegmentIds, _config.CompatibilityMode, forWriting: true);
 
         _commitGeneration = recovery.Generation;
         _contentToken = recovery.ContentToken;

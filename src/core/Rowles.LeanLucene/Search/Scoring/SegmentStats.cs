@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Rowles.LeanLucene.Serialization;
+using Rowles.LeanLucene.Store;
 
 namespace Rowles.LeanLucene.Search.Scoring;
 
@@ -66,9 +67,7 @@ internal sealed class SegmentStats
         };
 
         var json = JsonSerializer.Serialize(dto, LeanLuceneJsonContext.Default.SegmentStatsDto);
-        var tempPath = path + ".tmp";
-        File.WriteAllText(tempPath, json);
-        File.Move(tempPath, path, overwrite: true);
+        IndexAtomicFileWriter.WriteText(path, json, durable: false);
     }
 
     internal static SegmentStats? TryLoadFrom(string path)

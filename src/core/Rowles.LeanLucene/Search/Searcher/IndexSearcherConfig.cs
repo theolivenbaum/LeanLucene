@@ -1,4 +1,6 @@
-﻿namespace Rowles.LeanLucene.Search.Searcher;
+﻿using Rowles.LeanLucene.Index;
+
+namespace Rowles.LeanLucene.Search.Searcher;
 
 /// <summary>
 /// Configuration for the IndexSearcher.
@@ -7,6 +9,11 @@ public sealed class IndexSearcherConfig
 {
     /// <summary>Scoring model. Default: BM25.</summary>
     public ISimilarity Similarity { get; set; } = Bm25Similarity.Instance;
+
+    /// <summary>
+    /// Compatibility guardrail applied when opening an index. Defaults to strict mode.
+    /// </summary>
+    public IndexOpenCompatibilityMode CompatibilityMode { get; set; } = IndexOpenCompatibilityMode.Strict;
 
     /// <summary>
     /// Whether to use parallel segment search when multiple segments exist.

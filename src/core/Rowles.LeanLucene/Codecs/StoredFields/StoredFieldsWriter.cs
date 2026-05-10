@@ -141,6 +141,15 @@ internal static class StoredFieldsWriter
 
     internal static void Write(string fdtPath, string fdxPath, IReadOnlyList<Dictionary<string, List<string>>> docs,
         int blockSize = DefaultBlockSize, FieldCompressionPolicy compression = FieldCompressionPolicy.Deflate)
+        => Write(fdtPath, fdxPath, docs.Count, docId => docs[docId], blockSize, compression);
+
+    internal static void Write(
+        string fdtPath,
+        string fdxPath,
+        int docCount,
+        Func<int, Dictionary<string, List<string>>> readDocument,
+        int blockSize = DefaultBlockSize,
+        FieldCompressionPolicy compression = FieldCompressionPolicy.Deflate)
     {
         using var fdtStream = new FileStream(fdtPath, FileMode.Create, FileAccess.Write, FileShare.None);
         using var fdtWriter = new BinaryWriter(fdtStream, System.Text.Encoding.UTF8, leaveOpen: false);
@@ -155,9 +164,9 @@ internal static class StoredFieldsWriter
         var rawWriter = new BinaryWriter(rawStream, System.Text.Encoding.UTF8, leaveOpen: true);
         Span<byte> encodeBuf = stackalloc byte[512];
 
-        for (int blockStart = 0; blockStart < docs.Count; blockStart += blockSize)
+        for (int blockStart = 0; blockStart < docCount; blockStart += blockSize)
         {
-            int blockEnd = Math.Min(blockStart + blockSize, docs.Count);
+            int blockEnd = Math.Min(blockStart + blockSize, docCount);
             int blockCount = blockEnd - blockStart;
 
             rawStream.SetLength(0);
@@ -167,7 +176,7 @@ internal static class StoredFieldsWriter
             for (int i = 0; i < blockCount; i++)
             {
                 intraOffsets[i] = (int)rawStream.Position;
-                var fields = docs[blockStart + i];
+                var fields = readDocument(blockStart + i);
                 rawWriter.Write(fields.Count);
                 foreach (var (name, values) in fields)
                 {
@@ -214,7 +223,7 @@ internal static class StoredFieldsWriter
 
         CodecConstants.WriteHeader(fdxWriter, CodecConstants.StoredFieldsVersion);
         fdxWriter.Write(blockSize);
-        fdxWriter.Write(docs.Count);
+        fdxWriter.Write(docCount);
         fdxWriter.Write(blockOffsets.Count);
         foreach (var offset in blockOffsets)
             fdxWriter.Write(offset);

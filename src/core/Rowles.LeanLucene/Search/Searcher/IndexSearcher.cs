@@ -1,5 +1,6 @@
-﻿using Rowles.LeanLucene.Analysis.Analysers;
+using Rowles.LeanLucene.Analysis.Analysers;
 using Rowles.LeanLucene.Index;
+using Rowles.LeanLucene.Index.Compatibility;
 using Rowles.LeanLucene.Store;
 using Rowles.LeanLucene.Search.Parsing;
 namespace Rowles.LeanLucene.Search.Searcher;
@@ -60,7 +61,9 @@ public sealed partial class IndexSearcher : IDisposable
         _config = config;
         _similarity = config.Similarity;
 
+        IndexOpenGuard.EnsureNoBlockingMigration(directory, config.CompatibilityMode);
         var (segmentIds, generation) = LoadLatestCommitWithGeneration();
+        IndexOpenGuard.EnsureCanOpenSegments(directory, segmentIds, config.CompatibilityMode, forWriting: false);
         foreach (var segId in segmentIds)
         {
             var segPath = Path.Combine(directory.DirectoryPath, segId + ".seg");
@@ -104,6 +107,12 @@ public sealed partial class IndexSearcher : IDisposable
         _directory = directory;
         _config = config;
         _similarity = config.Similarity;
+        IndexOpenGuard.EnsureNoBlockingMigration(directory, config.CompatibilityMode);
+        IndexOpenGuard.EnsureCanOpenSegments(
+            directory,
+            segments.Select(static segment => segment.SegmentId),
+            config.CompatibilityMode,
+            forWriting: false);
         foreach (var info in segments)
             _readers.Add(new SegmentReader(directory, info));
 

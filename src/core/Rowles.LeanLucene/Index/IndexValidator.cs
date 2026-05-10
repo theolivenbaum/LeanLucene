@@ -2,6 +2,7 @@ using Rowles.LeanLucene.Codecs;
 using Rowles.LeanLucene.Codecs.Hnsw;
 using Rowles.LeanLucene.Codecs.StoredFields;
 using Rowles.LeanLucene.Codecs.Vectors;
+using Rowles.LeanLucene.Index.Migration;
 using Rowles.LeanLucene.Store;
 
 namespace Rowles.LeanLucene.Index;
@@ -51,6 +52,8 @@ public static class IndexValidator
         options ??= new IndexCheckOptions();
         var result = new IndexCheckResult();
         var dirPath = directory.DirectoryPath;
+        CheckMigrationMarker(dirPath, result);
+        CheckStaleTemporaryFiles(dirPath, result);
         var commits = IndexFileInspector.FindCommitFiles(dirPath);
         if (commits.Count == 0)
         {
@@ -75,6 +78,67 @@ public static class IndexValidator
 
         return result;
     }
+
+    private static void CheckMigrationMarker(string dirPath, IndexCheckResult result)
+    {
+        var markerPath = Path.Combine(dirPath, IndexMigrationRecovery.MarkerFileName);
+        if (!File.Exists(markerPath))
+            return;
+
+        try
+        {
+            var marker = IndexMigrationRecovery.GetState(dirPath);
+            if (marker.State is not IndexMigrationState.None and not IndexMigrationState.Published)
+            {
+                result.AddIssue(
+                    IndexCheckSeverity.Error,
+                    IndexCheckIssueCodes.MigrationInProgress,
+                    $"Migration marker is in state {marker.State}. Roll back or abandon migration before opening the index.",
+                    IndexMigrationRecovery.MarkerFileName,
+                    null,
+                    true);
+            }
+        }
+        catch (InvalidDataException ex)
+        {
+            result.AddIssue(
+                IndexCheckSeverity.Error,
+                IndexCheckIssueCodes.PartialMigrationMarkerState,
+                $"Migration marker cannot be read: {ex.Message}",
+                IndexMigrationRecovery.MarkerFileName,
+                null,
+                true);
+        }
+    }
+
+    private static void CheckStaleTemporaryFiles(string dirPath, IndexCheckResult result)
+    {
+        if (!Directory.Exists(dirPath))
+            return;
+
+        foreach (var path in Directory.EnumerateFiles(dirPath, "*.tmp"))
+        {
+            var fileName = Path.GetFileName(path);
+            if (!IsRecognisedTemporaryFile(fileName))
+                continue;
+
+            result.AddIssue(
+                IndexCheckSeverity.Warning,
+                IndexCheckIssueCodes.StaleTemporaryFile,
+                $"Recognised temporary file '{fileName}' was left by an interrupted write.",
+                fileName,
+                null,
+                true);
+        }
+    }
+
+    private static bool IsRecognisedTemporaryFile(string fileName)
+        => fileName is "migration_state.json.tmp"
+           || (fileName.StartsWith("segments_", StringComparison.Ordinal) && fileName.EndsWith(".tmp", StringComparison.Ordinal))
+           || (fileName.StartsWith("stats_", StringComparison.Ordinal) && fileName.EndsWith(".json.tmp", StringComparison.Ordinal))
+           || fileName.EndsWith(".seg.tmp", StringComparison.Ordinal)
+           || fileName.EndsWith(".stats.json.tmp", StringComparison.Ordinal)
+           || (fileName.Contains("_gen_", StringComparison.Ordinal) && fileName.EndsWith(".del.tmp", StringComparison.Ordinal));
 
     private static void CheckSegment(string dirPath, string segmentId, IndexCheckOptions options, IndexCheckResult result)
     {

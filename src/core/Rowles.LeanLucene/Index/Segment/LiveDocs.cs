@@ -1,4 +1,5 @@
 ﻿using Rowles.LeanLucene.Util;
+using Rowles.LeanLucene.Store;
 
 namespace Rowles.LeanLucene.Index.Segment;
 
@@ -49,26 +50,12 @@ internal sealed class LiveDocs
     /// </param>
     public static void Serialise(string filePath, LiveDocs liveDocs, bool durable = false)
     {
-        var tmpPath = filePath + ".tmp";
-        try
+        IndexAtomicFileWriter.Write(filePath, durable, stream =>
         {
-            using (var stream = File.Create(tmpPath))
-            using (var writer = new BinaryWriter(stream))
-            {
-                liveDocs._deletedDocs.Serialise(writer);
-                if (durable)
-                    stream.Flush(true);
-            }
-
-            File.Move(tmpPath, filePath, overwrite: true);
-        }
-        catch
-        {
-            // Best-effort cleanup of the temp file; ignore errors so the
-            // original exception is not masked.
-            try { File.Delete(tmpPath); } catch { }
-            throw;
-        }
+            using var writer = new BinaryWriter(stream, System.Text.Encoding.UTF8, leaveOpen: true);
+            liveDocs._deletedDocs.Serialise(writer);
+            writer.Flush();
+        });
     }
 
     public static LiveDocs Deserialise(string filePath, int maxDoc)

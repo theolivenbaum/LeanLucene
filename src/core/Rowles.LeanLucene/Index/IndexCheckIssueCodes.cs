@@ -112,4 +112,25 @@ public static class IndexCheckIssueCodes
 
     /// <summary>HNSW graph data could not be read during deep validation.</summary>
     public const string HnswReadFailure = "LLIDX035";
+
+    /// <summary>A codec file uses a future version unsupported by this build.</summary>
+    public const string UnsupportedFutureCodecVersion = "LLIDX036";
+
+    /// <summary>An index must be migrated before the requested operation can continue.</summary>
+    public const string MigrationRequired = "LLIDX037";
+
+    /// <summary>An index can be opened but migration is recommended.</summary>
+    public const string MigrationRecommended = "LLIDX038";
+
+    /// <summary>A migration marker shows that migration is currently in progress.</summary>
+    public const string MigrationInProgress = "LLIDX039";
+
+    /// <summary>A codec migration path is not supported by this build.</summary>
+    public const string UnsupportedMigrationPath = "LLIDX040";
+
+    /// <summary>A recognised temporary file was left behind by an interrupted write.</summary>
+    public const string StaleTemporaryFile = "LLIDX041";
+
+    /// <summary>A migration marker cannot be read or describes partial migration state.</summary>
+    public const string PartialMigrationMarkerState = "LLIDX042";
 }

@@ -1,5 +1,6 @@
-﻿using Rowles.LeanLucene.Analysis;
+using Rowles.LeanLucene.Analysis;
 using Rowles.LeanLucene.Analysis.Analysers;
+using Rowles.LeanLucene.Index;
 
 namespace Rowles.LeanLucene.Index.Indexer;
 
@@ -48,6 +49,11 @@ public sealed class IndexWriterConfig
     /// where durability is not required.
     /// </summary>
     public bool DurableCommits { get; set; } = true;
+
+    /// <summary>
+    /// Compatibility guardrail applied when opening an existing index. Defaults to strict mode.
+    /// </summary>
+    public IndexOpenCompatibilityMode CompatibilityMode { get; set; } = IndexOpenCompatibilityMode.Strict;
 
     /// <summary>
     /// Compression algorithm for stored fields. Default: Deflate.

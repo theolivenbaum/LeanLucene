@@ -208,9 +208,20 @@ public static class IndexRecovery
 
         foreach (var tmpFile in Directory.GetFiles(directoryPath, "*.tmp"))
         {
-            try { File.Delete(tmpFile); } catch { /* best-effort */ }
+            if (!IsRecognisedTemporaryFile(Path.GetFileName(tmpFile)))
+                continue;
+
+            try { File.Delete(tmpFile); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
     }
+
+    private static bool IsRecognisedTemporaryFile(string fileName)
+        => fileName is "migration_state.json.tmp"
+           || (fileName.StartsWith("segments_", StringComparison.Ordinal) && fileName.EndsWith(".tmp", StringComparison.Ordinal))
+           || (fileName.StartsWith("stats_", StringComparison.Ordinal) && fileName.EndsWith(".json.tmp", StringComparison.Ordinal))
+           || fileName.EndsWith(".seg.tmp", StringComparison.Ordinal)
+           || fileName.EndsWith(".stats.json.tmp", StringComparison.Ordinal)
+           || (fileName.Contains("_gen_", StringComparison.Ordinal) && fileName.EndsWith(".del.tmp", StringComparison.Ordinal));
 
     /// <summary>
     /// Removes segment files that are not referenced by the active commit. Uses a

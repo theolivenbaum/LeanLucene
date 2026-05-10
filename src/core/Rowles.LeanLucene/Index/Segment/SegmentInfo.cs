@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Rowles.LeanLucene.Serialization;
+using Rowles.LeanLucene.Store;
 
 namespace Rowles.LeanLucene.Index.Segment;
 
@@ -44,7 +45,7 @@ public sealed class SegmentInfo
     public void WriteTo(string filePath)
     {
         var json = JsonSerializer.Serialize(this, LeanLuceneJsonContext.Default.SegmentInfo);
-        File.WriteAllText(filePath, json);
+        IndexAtomicFileWriter.WriteText(filePath, json, durable: false);
     }
 
     /// <summary>Reads and deserialises segment metadata from the specified JSON file.</summary>

@@ -1,5 +1,7 @@
 ﻿using System.Runtime.CompilerServices;
+using Rowles.LeanLucene.Index.Compatibility;
 using Rowles.LeanLucene.Store;
+
 namespace Rowles.LeanLucene.Search.Searcher;
 
 /// <summary>
@@ -65,6 +67,7 @@ public sealed class SearcherManager : IDisposable
         _directory = directory;
         _config = config ?? new SearcherManagerConfig();
 
+        IndexOpenGuard.EnsureNoBlockingMigration(directory, _config.CompatibilityMode);
         // Determine the current commit generation so we don't falsely refresh
         var latestCommit = Index.IndexRecovery.RecoverLatestCommit(directory.DirectoryPath, cleanupOrphans: false);
         int initialGen = latestCommit?.Generation ?? 0;
@@ -211,9 +214,11 @@ public sealed class SearcherManager : IDisposable
 
     private bool TryRefreshCore()
     {
+        IndexOpenGuard.EnsureNoBlockingMigration(_directory, _config.CompatibilityMode);
         // Check if the commit generation on disk is newer than what we have
         var latestCommit = Index.IndexRecovery.RecoverLatestCommit(_directory.DirectoryPath, cleanupOrphans: false);
         if (latestCommit is null) return false;
+        IndexOpenGuard.EnsureCanOpenSegments(_directory, latestCommit.SegmentIds, _config.CompatibilityMode, forWriting: false);
 
         if (latestCommit.Generation <= _current.Generation)
             return false;
