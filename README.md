@@ -125,6 +125,42 @@ writer.AddDocumentBlock(new[] { child1, child2, parentDoc });
 
 Single-valued `.dvs` and `.dvn` DocValues are still written for existing sort and collapse behaviour. New `.dss`, `.dsn`, and `.dvb` sidecars are optional, so older indexes remain readable.
 
+## Index Compatibility and CLI
+
+Use `IndexFormatInspector` to inspect codec versions and sidecars without opening readers:
+
+```csharp
+using var dir = new MMapDirectory("./index");
+var inventory = IndexFormatInspector.Inspect(dir);
+```
+
+Use `IndexCompatibility.Check` before opening user-supplied indexes:
+
+```csharp
+var compatibility = IndexCompatibility.Check(dir, new IndexCompatibilityOptions
+{
+    DeepValidation = true
+});
+
+if (!compatibility.CanWrite && compatibility.CanMigrate)
+{
+    var plan = IndexCodecMigrator.Plan(dir);
+}
+```
+
+`IndexWriter`, `IndexSearcher`, and `SearcherManager` reject unsupported future formats and incomplete migration markers by default. Set `CompatibilityMode` only when intentionally opening supported older readable formats.
+
+The CLI is built as `leanlucene-cli.exe` and exposes validation, inventory, compatibility, and migration commands:
+
+```powershell
+leanlucene-cli.exe check .\index --deep
+leanlucene-cli.exe inspect .\index --json
+leanlucene-cli.exe compat .\index --deep
+leanlucene-cli.exe migrate .\index --dry-run --json
+```
+
+See [Index checker CLI](docs/tutorials/index-management/04-cli-checker.md) for command options and exit codes.
+
 ## Analysis
 
 The default `StandardAnalyser` lowercases, removes punctuation, applies stop word filtering, and interns tokens. Per-field analyser overrides are set on `IndexWriterConfig.FieldAnalysers`.
@@ -378,11 +414,11 @@ Search responses include `totalHits`, `hits` (score + stored fields), and `sugge
 
 ## Example Newsgroups Indexer
 
-`Rowles.LeanLucene.Example.NewsgroupsIndexer` bundles a 20 Newsgroups sample and writes an index suitable for exercising the checker:
+`Rowles.LeanLucene.Example.NewsgroupsIndexer` reads the shared `bench\data\20newsgroups` corpus and writes an index suitable for exercising the checker:
 
 ```powershell
 dotnet run --project .\src\examples\Rowles.LeanLucene.Example.NewsgroupsIndexer -- --index .\artifacts\newsgroups-index --limit 500
 .\src\devops\Rowles.LeanLucene.Cli\bin\Release\net10.0\leanlucene-cli.exe check .\artifacts\newsgroups-index --deep
 ```
 
-Use `--limit` to control the number of source files indexed, `--source` to point at another 20 Newsgroups checkout, and `--append` to keep an existing index directory.
+Run `.\scripts\download-news.ps1 -SkipReuters` first if the benchmark data is not present. Use `--limit` to control the number of source files indexed, `--source` to point at another 20 Newsgroups checkout, and `--append` to keep an existing index directory.

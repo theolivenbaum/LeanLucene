@@ -101,6 +101,76 @@ if (commit is null)
 `IndexWriter` runs writer-side recovery on open. Reader-side polling
 (via `SearcherManager`) calls it with `cleanupOrphans: false`.
 
+## Format inventory
+
+`IndexFormatInspector.Inspect` reads commit metadata and codec headers without
+constructing search readers. It reports segment IDs, file names, codec names,
+codec versions, current versions, DocValues sidecars, vector files, HNSW files,
+live-doc generations, and orphan files.
+
+```csharp
+using Rowles.LeanLucene.Index.Format;
+
+var inventory = IndexFormatInspector.Inspect(dir);
+
+foreach (var segment in inventory.Segments)
+{
+    Console.WriteLine(segment.SegmentId);
+    foreach (var file in segment.Files)
+        Console.WriteLine($"{file.FileName}: {file.CodecName} v{file.Version}");
+}
+```
+
+Future codec versions are reported in `inventory.Issues` and
+`HasUnsupportedFutureFormat` rather than thrown from inspection.
+
+## Compatibility and migration
+
+`IndexCompatibility.Check` combines inventory, validation, and migration
+planning. It returns `Compatible`, `MigrationRecommended`, `MigrationRequired`,
+`UnsupportedFutureFormat`, `Corrupt`, or `Empty`.
+
+```csharp
+using Rowles.LeanLucene.Index.Compatibility;
+using Rowles.LeanLucene.Index.Migration;
+
+var compatibility = IndexCompatibility.Check(dir, new IndexCompatibilityOptions
+{
+    DeepValidation = true,
+    AllowSupportedOlderFormats = true
+});
+
+if (compatibility.CanMigrate)
+{
+    var plan = IndexCodecMigrator.Plan(dir);
+    foreach (var action in plan.Actions)
+        Console.WriteLine(action.Description);
+}
+```
+
+`IndexCodecMigrator.Migrate` defaults to staged migration. It copies the index to
+a sibling staging directory, rewrites executable older codec files, deep-validates
+the staged index, publishes the staged files back, and records
+`migration_state.json` markers during the workflow.
+
+```csharp
+var result = IndexCodecMigrator.Migrate(dir, new IndexCodecMigrationOptions
+{
+    DryRun = false,
+    StagingDirectory = "./index.migration"
+});
+
+if (!result.Succeeded)
+{
+    foreach (var issue in result.Issues)
+        Console.Error.WriteLine(issue.Message);
+}
+```
+
+Use `IndexMigrationRecovery.RollBack("./index")` to delete marker and staging
+files for an interrupted migration. Use `Abandon("./index")` only when you have
+inspected the state and want to remove the marker without deleting staging data.
+
 ## Commit CRC
 
 New commit files include a CRC32 trailer. Recovery validates it before loading the
@@ -110,6 +180,10 @@ back to an older valid generation.
 ## See also
 
 - [Index checker CLI](04-cli-checker.md)
+- <xref:Rowles.LeanLucene.Index.Format.IndexFormatInspector>
+- <xref:Rowles.LeanLucene.Index.Compatibility.IndexCompatibility>
+- <xref:Rowles.LeanLucene.Index.Migration.IndexCodecMigrator>
+- <xref:Rowles.LeanLucene.Index.Migration.IndexMigrationRecovery>
 - <xref:Rowles.LeanLucene.Index.IndexValidator>
 - <xref:Rowles.LeanLucene.Index.IndexRecovery>
 - <xref:Rowles.LeanLucene.Index.IndexCheckResult>

@@ -16,9 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `Rowles.LeanLucene.Compression.Zstandard`, via `ZstdSharp`.
 - `Rowles.LeanLucene.Benchmarks.Compression` project benchmarking compress and decompress throughput across all six policies at three payload sizes (128 B, 4 KB, 64 KB).
 - Richer DocValues support with sorted-set (`.dss`), sorted-numeric (`.dsn`), and binary (`.dvb`) sidecars for repeated `StringField`, repeated `NumericField`, and stored-field values, letting facets, grouping fallback, sorting fallback, and numeric aggregations avoid stored-field scans.
-- Public `IndexValidator.Check` API and Spectre.Console.Cli-based `leanlucene-cli.exe check` command for structured index validation with text, table, JSON, and file output.
-  - Interactive checker mode for choosing an index path, validation depth, JSON output, summary output, warning handling, and report file output from prompts.
-- `Rowles.LeanLucene.Example.NewsgroupsIndexer`, a console example with bundled 20 Newsgroups data for creating checker test indexes.
+- Public index format inventory API through `IndexFormatInspector.Inspect`, reporting commit generation, segment IDs, codec files, codec versions, DocValues sidecars, vector files, HNSW files, live-doc generations, and orphan files.
+- Public compatibility API through `IndexCompatibility.Check`, plus reader and writer open guardrails for unsupported future formats, required migrations, and incomplete migration markers.
+- Public codec migration API through `IndexCodecMigrator.Plan` and `IndexCodecMigrator.Migrate`, with dry-run planning, staged migration, migration markers, rollback, abandon, and executable rewrites for readable term dictionary, numeric DocValues, sorted DocValues, field-length, and stored-field codec upgrades.
+- Public `IndexValidator.Check` API and `System.CommandLine` based `leanlucene-cli.exe` commands for `check`, `inspect`, `compat`, and `migrate`.
+- `Rowles.LeanLucene.Example.NewsgroupsIndexer`, a console example using the shared `bench\data\20newsgroups` data for creating checker test indexes.
 
 ### Changed
 
@@ -36,7 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Field-sorted top-N selection now uses `PriorityQueue<TElement, TPriority>` with an `int[]` doc-id map in place of `SortedSet<T>`.
 - `DocumentsWriterPerThread` migrated to flat stored-field buffers with a bulk position-merge path, removing per-document list allocations during indexing.
 - `IndexValidator` now reports structured issues with severity, stable codes, segment IDs, file names, and repairability flags, and can opt into deep checks for postings, stored fields, DocValues, vectors, HNSW, and live docs.
-- The command-line checker project now builds as `leanlucene-cli.exe` and supports `--summary-only`, `--fail-on-warnings`, and `--output <path>`.
+- The command-line checker project now builds as `leanlucene-cli.exe`, uses `System.CommandLine`, and supports JSON and file output across validation, inspection, compatibility, and migration commands.
+- Commit, segment metadata, live-doc, segment stats, and migration marker writes now share the same temp-file publication helper, and validation reports recognised stale temp files and partial migration markers.
 
 ### Fixed
 

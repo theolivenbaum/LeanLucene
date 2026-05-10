@@ -188,7 +188,7 @@ static void PrintUsage()
     Console.WriteLine("Usage: dotnet run --project src\\examples\\Rowles.LeanLucene.Example.NewsgroupsIndexer -- [options]");
     Console.WriteLine();
     Console.WriteLine("Options:");
-    Console.WriteLine("  --source <path>  20 Newsgroups root. Defaults to the bundled data\\20newsgroups copy.");
+    Console.WriteLine("  --source <path>  20 Newsgroups root. Defaults to the shared bench\\data\\20newsgroups corpus.");
     Console.WriteLine("  --index <path>   Output index path. Defaults to artifacts\\newsgroups-index.");
     Console.WriteLine("  --limit <count>  Maximum documents to index. Defaults to 500.");
     Console.WriteLine("  --append         Keep existing index files instead of recreating the output directory.");
@@ -250,26 +250,12 @@ internal sealed record NewsgroupsIndexOptions(string SourcePath, string IndexPat
     {
         foreach (string root in CandidateRoots())
         {
-            string bundledCandidate = Path.Combine(root, "data", "20newsgroups");
-            if (Directory.Exists(bundledCandidate))
-                return bundledCandidate;
-        }
-
-        foreach (string root in CandidateRoots())
-        {
-            string projectCandidate = Path.Combine(root, "src", "examples", "Rowles.LeanLucene.Example.NewsgroupsIndexer", "data", "20newsgroups");
-            if (Directory.Exists(projectCandidate))
-                return projectCandidate;
-        }
-
-        foreach (string root in CandidateRoots())
-        {
-            string candidate = Path.Combine(root, "_notes", "example data", "data", "20newsgroups");
+            string candidate = Path.Combine(root, "bench", "data", "20newsgroups");
             if (Directory.Exists(candidate))
                 return candidate;
         }
 
-        throw new ArgumentException("Could not find bundled data\\20newsgroups. Pass --source <path>.");
+        throw new ArgumentException("Could not find bench\\data\\20newsgroups. Run scripts\\download-news.ps1 -SkipReuters from the repository root, or pass --source <path>.");
     }
 
     private static IEnumerable<string> CandidateRoots()
