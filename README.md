@@ -14,7 +14,10 @@ A .NET-native full-text search engine. Segment-centric indexing, memory-mapped r
 | `Rowles.LeanLucene.Compression.Snappy` | Optional Snappy codec (`Snappier`) |
 | `Rowles.LeanLucene.Compression.Zstandard` | Optional Zstandard codec (`ZstdSharp.Port`) |
 | `Rowles.LeanLucene.Cli` | Command-line index checker |
-| `Rowles.LeanLucene.Tests` | xUnit test suite |
+| `Rowles.LeanLucene.Tests.Shared` | Shared test helpers |
+| `Rowles.LeanLucene.Tests.Unit` | Unit test suite |
+| `Rowles.LeanLucene.Tests.Integration` | Integration test suite |
+| `Rowles.LeanLucene.Tests.Chaos` | Chaos and property-based test suite |
 | `Rowles.LeanLucene.Benchmarks` | BenchmarkDotNet suites, compared against Lucene.NET |
 | `Rowles.LeanLucene.Example.JsonApi` | ASP.NET Minimal API example |
 | `Rowles.LeanLucene.Example.NewsgroupsIndexer` | Console example that builds a checker-ready 20 Newsgroups index |

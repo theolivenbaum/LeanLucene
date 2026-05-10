@@ -1,9 +1,6 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net10.0;net11.0</TargetFrameworks>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
@@ -26,7 +23,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="Rowles.LeanLucene.Tests" />
+    <InternalsVisibleTo Include="Rowles.LeanLucene.Tests.Shared" />
+    <InternalsVisibleTo Include="Rowles.LeanLucene.Tests.Unit" />
+    <InternalsVisibleTo Include="Rowles.LeanLucene.Tests.Integration" />
+    <InternalsVisibleTo Include="Rowles.LeanLucene.Tests.Chaos" />
   </ItemGroup>
 
   <ItemGroup>

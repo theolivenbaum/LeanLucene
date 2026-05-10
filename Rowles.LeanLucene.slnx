@@ -6,7 +6,10 @@
   <Project Path="src/devops/Rowles.LeanLucene.Benchmarks/Rowles.LeanLucene.Benchmarks.csproj" />
   <Project Path="src/devops/Rowles.LeanLucene.Benchmarks.Compression/Rowles.LeanLucene.Benchmarks.Compression.csproj" />
   <Project Path="src/devops/Rowles.LeanLucene.Cli/Rowles.LeanLucene.Cli.csproj" />
-  <Project Path="src/devops/Rowles.LeanLucene.Tests/Rowles.LeanLucene.Tests.csproj" />
+  <Project Path="src/devops/Rowles.LeanLucene.Tests.Shared/Rowles.LeanLucene.Tests.Shared.csproj" />
+  <Project Path="src/devops/Rowles.LeanLucene.Tests.Unit/Rowles.LeanLucene.Tests.Unit.csproj" />
+  <Project Path="src/devops/Rowles.LeanLucene.Tests.Integration/Rowles.LeanLucene.Tests.Integration.csproj" />
+  <Project Path="src/devops/Rowles.LeanLucene.Tests.Chaos/Rowles.LeanLucene.Tests.Chaos.csproj" />
   <Project Path="src/examples/Rowles.LeanLucene.Example.JsonApi/Rowles.LeanLucene.Example.JsonApi.csproj" />
   <Project Path="src/examples/Rowles.LeanLucene.Example.NewsgroupsIndexer/Rowles.LeanLucene.Example.NewsgroupsIndexer.csproj" />
   <Project Path="src/examples/Rowles.LeanLucene.Example.Telemetry/Rowles.LeanLucene.Example.Telemetry.csproj" />

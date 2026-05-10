@@ -49,13 +49,18 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$repoRoot    = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
-$testProject = Join-Path $repoRoot "src\devops\Rowles.LeanLucene.Tests\Rowles.LeanLucene.Tests.csproj"
-$resultsDir  = Join-Path $repoRoot "coverage-results"
+$repoRoot     = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+$testProjects = @(
+    Join-Path $repoRoot "src\devops\Rowles.LeanLucene.Tests.Unit\Rowles.LeanLucene.Tests.Unit.csproj",
+    Join-Path $repoRoot "src\devops\Rowles.LeanLucene.Tests.Integration\Rowles.LeanLucene.Tests.Integration.csproj"
+)
+$resultsDir   = Join-Path $repoRoot "coverage-results"
 
-if (-not (Test-Path $testProject)) {
-    Write-Error "Test project not found at: $testProject"
-    exit 1
+foreach ($testProject in $testProjects) {
+    if (-not (Test-Path $testProject)) {
+        Write-Error "Test project not found at: $testProject"
+        exit 1
+    }
 }
 
 if ($Clean -and (Test-Path $resultsDir)) {
@@ -76,24 +81,28 @@ if (-not $IncludePerformance) {
 }
 Write-Host ""
 
-$testArgs = @(
-    'test',
-    $testProject,
-    '--configuration', $Configuration,
-    '--framework', $Framework,
-    '--collect', 'XPlat Code Coverage',
-    '--results-directory', $resultsDir
-)
+foreach ($testProject in $testProjects) {
+    Write-Host "  Project:       $([System.IO.Path]::GetFileNameWithoutExtension($testProject))" -ForegroundColor DarkGray
 
-if (-not $IncludePerformance) {
-    $testArgs += @('--filter', 'Coverage!=Skip')
-}
+    $testArgs = @(
+        'test',
+        $testProject,
+        '--configuration', $Configuration,
+        '--framework', $Framework,
+        '--collect', 'XPlat Code Coverage',
+        '--results-directory', $resultsDir
+    )
 
-dotnet @testArgs
+    if (-not $IncludePerformance) {
+        $testArgs += @('--filter', 'Coverage!=Skip')
+    }
 
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "Tests failed with exit code $LASTEXITCODE."
-    exit $LASTEXITCODE
+    dotnet @testArgs
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Tests failed with exit code $LASTEXITCODE."
+        exit $LASTEXITCODE
+    }
 }
 
 $xmlFiles = @(Get-ChildItem $resultsDir -Filter 'coverage.cobertura.xml' -Recurse)

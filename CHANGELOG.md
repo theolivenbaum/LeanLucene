@@ -40,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `IndexValidator` now reports structured issues with severity, stable codes, segment IDs, file names, and repairability flags, and can opt into deep checks for postings, stored fields, DocValues, vectors, HNSW, and live docs.
 - The command-line checker project now builds as `leanlucene-cli.exe`, uses `System.CommandLine`, and supports JSON and file output across validation, inspection, compatibility, and migration commands.
 - Commit, segment metadata, live-doc, segment stats, and migration marker writes now share the same temp-file publication helper, and validation reports recognised stale temp files and partial migration markers.
+- The test suite is split into `Rowles.LeanLucene.Tests.Unit`, `Rowles.LeanLucene.Tests.Integration`, `Rowles.LeanLucene.Tests.Chaos`, and `Rowles.LeanLucene.Tests.Shared`, with test sources moved into their owning projects.
+- Common target framework, nullable, implicit using, xUnit using, packability, package versions, and NuGet source mapping configuration is centralised through `Directory.Build.props`, `Directory.Packages.props`, and root `NuGet.config`.
 
 ### Fixed
 

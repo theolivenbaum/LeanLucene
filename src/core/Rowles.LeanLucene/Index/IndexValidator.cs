@@ -650,7 +650,7 @@ public static class IndexValidator
             for (int docId = 0; docId < info.DocCount; docId++)
                 reader.ReadDocument(docId);
         }
-        catch (Exception ex) when (ex is IOException or InvalidDataException or EndOfStreamException)
+        catch (Exception ex) when (ex is IOException or InvalidDataException or EndOfStreamException or InvalidOperationException)
         {
             result.AddIssue(
                 IndexCheckSeverity.Error,
