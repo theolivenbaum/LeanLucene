@@ -390,7 +390,7 @@ public static class IndexCodecMigrator
             basePath + ".fdx",
             info.DocCount,
             reader.ReadDocument,
-            compression: FieldCompressionPolicy.Brotli);
+            compression: FieldCompressionPolicy.Deflate);
     }
 
     private static void AddActions(IEnumerable<CodecFileInventory> files, List<IndexCodecMigrationAction> actions)
