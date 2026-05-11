@@ -496,12 +496,17 @@ public static class IndexCodecMigrator
 
         var basePath = Path.Combine(targetDirectory, action.SegmentId);
         var info = SegmentInfo.ReadFrom(basePath + ".seg");
-        using var reader = StoredFieldsReader.Open(basePath + ".fdt", basePath + ".fdx");
+        var documents = new List<Dictionary<string, List<string>>>(info.DocCount);
+        using (var reader = StoredFieldsReader.Open(basePath + ".fdt", basePath + ".fdx"))
+        {
+            for (int docId = 0; docId < info.DocCount; docId++)
+                documents.Add(reader.ReadDocument(docId));
+        }
+
         StoredFieldsWriter.Write(
             basePath + ".fdt",
             basePath + ".fdx",
-            info.DocCount,
-            reader.ReadDocument,
+            documents,
             compression: FieldCompressionPolicy.Deflate);
     }
 

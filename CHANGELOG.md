@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `BinaryDocValuesReader`, `SortedNumericDocValuesReader`, and `SortedSetDocValuesReader` now reject corrupt offset tables. Initial offsets must be zero, and binary terminal offsets must equal the total payload length; previously, malformed sidecars could silently skip or expose unrelated bytes.
+- Stored-field codec migration now reads existing documents before rewriting `.fdt` and `.fdx`, avoiding Windows file-handle conflicts during staged migration.
 
 ### Removed
 
