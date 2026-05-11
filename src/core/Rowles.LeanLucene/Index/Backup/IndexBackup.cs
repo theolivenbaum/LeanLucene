@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Text.Json;
+using Rowles.LeanLucene.Diagnostics;
 using Rowles.LeanLucene.Index.Segment;
 using Rowles.LeanLucene.Serialization;
 using Rowles.LeanLucene.Store;
@@ -29,8 +31,30 @@ public static class IndexBackup
     /// <exception cref="InvalidDataException">Thrown when the selected commit or segment metadata cannot be read.</exception>
     public static IndexBackupManifest CreateManifest(string indexDirectoryPath, IndexBackupOptions? options = null)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(indexDirectoryPath);
         options ??= new IndexBackupOptions();
+        var sw = Stopwatch.StartNew();
+        using var activity = LeanLuceneActivitySource.Source.StartActivity(LeanLuceneActivitySource.BackupManifest);
+        IndexBackupManifest? manifest = null;
+        var succeeded = false;
+        try
+        {
+            manifest = CreateManifestCore(indexDirectoryPath, options);
+            succeeded = true;
+            return manifest;
+        }
+        finally
+        {
+            sw.Stop();
+            activity?.SetTag("operation.succeeded", succeeded);
+            ApplyManifestActivityTags(activity, manifest);
+            activity?.SetTag("index.backup.include_commit_stats", options.IncludeCommitStats);
+            LeanLuceneMaintenanceMetrics.RecordBackupManifest(sw.Elapsed, succeeded, options.IncludeCommitStats);
+        }
+    }
+
+    private static IndexBackupManifest CreateManifestCore(string indexDirectoryPath, IndexBackupOptions options)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(indexDirectoryPath);
         var sourceDirectory = Path.GetFullPath(indexDirectoryPath);
         if (!Directory.Exists(sourceDirectory))
             throw new ArgumentException($"Index directory '{sourceDirectory}' does not exist.", nameof(indexDirectoryPath));
@@ -97,33 +121,51 @@ public static class IndexBackup
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(backupDirectoryPath);
         options ??= new IndexBackupOptions();
-        var sourceDirectory = Path.GetFullPath(indexDirectoryPath);
-        var backupDirectory = Path.GetFullPath(backupDirectoryPath);
-        if (SameDirectory(sourceDirectory, backupDirectory))
-            throw new ArgumentException("Backup directory must be different from the source index directory.", nameof(backupDirectoryPath));
-
-        var manifest = CreateManifest(sourceDirectory, options);
-        PrepareDirectory(backupDirectory, options.OverwriteBackupDirectory, "Backup");
-
-        var copiedFiles = new List<string>(manifest.Files.Count);
-        foreach (var entry in manifest.Files)
+        var sw = Stopwatch.StartNew();
+        using var activity = LeanLuceneActivitySource.Source.StartActivity(LeanLuceneActivitySource.BackupCopy);
+        IndexBackupManifest? manifest = null;
+        IndexBackupResult? result = null;
+        var succeeded = false;
+        try
         {
-            ValidateManifestFileName(entry.FileName);
-            var sourcePath = Path.Combine(sourceDirectory, entry.FileName);
-            var targetPath = Path.Combine(backupDirectory, entry.FileName);
-            CopyFileAtomically(sourcePath, targetPath);
-            copiedFiles.Add(entry.FileName);
+            var sourceDirectory = Path.GetFullPath(indexDirectoryPath);
+            var backupDirectory = Path.GetFullPath(backupDirectoryPath);
+            if (SameDirectory(sourceDirectory, backupDirectory))
+                throw new ArgumentException("Backup directory must be different from the source index directory.", nameof(backupDirectoryPath));
+
+            manifest = CreateManifestCore(sourceDirectory, options);
+            PrepareDirectory(backupDirectory, options.OverwriteBackupDirectory, "Backup");
+
+            var copiedFiles = new List<string>(manifest.Files.Count);
+            foreach (var entry in manifest.Files)
+            {
+                ValidateManifestFileName(entry.FileName);
+                var sourcePath = Path.Combine(sourceDirectory, entry.FileName);
+                var targetPath = Path.Combine(backupDirectory, entry.FileName);
+                CopyFileAtomically(sourcePath, targetPath);
+                copiedFiles.Add(entry.FileName);
+            }
+
+            var manifestJson = JsonSerializer.Serialize(manifest, LeanLuceneJsonContext.Default.IndexBackupManifest);
+            IndexAtomicFileWriter.WriteText(Path.Combine(backupDirectory, ManifestFileName), manifestJson, durable: true);
+
+            result = new IndexBackupResult
+            {
+                Manifest = manifest,
+                BackupDirectoryPath = backupDirectory,
+                CopiedFiles = copiedFiles
+            };
+            succeeded = true;
+            return result;
         }
-
-        var manifestJson = JsonSerializer.Serialize(manifest, LeanLuceneJsonContext.Default.IndexBackupManifest);
-        IndexAtomicFileWriter.WriteText(Path.Combine(backupDirectory, ManifestFileName), manifestJson, durable: true);
-
-        return new IndexBackupResult
+        finally
         {
-            Manifest = manifest,
-            BackupDirectoryPath = backupDirectory,
-            CopiedFiles = copiedFiles
-        };
+            sw.Stop();
+            activity?.SetTag("operation.succeeded", succeeded);
+            ApplyManifestActivityTags(activity, manifest);
+            activity?.SetTag("index.backup.overwrite", options.OverwriteBackupDirectory);
+            LeanLuceneMaintenanceMetrics.RecordBackupCopy(sw.Elapsed, succeeded, options.OverwriteBackupDirectory);
+        }
     }
 
     /// <summary>
@@ -160,6 +202,27 @@ public static class IndexBackup
     /// <exception cref="InvalidDataException">Thrown when any manifest entry is unsafe, missing, or corrupt.</exception>
     public static IndexBackupManifest ValidateBackup(string backupDirectoryPath)
     {
+        var sw = Stopwatch.StartNew();
+        using var activity = LeanLuceneActivitySource.Source.StartActivity(LeanLuceneActivitySource.BackupValidate);
+        IndexBackupManifest? manifest = null;
+        var succeeded = false;
+        try
+        {
+            manifest = ValidateBackupCore(backupDirectoryPath);
+            succeeded = true;
+            return manifest;
+        }
+        finally
+        {
+            sw.Stop();
+            activity?.SetTag("operation.succeeded", succeeded);
+            ApplyManifestActivityTags(activity, manifest);
+            LeanLuceneMaintenanceMetrics.RecordBackupValidate(sw.Elapsed, succeeded);
+        }
+    }
+
+    private static IndexBackupManifest ValidateBackupCore(string backupDirectoryPath)
+    {
         var backupDirectory = Path.GetFullPath(backupDirectoryPath);
         var manifest = ReadManifest(backupDirectory);
         foreach (var entry in manifest.Files)
@@ -194,41 +257,67 @@ public static class IndexBackup
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(targetIndexDirectoryPath);
         options ??= new IndexRestoreOptions();
-        var backupDirectory = Path.GetFullPath(backupDirectoryPath);
-        var targetDirectory = Path.GetFullPath(targetIndexDirectoryPath);
-        if (SameDirectory(backupDirectory, targetDirectory))
-            throw new ArgumentException("Restore target directory must be different from the backup directory.", nameof(targetIndexDirectoryPath));
-
-        var manifest = ValidateBackup(backupDirectory);
-        PrepareDirectory(targetDirectory, options.OverwriteTargetDirectory, "Restore target");
-
-        var restoredFiles = new List<string>(manifest.Files.Count);
-        foreach (var entry in manifest.Files)
+        var sw = Stopwatch.StartNew();
+        using var activity = LeanLuceneActivitySource.Source.StartActivity(LeanLuceneActivitySource.BackupRestore);
+        IndexBackupManifest? manifest = null;
+        IndexRestoreResult? result = null;
+        var succeeded = false;
+        try
         {
-            ValidateManifestFileName(entry.FileName);
-            if (!options.RestoreCommitStats && string.Equals(entry.Role, "commit-stats", StringComparison.Ordinal))
-                continue;
+            var backupDirectory = Path.GetFullPath(backupDirectoryPath);
+            var targetDirectory = Path.GetFullPath(targetIndexDirectoryPath);
+            if (SameDirectory(backupDirectory, targetDirectory))
+                throw new ArgumentException("Restore target directory must be different from the backup directory.", nameof(targetIndexDirectoryPath));
 
-            var sourcePath = Path.Combine(backupDirectory, entry.FileName);
-            var targetPath = Path.Combine(targetDirectory, entry.FileName);
-            CopyFileAtomically(sourcePath, targetPath);
-            restoredFiles.Add(entry.FileName);
+            manifest = ValidateBackupCore(backupDirectory);
+            PrepareDirectory(targetDirectory, options.OverwriteTargetDirectory, "Restore target");
+
+            var restoredFiles = new List<string>(manifest.Files.Count);
+            foreach (var entry in manifest.Files)
+            {
+                ValidateManifestFileName(entry.FileName);
+                if (!options.RestoreCommitStats && string.Equals(entry.Role, "commit-stats", StringComparison.Ordinal))
+                    continue;
+
+                var sourcePath = Path.Combine(backupDirectory, entry.FileName);
+                var targetPath = Path.Combine(targetDirectory, entry.FileName);
+                CopyFileAtomically(sourcePath, targetPath);
+                restoredFiles.Add(entry.FileName);
+            }
+
+            IndexCheckResult? validation = null;
+            if (options.ValidateAfterRestore)
+            {
+                using var directory = new MMapDirectory(targetDirectory);
+                validation = IndexValidator.Check(directory);
+            }
+
+            result = new IndexRestoreResult
+            {
+                Manifest = manifest,
+                TargetDirectoryPath = targetDirectory,
+                RestoredFiles = restoredFiles,
+                ValidationResult = validation
+            };
+            succeeded = true;
+            return result;
         }
-
-        IndexCheckResult? validation = null;
-        if (options.ValidateAfterRestore)
+        finally
         {
-            using var directory = new MMapDirectory(targetDirectory);
-            validation = IndexValidator.Check(directory);
+            sw.Stop();
+            activity?.SetTag("operation.succeeded", succeeded);
+            ApplyManifestActivityTags(activity, manifest);
+            activity?.SetTag("index.restore.file_count", result?.RestoredFiles.Count ?? 0);
+            activity?.SetTag("index.restore.validate_after_restore", options.ValidateAfterRestore);
+            activity?.SetTag("index.restore.restore_commit_stats", options.RestoreCommitStats);
+            activity?.SetTag("index.restore.overwrite", options.OverwriteTargetDirectory);
+            LeanLuceneMaintenanceMetrics.RecordBackupRestore(
+                sw.Elapsed,
+                succeeded,
+                options.ValidateAfterRestore,
+                options.RestoreCommitStats,
+                options.OverwriteTargetDirectory);
         }
-
-        return new IndexRestoreResult
-        {
-            Manifest = manifest,
-            TargetDirectoryPath = targetDirectory,
-            RestoredFiles = restoredFiles,
-            ValidationResult = validation
-        };
     }
 
     private static (int Generation, string FilePath) SelectCommit(string directoryPath, int? generation)
@@ -322,6 +411,25 @@ public static class IndexBackup
             ".hnsw" => "hnsw",
             _ => "sidecar"
         };
+    }
+
+    private static void ApplyManifestActivityTags(Activity? activity, IndexBackupManifest? manifest)
+    {
+        if (manifest is null)
+            return;
+
+        activity?.SetTag("index.commit_generation", manifest.CommitGeneration);
+        activity?.SetTag("index.backup.file_count", manifest.Files.Count);
+        activity?.SetTag("index.backup.byte_count", GetManifestByteCount(manifest));
+    }
+
+    private static long GetManifestByteCount(IndexBackupManifest manifest)
+    {
+        long total = 0;
+        foreach (var file in manifest.Files)
+            total += file.Length;
+
+        return total;
     }
 
     private static uint ComputeFileCrc32(string path)

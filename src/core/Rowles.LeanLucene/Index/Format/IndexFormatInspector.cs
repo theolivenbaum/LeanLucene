@@ -1,6 +1,8 @@
-﻿using System.Text.Json;
+﻿using System.Diagnostics;
+using System.Text.Json;
 using Rowles.LeanLucene.Codecs;
 using Rowles.LeanLucene.Codecs.Vectors;
+using Rowles.LeanLucene.Diagnostics;
 using Rowles.LeanLucene.Serialization;
 using Rowles.LeanLucene.Store;
 
@@ -23,6 +25,37 @@ public static class IndexFormatInspector
     public static IndexFormatInventory Inspect(MMapDirectory directory, IndexFormatInspectionOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(directory);
+
+        var sw = Stopwatch.StartNew();
+        using var activity = LeanLuceneActivitySource.Source.StartActivity(LeanLuceneActivitySource.FormatInspect);
+        IndexFormatInventory? inventory = null;
+        var succeeded = false;
+        try
+        {
+            inventory = InspectCore(directory, options);
+            succeeded = true;
+            return inventory;
+        }
+        finally
+        {
+            sw.Stop();
+            activity?.SetTag("operation.succeeded", succeeded);
+            if (inventory is not null)
+            {
+                if (inventory.CommitGeneration is int commitGeneration)
+                    activity?.SetTag("index.commit_generation", commitGeneration);
+                activity?.SetTag("index.segment_count", inventory.Segments.Count);
+                activity?.SetTag("index.orphan_file_count", inventory.OrphanFiles.Count);
+                activity?.SetTag("index.issue_count", inventory.Issues.Count);
+                activity?.SetTag("index.has_unsupported_future_format", inventory.HasUnsupportedFutureFormat);
+            }
+
+            LeanLuceneMaintenanceMetrics.RecordFormatInspect(sw.Elapsed, succeeded);
+        }
+    }
+
+    private static IndexFormatInventory InspectCore(MMapDirectory directory, IndexFormatInspectionOptions? options)
+    {
         options ??= new IndexFormatInspectionOptions();
 
         var directoryPath = directory.DirectoryPath;

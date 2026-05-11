@@ -1,7 +1,9 @@
+using System.Diagnostics;
 using Rowles.LeanLucene.Codecs;
 using Rowles.LeanLucene.Codecs.DocValues;
 using Rowles.LeanLucene.Codecs.Postings;
 using Rowles.LeanLucene.Codecs.StoredFields;
+using Rowles.LeanLucene.Diagnostics;
 using Rowles.LeanLucene.Codecs.TermDictionary;
 using Rowles.LeanLucene.Index.Format;
 using Rowles.LeanLucene.Index.Segment;
@@ -34,6 +36,35 @@ public static class IndexCodecMigrator
     public static IndexCodecMigrationPlan Plan(MMapDirectory directory, IndexCodecMigrationOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(directory);
+
+        var sw = Stopwatch.StartNew();
+        using var activity = LeanLuceneActivitySource.Source.StartActivity(LeanLuceneActivitySource.CodecMigrationPlan);
+        IndexCodecMigrationPlan? plan = null;
+        var succeeded = false;
+        try
+        {
+            plan = PlanCore(directory, options);
+            succeeded = true;
+            return plan;
+        }
+        finally
+        {
+            sw.Stop();
+            activity?.SetTag("operation.succeeded", succeeded);
+            if (plan is not null)
+            {
+                activity?.SetTag("index.segment_count", plan.Inventory.Segments.Count);
+                activity?.SetTag("index.migration.action_count", plan.Actions.Count);
+                activity?.SetTag("index.migration.can_execute", plan.CanExecute);
+                activity?.SetTag("index.issue_count", plan.Issues.Count);
+            }
+
+            LeanLuceneMaintenanceMetrics.RecordCodecMigrationPlan(sw.Elapsed, succeeded);
+        }
+    }
+
+    private static IndexCodecMigrationPlan PlanCore(MMapDirectory directory, IndexCodecMigrationOptions? options)
+    {
         options ??= new IndexCodecMigrationOptions();
 
         var inventory = IndexFormatInspector.Inspect(directory);
@@ -61,7 +92,38 @@ public static class IndexCodecMigrator
         ArgumentNullException.ThrowIfNull(directory);
         options ??= new IndexCodecMigrationOptions();
 
-        var plan = Plan(directory, options);
+        var sw = Stopwatch.StartNew();
+        using var activity = LeanLuceneActivitySource.Source.StartActivity(LeanLuceneActivitySource.CodecMigrationMigrate);
+        IndexCodecMigrationResult? result = null;
+        var usesStaging = false;
+        try
+        {
+            result = MigrateCore(directory, options, out usesStaging);
+            return result;
+        }
+        finally
+        {
+            sw.Stop();
+            var succeeded = result?.Succeeded ?? false;
+            activity?.SetTag("operation.succeeded", succeeded);
+            activity?.SetTag("index.migration.dry_run", options.DryRun);
+            activity?.SetTag("index.migration.action_count", result?.ExecutedActions.Count ?? 0);
+            activity?.SetTag("index.migration.executed_action_count", result?.DryRun == true ? 0 : result?.ExecutedActions.Count ?? 0);
+            activity?.SetTag("index.migration.succeeded", succeeded);
+            activity?.SetTag("index.migration.uses_staging", usesStaging);
+            activity?.SetTag("index.issue_count", result?.Issues.Count ?? 0);
+
+            LeanLuceneMaintenanceMetrics.RecordCodecMigrationMigrate(sw.Elapsed, succeeded, options.DryRun, usesStaging);
+        }
+    }
+
+    private static IndexCodecMigrationResult MigrateCore(
+        MMapDirectory directory,
+        IndexCodecMigrationOptions options,
+        out bool usesStaging)
+    {
+        usesStaging = false;
+        var plan = PlanCore(directory, options);
         if (options.DryRun)
         {
             return new IndexCodecMigrationResult
@@ -138,14 +200,14 @@ public static class IndexCodecMigrator
         }
 
         var sourceDirectory = directory.DirectoryPath;
-        var useStaging = options.UseStagingDirectory || !options.AllowInPlaceMigration;
-        var targetDirectory = useStaging
+        usesStaging = options.UseStagingDirectory || !options.AllowInPlaceMigration;
+        var targetDirectory = usesStaging
             ? ResolveStagingDirectory(sourceDirectory, options.StagingDirectory)
             : sourceDirectory;
         var now = DateTimeOffset.UtcNow;
         var marker = new IndexMigrationMarker
         {
-            State = useStaging ? IndexMigrationState.Prepared : IndexMigrationState.InProgress,
+            State = usesStaging ? IndexMigrationState.Prepared : IndexMigrationState.InProgress,
             SourceDirectory = sourceDirectory,
             StagingDirectory = targetDirectory,
             SourceCommitGeneration = plan.Inventory.CommitGeneration,
@@ -159,7 +221,7 @@ public static class IndexCodecMigrator
         try
         {
             IndexMigrationRecovery.WriteMarker(sourceDirectory, marker, durable: true);
-            if (useStaging)
+            if (usesStaging)
             {
                 PrepareStagingDirectory(sourceDirectory, targetDirectory);
                 IndexMigrationRecovery.WriteMarker(
@@ -192,7 +254,7 @@ public static class IndexCodecMigrator
                         Succeeded = false,
                         DryRun = false,
                         SourceDirectory = sourceDirectory,
-                        StagingDirectory = useStaging ? targetDirectory : null,
+                        StagingDirectory = usesStaging ? targetDirectory : null,
                         ExecutedActions = executed,
                         ValidationResult = validationResult,
                         Issues = validationResult.DetailedIssues
@@ -200,7 +262,7 @@ public static class IndexCodecMigrator
                 }
             }
 
-            if (useStaging)
+            if (usesStaging)
             {
                 IndexMigrationRecovery.WriteMarker(
                     sourceDirectory,
@@ -221,7 +283,7 @@ public static class IndexCodecMigrator
                 Succeeded = true,
                 DryRun = false,
                 SourceDirectory = sourceDirectory,
-                StagingDirectory = useStaging ? targetDirectory : null,
+                StagingDirectory = usesStaging ? targetDirectory : null,
                 ExecutedActions = executed,
                 ValidationResult = validationResult,
                 Issues = plan.Issues
@@ -254,7 +316,7 @@ public static class IndexCodecMigrator
                 Succeeded = false,
                 DryRun = false,
                 SourceDirectory = sourceDirectory,
-                StagingDirectory = useStaging ? targetDirectory : null,
+                StagingDirectory = usesStaging ? targetDirectory : null,
                 ExecutedActions = executed,
                 ValidationResult = null,
                 Issues = issues
