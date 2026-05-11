@@ -205,4 +205,57 @@ public static class LevenshteinDistance
 
         return row[aLen] <= maxEdits ? row[aLen] : maxEdits + 1;
     }
+
+    internal static int ComputeAsciiBitParallelBounded(ReadOnlySpan<byte> pattern, ReadOnlySpan<byte> text, int maxEdits)
+    {
+        if (pattern.Length > 63)
+            return ComputeAsciiBounded(pattern, text, maxEdits);
+
+        if (pattern.IsEmpty)
+            return text.Length <= maxEdits ? text.Length : maxEdits + 1;
+
+        if (text.IsEmpty)
+            return pattern.Length <= maxEdits ? pattern.Length : maxEdits + 1;
+
+        if (Math.Abs(pattern.Length - text.Length) > maxEdits)
+            return maxEdits + 1;
+
+        Span<ulong> equality = stackalloc ulong[128];
+        for (int i = 0; i < pattern.Length; i++)
+        {
+            byte b = pattern[i];
+            if (b >= 128)
+                return -1;
+
+            equality[b] |= 1UL << i;
+        }
+
+        ulong positive = ulong.MaxValue;
+        ulong negative = 0;
+        ulong highBit = 1UL << (pattern.Length - 1);
+        int score = pattern.Length;
+
+        foreach (byte b in text)
+        {
+            if (b >= 128)
+                return -1;
+
+            ulong eq = equality[b];
+            ulong x = eq | negative;
+            ulong d0 = (((x & positive) + positive) ^ positive) | x;
+            ulong hp = negative | ~(positive | d0);
+            ulong hn = positive & d0;
+
+            if ((hp & highBit) != 0)
+                score++;
+            else if ((hn & highBit) != 0)
+                score--;
+
+            x = (hp << 1) | 1UL;
+            negative = x & d0;
+            positive = (hn << 1) | ~(x | d0);
+        }
+
+        return score <= maxEdits ? score : maxEdits + 1;
+    }
 }

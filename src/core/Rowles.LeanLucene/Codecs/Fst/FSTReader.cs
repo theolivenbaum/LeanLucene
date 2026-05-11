@@ -20,7 +20,9 @@ internal sealed class FSTReader
     private readonly int[] _hashBuckets;
     private readonly int[] _hashNext;
     private readonly int _hashMask;
-
+    private readonly Lock _fuzzyCacheLock = new();
+    private readonly Dictionary<FuzzyCacheKey, List<(string Term, long Offset, int Distance)>> _fuzzyCache = new();
+    private const int MaxFuzzyCacheEntries = 128;
     private FSTReader(long[] offsets, int[] keyStarts, byte[] keyData, int termCount,
         int[] hashBuckets, int[] hashNext, int hashMask)
     {
@@ -232,6 +234,17 @@ internal sealed class FSTReader
         if (maxEdits == 1)
             return GetFuzzyMatchesSingleEdit(prefixUtf8, queryUtf8, maxExpansions);
 
+        if (maxEdits == 2)
+        {
+            var cacheKey = new FuzzyCacheKey(fieldPrefix, queryTerm.ToString(), maxEdits, maxExpansions);
+            if (TryGetFuzzyCache(cacheKey, out var cached))
+                return cached;
+
+            var result = GetFuzzyMatchesAsciiScan(prefixUtf8, queryUtf8, start, maxEdits, maxExpansions);
+            StoreFuzzyCache(cacheKey, result);
+            return result;
+        }
+
         // Phase 1: collect (ordinal, distance) pairs without decoding strings
         var candidates = new List<(int Ordinal, int Distance)>();
         int qLen = queryByteCount; // ASCII: byte count == char count
@@ -250,7 +263,7 @@ internal sealed class FSTReader
         // Build byte histogram of the query for character overlap pre-check.
         // Only effective for large dictionaries; at small scale the DP prefix-sharing
         // already prunes efficiently and the per-term histogram overhead is a net loss.
-        bool useOverlapFilter = _termCount >= 50_000;
+        bool useOverlapFilter = _termCount >= 10_000;
         Span<int> qHist = stackalloc int[256];
         Span<int> bareHist = stackalloc int[256];
         Span<byte> touchedByteKeys = stackalloc byte[256];
@@ -363,7 +376,17 @@ internal sealed class FSTReader
             dpValidDepth = lastComputedDepth;
 
             if (dead)
+            {
+                if (lastComputedDepth > 0 &&
+                    TryBuildNextPrefixKey(key[..(prefixByteCount + lastComputedDepth)], out var nextPrefix))
+                {
+                    int skipTo = LowerBound(nextPrefix, idx + 1);
+                    if (skipTo > idx + 1)
+                        idx = skipTo - 1;
+                }
+
                 continue;
+            }
 
             int finalDist = dpStack[bareLen][qLen];
             if (finalDist <= maxEdits)
@@ -464,6 +487,69 @@ internal sealed class FSTReader
 
         return results;
     }
+
+    private List<(string Term, long Offset, int Distance)> GetFuzzyMatchesAsciiScan(
+        ReadOnlySpan<byte> prefixUtf8,
+        ReadOnlySpan<byte> queryUtf8,
+        int start,
+        int maxEdits,
+        int maxExpansions)
+    {
+        var candidates = new List<(int Ordinal, int Distance)>();
+        int prefixLength = prefixUtf8.Length;
+
+        for (int i = start; i < _termCount; i++)
+        {
+            var key = GetKeySpan(i);
+            if (!key.StartsWith(prefixUtf8))
+                break;
+
+            var bare = key[prefixLength..];
+            int distance = LevenshteinDistance.ComputeAsciiBitParallelBounded(queryUtf8, bare, maxEdits);
+            if (distance is >= 0 && distance <= maxEdits)
+                candidates.Add((i, distance));
+        }
+
+        if (maxExpansions > 0 && candidates.Count > maxExpansions)
+        {
+            candidates.Sort((a, b) => a.Distance.CompareTo(b.Distance));
+            candidates.RemoveRange(maxExpansions, candidates.Count - maxExpansions);
+        }
+
+        var results = new List<(string, long, int)>(candidates.Count);
+        foreach (var (ordinal, distance) in candidates)
+            results.Add((DecodeKey(ordinal), _offsets[ordinal], distance));
+
+        return results;
+    }
+
+    private bool TryGetFuzzyCache(FuzzyCacheKey key, out List<(string Term, long Offset, int Distance)> results)
+    {
+        lock (_fuzzyCacheLock)
+        {
+            if (_fuzzyCache.TryGetValue(key, out var cached))
+            {
+                results = new List<(string Term, long Offset, int Distance)>(cached);
+                return true;
+            }
+        }
+
+        results = [];
+        return false;
+    }
+
+    private void StoreFuzzyCache(FuzzyCacheKey key, List<(string Term, long Offset, int Distance)> results)
+    {
+        lock (_fuzzyCacheLock)
+        {
+            if (_fuzzyCache.Count >= MaxFuzzyCacheEntries && !_fuzzyCache.ContainsKey(key))
+                _fuzzyCache.Clear();
+
+            _fuzzyCache[key] = new List<(string Term, long Offset, int Distance)>(results);
+        }
+    }
+
+    private readonly record struct FuzzyCacheKey(string FieldPrefix, string QueryTerm, int MaxEdits, int MaxExpansions);
 
     /// <summary>Original O(T) linear scan fallback for non-ASCII queries.</summary>
     private List<(string Term, long Offset, int Distance)> GetFuzzyMatchesFallback(
@@ -778,6 +864,22 @@ internal sealed class FSTReader
         }
 
         return true;
+    }
+
+    private static bool TryBuildNextPrefixKey(ReadOnlySpan<byte> prefix, out byte[] next)
+    {
+        next = prefix.ToArray();
+        for (int i = next.Length - 1; i >= 0; i--)
+        {
+            if (next[i] == byte.MaxValue)
+                continue;
+
+            next[i]++;
+            Array.Resize(ref next, i + 1);
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>Returns the raw UTF-8 byte span for term at ordinal index.</summary>

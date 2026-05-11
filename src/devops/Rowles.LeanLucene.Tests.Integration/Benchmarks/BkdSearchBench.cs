@@ -11,8 +11,7 @@ namespace Rowles.LeanLucene.Tests.Integration.Benchmarks;
 
 /// <summary>
 /// Microbenchmark contrasting numeric range search latency against a baseline
-/// linear scan over the same corpus. Skipped by default; flip the skip flag
-/// off to run locally.
+/// linear scan over the same corpus.
 /// </summary>
 [Trait("Category", "Benchmark")]
 public sealed class BkdSearchBench : IClassFixture<TestDirectoryFixture>
@@ -29,7 +28,7 @@ public sealed class BkdSearchBench : IClassFixture<TestDirectoryFixture>
     /// <summary>
     /// Verifies the Numeric Range: Versus Linear Scan scenario.
     /// </summary>
-    [Fact(DisplayName = "Numeric Range: Versus Linear Scan", Skip = "benchmark")]
+    [Fact(DisplayName = "Numeric Range: Versus Linear Scan")]
     public void NumericRange_Versus_LinearScan()
     {
         const int docCount = 1_000_000;

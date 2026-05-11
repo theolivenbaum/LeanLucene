@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Vector field lookup is pre-built once per writer and DocValues key snapshots are pooled.
 - Field-sorted top-N selection now uses `PriorityQueue<TElement, TPriority>` with an `int[]` doc-id map in place of `SortedSet<T>`.
 - `DocumentsWriterPerThread` migrated to flat stored-field buffers with a bulk position-merge path, removing per-document list allocations during indexing.
+- Zstandard compression now pools compressor and decompressor instances rather than allocating a native wrapper per block.
 - `IndexValidator` now reports structured issues with severity, stable codes, segment IDs, file names, and repairability flags, and can opt into deep checks for postings, stored fields, DocValues, vectors, HNSW, and live docs.
 - The command-line checker project now builds as `leanlucene-cli.exe`, uses `System.CommandLine`, and supports JSON and file output across validation, inspection, compatibility, and migration commands.
 - Commit, segment metadata, live-doc, segment stats, and migration marker writes now share the same temp-file publication helper, and validation reports recognised stale temp files and partial migration markers.
@@ -52,6 +53,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `BinaryDocValuesReader`, `SortedNumericDocValuesReader`, and `SortedSetDocValuesReader` now reject corrupt offset tables. Initial offsets must be zero, and binary terminal offsets must equal the total payload length; previously, malformed sidecars could silently skip or expose unrelated bytes.
 - LZ4 and uncompressed stored-field codecs now reject impossible compressed/original length combinations instead of accepting corrupt empty or oversized payload metadata.
 - Stored-field codec migration now streams existing documents into temporary `.fdt.tmp` and `.fdx.tmp` files before publication, avoiding Windows file-handle conflicts without buffering the whole segment.
+- Codec migration now plans richer DocValues rewrites, publishes in-place rewrites through temporary files, removes published staging directories, and marks unexpected migration failures as failed.
+- Fuzzy term lookup, searcher refresh observation, and query cache top-N keying now behave deterministically under the full test suite.
 
 ### Removed
 

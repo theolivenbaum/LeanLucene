@@ -81,6 +81,9 @@ internal static class IndexRepairRecommendations
             IndexCheckIssueCodes.PartialMigrationMarkerState =>
                 ["Inspect the migration marker manually and abandon or recreate the migration state before opening the index."],
 
+            IndexCheckIssueCodes.MigrationStagingCleanupFailed =>
+                ["Confirm no process is using the staging directory, then remove it manually."],
+
             _ => []
         };
 }

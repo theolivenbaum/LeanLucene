@@ -26,6 +26,9 @@ public sealed class IndexCodecMigratorTests : IClassFixture<TestDirectoryFixture
         yield return [new MigrationCodecCase("postings", [".pos"], 2, RewritePostingsAsV2)];
         yield return [new MigrationCodecCase("numeric-doc-values", [".dvn"], 1, RewriteNumericDocValuesAsV1)];
         yield return [new MigrationCodecCase("sorted-doc-values", [".dvs"], 1, RewriteSortedDocValuesAsV1)];
+        yield return [new MigrationCodecCase("sorted-set-doc-values", [".dss"], 0, directory => WriteCodecVersion(directory, "*.dss", 0))];
+        yield return [new MigrationCodecCase("sorted-numeric-doc-values", [".dsn"], 0, directory => WriteCodecVersion(directory, "*.dsn", 0))];
+        yield return [new MigrationCodecCase("binary-doc-values", [".dvb"], 0, directory => WriteCodecVersion(directory, "*.dvb", 0))];
         yield return [new MigrationCodecCase("field-lengths", [".fln"], 1, RewriteFieldLengthsAsV1)];
         yield return [new MigrationCodecCase("stored-fields", [".fdt", ".fdx"], 4, RewriteStoredFieldsAsV4)];
     }
@@ -75,6 +78,27 @@ public sealed class IndexCodecMigratorTests : IClassFixture<TestDirectoryFixture
             AssertCurrentVersion(directory, extension);
         }
         Assert.Equal(IndexMigrationState.Published, IndexMigrationRecovery.GetState(directory.DirectoryPath).State);
+        Assert.False(Directory.Exists(stagingDirectory));
+        Assert.Equal(IndexCompatibilityStatus.Compatible, IndexCompatibility.Check(directory).Status);
+        AssertReadable(directory, expected);
+    }
+
+    [Fact]
+    public void Migrate_InPlaceLegacyCodec_LeavesNoTemporaryCodecFiles()
+    {
+        using var directory = CreateMigrationIndex("migrate_in_place_temp", out var expected);
+        RewritePostingsAsV2(directory);
+
+        var result = IndexCodecMigrator.Migrate(directory, new IndexCodecMigrationOptions
+        {
+            DryRun = false,
+            UseStagingDirectory = false,
+            AllowInPlaceMigration = true
+        });
+
+        Assert.True(result.Succeeded, string.Join(Environment.NewLine, result.Issues.Select(static issue => issue.ToString())));
+        Assert.DoesNotContain(Directory.GetFiles(directory.DirectoryPath, "*.tmp"), path => path.EndsWith(".pos.tmp", StringComparison.Ordinal));
+        Assert.DoesNotContain(Directory.GetFiles(directory.DirectoryPath, "*.tmp"), path => path.EndsWith(".dic.tmp", StringComparison.Ordinal));
         Assert.Equal(IndexCompatibilityStatus.Compatible, IndexCompatibility.Check(directory).Status);
         AssertReadable(directory, expected);
     }
@@ -150,8 +174,14 @@ public sealed class IndexCodecMigratorTests : IClassFixture<TestDirectoryFixture
             document.Add(new StringField("id", item.Id, stored: true));
             document.Add(new TextField("body", item.Body, stored: true));
             document.Add(new StringField("category", item.Category, stored: true));
+            document.Add(new StringField("tags", item.Category, stored: true));
+            document.Add(new StringField("tags", "migration", stored: true));
             document.Add(new NumericField("number", item.Number, stored: true));
+            document.Add(new NumericField("scores", item.Number, stored: true));
+            document.Add(new NumericField("scores", item.Number + 1, stored: true));
             document.Add(new StoredField("source", item.Source));
+            document.Add(new StoredField("notes", item.Source));
+            document.Add(new StoredField("notes", "migration"));
             writer.AddDocument(document);
         }
 
@@ -163,7 +193,7 @@ public sealed class IndexCodecMigratorTests : IClassFixture<TestDirectoryFixture
 
     private static void AssertRequiredMigrationFiles(MMapDirectory directory)
     {
-        string[] extensions = [".dic", ".pos", ".dvn", ".dvs", ".fln", ".fdt", ".fdx"];
+        string[] extensions = [".dic", ".pos", ".dvn", ".dvs", ".dss", ".dsn", ".dvb", ".fln", ".fdt", ".fdx"];
         foreach (var extension in extensions)
             Assert.Single(Directory.GetFiles(directory.DirectoryPath, "*" + extension));
     }
@@ -226,6 +256,9 @@ public sealed class IndexCodecMigratorTests : IClassFixture<TestDirectoryFixture
             ".pos" => CodecConstants.PostingsVersion,
             ".dvn" => CodecConstants.NumericDocValuesVersion,
             ".dvs" => CodecConstants.SortedDocValuesVersion,
+            ".dss" => CodecConstants.SortedSetDocValuesVersion,
+            ".dsn" => CodecConstants.SortedNumericDocValuesVersion,
+            ".dvb" => CodecConstants.BinaryDocValuesVersion,
             ".fln" => CodecConstants.FieldLengthVersion,
             ".fdt" => CodecConstants.StoredFieldsVersion,
             ".fdx" => CodecConstants.StoredFieldsVersion,
@@ -238,6 +271,14 @@ public sealed class IndexCodecMigratorTests : IClassFixture<TestDirectoryFixture
         using var reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: false);
         Assert.Equal(CodecConstants.Magic, reader.ReadInt32());
         return reader.ReadByte();
+    }
+
+    private static void WriteCodecVersion(MMapDirectory directory, string pattern, byte version)
+    {
+        var path = Directory.GetFiles(directory.DirectoryPath, pattern).Single();
+        using var stream = File.Open(path, FileMode.Open, FileAccess.Write, FileShare.None);
+        stream.Position = sizeof(int);
+        stream.WriteByte(version);
     }
 
     private static void RewriteTermDictionaryAsV1(string path)

@@ -148,7 +148,9 @@ public sealed partial class IndexSearcher : IDisposable
     /// <returns>A <see cref="TopDocs"/> containing the top-scoring documents and total hit count.</returns>
     public TopDocs Search(Query query, int topN)
     {
-        if (topN <= 0 || _readers.Count == 0)
+        int requestedTopN = topN;
+        int effectiveTopN = NormaliseTopN(topN);
+        if (effectiveTopN <= 0 || _readers.Count == 0)
             return TopDocs.Empty;
 
         using var activity = Diagnostics.LeanLuceneActivitySource.Source
@@ -158,7 +160,7 @@ public sealed partial class IndexSearcher : IDisposable
         // Check query cache
         if (_queryCache is not null)
         {
-            var cached = _queryCache.TryGet(query, topN);
+            var cached = _queryCache.TryGet(query, requestedTopN);
             if (cached is not null)
             {
                 _config.Metrics.RecordCacheHit();
@@ -170,7 +172,7 @@ public sealed partial class IndexSearcher : IDisposable
         }
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        var result = SearchCore(query, topN);
+        var result = SearchCore(query, effectiveTopN);
         sw.Stop();
         _config.Metrics.RecordSearchLatency(sw.Elapsed);
 
@@ -180,9 +182,12 @@ public sealed partial class IndexSearcher : IDisposable
         _config.SlowQueryLog?.MaybeLog(query, sw.Elapsed, result.TotalHits);
         _config.SearchAnalytics?.Record(query, sw.Elapsed, result.TotalHits, cacheHit: false);
 
-        _queryCache?.Put(query, topN, result);
+        _queryCache?.Put(query, requestedTopN, result);
         return result;
     }
+
+    private int NormaliseTopN(int topN)
+        => _totalDocCount > 0 && topN > _totalDocCount ? _totalDocCount : topN;
 
     private TopDocs SearchCore(Query query, int topN)
     {

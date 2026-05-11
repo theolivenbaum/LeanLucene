@@ -133,4 +133,7 @@ public static class IndexCheckIssueCodes
 
     /// <summary>A migration marker cannot be read or describes partial migration state.</summary>
     public const string PartialMigrationMarkerState = "LLIDX042";
+
+    /// <summary>A migration succeeded but its staging directory could not be removed.</summary>
+    public const string MigrationStagingCleanupFailed = "LLIDX043";
 }

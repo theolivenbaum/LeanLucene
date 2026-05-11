@@ -1,4 +1,5 @@
-﻿using Rowles.LeanLucene.Index.Migration;
+using Rowles.LeanLucene.Index.Format;
+using Rowles.LeanLucene.Index.Migration;
 using Rowles.LeanLucene.Store;
 
 namespace Rowles.LeanLucene.Index.Compatibility;
@@ -19,13 +20,9 @@ public static class IndexCompatibility
         ArgumentNullException.ThrowIfNull(directory);
         options ??= new IndexCompatibilityOptions();
 
+        var inventory = IndexFormatInspector.Inspect(directory);
         var validation = IndexValidator.Check(directory, new IndexCheckOptions { Deep = options.DeepValidation });
-        var migrationPlan = IndexCodecMigrator.Plan(directory, new IndexCodecMigrationOptions
-        {
-            DryRun = true,
-            ValidateBeforeMigration = false,
-            ValidateAfterMigration = false
-        });
+        var migrationPlan = IndexCodecMigrator.Plan(inventory);
 
         var issues = new List<IndexCheckIssue>(migrationPlan.Inventory.Issues);
         foreach (var issue in validation.DetailedIssues)

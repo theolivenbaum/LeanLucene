@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using Rowles.LeanLucene.Codecs.StoredFields;
 using ZstdSharp;
@@ -9,25 +10,58 @@ namespace Rowles.LeanLucene.Compression.Zstandard;
 /// </summary>
 public sealed class ZstandardCompressionCodec : IFieldCompressionCodec
 {
+    private static readonly ConcurrentBag<Compressor> Compressors = [];
+    private static readonly ConcurrentBag<Decompressor> Decompressors = [];
+
     /// <inheritdoc />
     public byte PolicyByte => (byte)FieldCompressionPolicy.Zstandard;
 
     /// <inheritdoc />
     public byte[] Compress(ReadOnlySpan<byte> raw)
     {
-        using var compressor = new Compressor();
-        return compressor.Wrap(raw).ToArray();
+        var compressor = RentCompressor();
+        try
+        {
+            return compressor.Wrap(raw).ToArray();
+        }
+        finally
+        {
+            Compressors.Add(compressor);
+        }
     }
 
     /// <inheritdoc />
     public byte[] Decompress(ReadOnlySpan<byte> compressed, int originalSize)
     {
-        using var decompressor = new Decompressor();
-        var raw = decompressor.Unwrap(compressed, originalSize).ToArray();
-        if (raw.Length != originalSize)
-            throw new InvalidDataException($"Zstandard decompressed {raw.Length} bytes; expected {originalSize} bytes.");
+        var decompressor = RentDecompressor();
+        try
+        {
+            var raw = decompressor.Unwrap(compressed, originalSize).ToArray();
+            if (raw.Length != originalSize)
+                throw new InvalidDataException($"Zstandard decompressed {raw.Length} bytes; expected {originalSize} bytes.");
 
-        return raw;
+            return raw;
+        }
+        finally
+        {
+            Decompressors.Add(decompressor);
+        }
+    }
+
+    private static Compressor RentCompressor()
+    {
+        if (Compressors.TryTake(out var compressor))
+            return compressor;
+
+        return new Compressor();
+    }
+
+    private static Decompressor RentDecompressor()
+    {
+        if (Decompressors.TryTake(out var decompressor))
+            return decompressor;
+
+        return new Decompressor();
     }
 }
 

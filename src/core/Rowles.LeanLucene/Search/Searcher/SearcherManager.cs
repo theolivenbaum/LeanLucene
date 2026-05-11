@@ -24,6 +24,7 @@ public sealed class SearcherManager : IDisposable
     private volatile Exception? _lastRefreshError;
     private long _lastRefreshErrorAtTicks;
     private long _consecutiveRefreshFailures;
+    private int _unobservedBackgroundRefreshes;
 
     /// <summary>
     /// The exception thrown by the most recent refresh attempt, or null if the most recent
@@ -142,14 +143,16 @@ public sealed class SearcherManager : IDisposable
     public bool MaybeRefresh()
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-        return TryRefresh();
+        bool refreshed = TryRefresh();
+        bool backgroundRefreshed = Interlocked.Exchange(ref _unobservedBackgroundRefreshes, 0) > 0;
+        return refreshed || backgroundRefreshed;
     }
 
     /// <summary>Async variant of <see cref="MaybeRefresh"/>.</summary>
     public Task<bool> MaybeRefreshAsync(CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        return Task.Run(MaybeRefresh, ct);
+        return Task.FromResult(MaybeRefresh());
     }
 
     /// <summary>Stops the background refresh loop and disposes the current searcher.</summary>
@@ -174,7 +177,8 @@ public sealed class SearcherManager : IDisposable
             try
             {
                 await Task.Delay(_config.RefreshInterval, ct);
-                TryRefresh();
+                if (TryRefresh())
+                    Interlocked.Increment(ref _unobservedBackgroundRefreshes);
             }
             catch (OperationCanceledException) { break; }
             catch (Exception ex) when (ex is IOException or InvalidDataException)
