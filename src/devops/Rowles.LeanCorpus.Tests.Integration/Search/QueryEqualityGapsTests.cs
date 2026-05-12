@@ -323,6 +323,49 @@ public sealed class QueryEqualityGapsTests
         Assert.Throws<ArgumentNullException>(() => new GeoDistanceQuery(null!, 51.5, -0.1, 1000.0));
     }
 
+    /// <summary>Verifies GeoDistanceQuery instances differ when Field differs.</summary>
+    [Fact(DisplayName = "GeoDistanceQuery: Differ By Field")]
+    public void GeoDistanceQuery_DifferByField_NotEqual()
+    {
+        var a = new GeoDistanceQuery("location", 51.5, -0.1, 1000.0);
+        var b = new GeoDistanceQuery("place", 51.5, -0.1, 1000.0);
+        Assert.NotEqual(a, b);
+    }
+
+    /// <summary>Verifies GeoDistanceQuery instances differ when CentreLat differs.</summary>
+    [Fact(DisplayName = "GeoDistanceQuery: Differ By CentreLat")]
+    public void GeoDistanceQuery_DifferByCentreLat_NotEqual()
+    {
+        var a = new GeoDistanceQuery("f", 51.5, -0.1, 1000.0);
+        var b = new GeoDistanceQuery("f", 52.0, -0.1, 1000.0);
+        Assert.NotEqual(a, b);
+    }
+
+    /// <summary>Verifies GeoDistanceQuery instances differ when CentreLon differs.</summary>
+    [Fact(DisplayName = "GeoDistanceQuery: Differ By CentreLon")]
+    public void GeoDistanceQuery_DifferByCentreLon_NotEqual()
+    {
+        var a = new GeoDistanceQuery("f", 51.5, -0.1, 1000.0);
+        var b = new GeoDistanceQuery("f", 51.5, 0.5, 1000.0);
+        Assert.NotEqual(a, b);
+    }
+
+    /// <summary>Verifies GeoDistanceQuery.Equals(object) returns false for null.</summary>
+    [Fact(DisplayName = "GeoDistanceQuery: Equals Null Returns False")]
+    public void GeoDistanceQuery_EqualsNull_ReturnsFalse()
+    {
+        var q = new GeoDistanceQuery("f", 51.5, -0.1, 1000.0);
+        Assert.False(q.Equals((object?)null));
+    }
+
+    /// <summary>Verifies GeoDistanceQuery.Equals(object) returns false for a different type.</summary>
+    [Fact(DisplayName = "GeoDistanceQuery: Equals Wrong Type Returns False")]
+    public void GeoDistanceQuery_EqualsWrongType_ReturnsFalse()
+    {
+        var q = new GeoDistanceQuery("f", 51.5, -0.1, 1000.0);
+        Assert.False(q.Equals("not a query"));
+    }
+
     // ── FunctionScoreQuery ────────────────────────────────────────────────────
 
     /// <summary>Verifies FunctionScoreQuery exposes Inner, NumericField, Mode, and Field.</summary>

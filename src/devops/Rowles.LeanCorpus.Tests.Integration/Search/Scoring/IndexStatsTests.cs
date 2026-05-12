@@ -147,6 +147,14 @@ public sealed class IndexStatsTests : IDisposable
         Assert.NotNull(IndexStats.TryLoadFrom(path));
     }
 
+    [Fact(DisplayName = "IndexStats: TryLoadFrom Returns Null For JSON Null Literal")]
+    public void TryLoadFrom_NullJsonLiteral_ReturnsNull()
+    {
+        var path = Path.Combine(_dir, "null_stats.json");
+        File.WriteAllText(path, "null");
+        Assert.Null(IndexStats.TryLoadFrom(path));
+    }
+
     // ── GetStatsPath ──────────────────────────────────────────────────────────
 
     [Fact(DisplayName = "IndexStats: GetStatsPath Returns Correct Path")]
