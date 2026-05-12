@@ -6,14 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.3.1] - 2026-xx-xx
 
-### Changed
-- License changed to Apache 2
-
-### Tests
+### Added
 - Added integration and chaos tests covering previously untested `SegmentReader` methods: `GetFieldLength`, `GetDocIds`, `GetDocFreq`, `GetStoredFields` null path, `GetNumericRange` variants, all DocValues readers, postings methods (`GetPostingsEnumWithPositions`, `GetPositions`, `GetTermFrequency`), pattern-matching methods (`GetTermsMatching`, `IntersectAutomaton`), and vector methods (`GetVector`, `EnsureVectorReaderNoLock`).
 - Added chaos property tests for corrupted `.pos`, `.dvn`, and `.vec` codec files to verify structured exceptions are raised rather than silent data corruption.
 - Added integration tests covering previously untested `IndexValidator` branches: corrupt migration marker catch block, stale temp file patterns, segment-missing-files path, `.fdt`/`.fdx` magic and version checks, doc count and block offset validation, missing deletion file, live-doc count mismatch, vector/HNSW magic, dimension, and normalisation checks, and deep vector/HNSW validation.
 - Added integration tests covering previously untested `IndexSearcher` members: `Metrics` property, `SpanNearQuery`/`SpanOrQuery`/`SpanNotQuery` collection paths, `BlockJoinQuery` with a non-`TermQuery` child (exercises the `BitArray` path in `CollectChildDocsIntoBitArray`), and `VectorQuery` execution.
+- Added unit tests for `IndexFormatInspectionOptions.IncludeChecksums`, `IndexFileInspector` commit-file discovery and all error branches of `TryReadCommit` and `CheckCodecHeader`, and `VectorFilePaths.Sanitise` covering all character-substitution and heap-allocation branches.
+- Added integration tests for `SimdIntrinsicsVectorOps` AVX-512 paths (`CosineAvx512`, `DotAvx512`; conditionally skipped when unsupported) and three new `IndexCodecMigrator` paths: non-executable plan, pre-migration validation failure, and auto-generated staging directory.
+- Added chaos tests for `IndexCodecMigrator`: read-only `.dic` forcing the exception catch path, and a staged migration where a corrupted `.nrm` triggers `ValidateAfterMigration` failure.
+
+### Changed
+- License changed to Apache 2
 
 ## [1.3.0] - 2026-05-11
 
