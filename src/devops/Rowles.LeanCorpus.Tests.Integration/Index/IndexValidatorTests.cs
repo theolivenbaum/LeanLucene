@@ -152,7 +152,9 @@ public sealed class IndexValidatorTests : IClassFixture<TestDirectoryFixture>
         var dir = new MMapDirectory(path);
         var result = IndexValidator.Validate(dir);
         Assert.False(result.IsHealthy);
-        Assert.True(result.Issues.Any(i => i.Contains(".fdx") || i.Contains(".seg")));
+        Assert.Contains(result.Issues, issue =>
+            issue.Contains(".fdx", StringComparison.Ordinal) ||
+            issue.Contains(".seg", StringComparison.Ordinal));
     }
 
     /// <summary>
@@ -183,7 +185,7 @@ public sealed class IndexValidatorTests : IClassFixture<TestDirectoryFixture>
 
         var dir = new MMapDirectory(path);
         var result = IndexValidator.Validate(dir);
-        Assert.True(result.Issues.Any(i => i.Contains(".nrm")));
+        Assert.Contains(result.Issues, issue => issue.Contains(".nrm", StringComparison.Ordinal));
     }
 
     [Fact(DisplayName = "Check: Missing Required File Returns Structured Issue")]

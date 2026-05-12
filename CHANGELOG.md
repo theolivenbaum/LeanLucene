@@ -57,6 +57,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stored-field codec migration now streams existing documents into temporary `.fdt.tmp` and `.fdx.tmp` files before publication, avoiding Windows file-handle conflicts without buffering the whole segment.
 - Codec migration now plans richer DocValues rewrites, publishes in-place rewrites through temporary files, removes published staging directories, and marks unexpected migration failures as failed.
 - Fuzzy term lookup, searcher refresh observation, and query cache top-N keying now behave deterministically under the full test suite.
+- Integration tests migrated from `Assert.True(...Any(...))` to `Assert.Contains` with `StringComparison.Ordinal`; fuzzy-query test corrected to use well-defined edit-distance data.
+- Docs site header was missing the Coverage link; `toc.yml` and `docfx.json` updated to include the coverage report.
+- Build workflow branch list updated from `1.3.0` to `1.4.0`.
+- Benchmark result method names corrected from `LeanCorpus_` to `LeanLucene_`.
 
 ### Removed
 

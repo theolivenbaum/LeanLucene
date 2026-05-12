@@ -173,7 +173,7 @@ public sealed class AdvancedSearchTests : IClassFixture<TestDirectoryFixture>
         var dir = new MMapDirectory(SubDir("fuzzy_1edit"));
         using var writer = new IndexWriter(dir, new IndexWriterConfig());
 
-        foreach (var t in new[] { "corpus", "lusene", "lycene", "other" })
+        foreach (var t in new[] { "lucene", "lusene", "lycexe", "other" })
         {
             var doc = new LeanDocument();
             doc.Add(new TextField("body", t));
@@ -182,9 +182,15 @@ public sealed class AdvancedSearchTests : IClassFixture<TestDirectoryFixture>
         writer.Commit();
 
         using var searcher = new IndexSearcher(dir);
-        var results = searcher.Search(new FuzzyQuery("body", "corpus", 1), 10);
-        // "corpus" (0 edits), "lusene" (1 edit) — "lycene" is 2 edits, "other" > 2
-        Assert.True(results.TotalHits >= 2);
+        var results = searcher.Search(new FuzzyQuery("body", "lucene", 1), 10);
+        var bodies = results.ScoreDocs
+            .Select(scoreDoc => searcher.GetStoredFields(scoreDoc.DocId)["body"][0])
+            .ToArray();
+
+        Assert.Equal(2, results.TotalHits);
+        Assert.Contains("lucene", bodies);
+        Assert.Contains("lusene", bodies);
+        Assert.DoesNotContain("lycexe", bodies);
     }
 
     /// <summary>

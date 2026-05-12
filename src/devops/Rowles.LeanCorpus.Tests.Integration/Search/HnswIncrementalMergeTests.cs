@@ -89,8 +89,7 @@ public sealed class HnswIncrementalMergeTests : IClassFixture<TestDirectoryFixtu
         var mergedSegment = mergedSegments
             .FirstOrDefault(c => sourceSegments.All(s => s.SegmentId != c.SegmentId));
         Assert.NotNull(mergedSegment);
-        Assert.True(mergedSegment!.VectorFields.Any(vf => vf.FieldName == "embedding" && vf.HasHnsw),
-            "Merged segment must retain HNSW for the embedding field.");
+        Assert.Contains(mergedSegment!.VectorFields, vf => vf.FieldName == "embedding" && vf.HasHnsw);
 
         // Publish a commit referencing the full active set: merged + any left-over segments.
         int generation = Directory.GetFiles(dir, "segments_*")
