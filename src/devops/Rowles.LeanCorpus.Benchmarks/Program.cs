@@ -111,6 +111,73 @@ internal static class Program
         if (runAll || suites.Contains(BenchmarkSuite.GutenbergSearch))
             RunSuite<GutenbergSearchBenchmarks>("gutenberg-search", runDir, benchmarkArgs, suiteSummaries, gcDump);
 
+        // Phase 1: query parity
+        if (runAll || suites.Contains(BenchmarkSuite.Range))
+            RunSuite<RangeQueryBenchmarks>("range", runDir, benchmarkArgs, suiteSummaries, gcDump);
+
+        if (runAll || suites.Contains(BenchmarkSuite.Regexp))
+            RunSuite<RegexpQueryBenchmarks>("regexp", runDir, benchmarkArgs, suiteSummaries, gcDump);
+
+        if (runAll || suites.Contains(BenchmarkSuite.Dismax))
+            RunSuite<DisjunctionMaxQueryBenchmarks>("dismax", runDir, benchmarkArgs, suiteSummaries, gcDump);
+
+        if (runAll || suites.Contains(BenchmarkSuite.MultiPhrase))
+            RunSuite<MultiPhraseQueryBenchmarks>("multiphrase", runDir, benchmarkArgs, suiteSummaries, gcDump);
+
+        if (runAll || suites.Contains(BenchmarkSuite.Span))
+            RunSuite<SpanQueryBenchmarks>("span", runDir, benchmarkArgs, suiteSummaries, gcDump);
+
+        // Phase 2: standalone (no Lucene.NET parity)
+        if (runAll || suites.Contains(BenchmarkSuite.MoreLikeThis))
+            RunSuite<MoreLikeThisBenchmarks>("mlt", runDir, benchmarkArgs, suiteSummaries, gcDump);
+
+        if (runAll || suites.Contains(BenchmarkSuite.Highlighter))
+            RunSuite<HighlighterBenchmarks>("highlighter", runDir, benchmarkArgs, suiteSummaries, gcDump);
+
+        if (runAll || suites.Contains(BenchmarkSuite.SearcherManager))
+            RunSuite<SearcherManagerBenchmarks>("searcher-mgr", runDir, benchmarkArgs, suiteSummaries, gcDump);
+
+        // Phase 3: standalone post-Gutenberg
+        if (runAll || suites.Contains(BenchmarkSuite.CombinedFields))
+            RunSuite<CombinedFieldsQueryBenchmarks>("combined", runDir, benchmarkArgs, suiteSummaries, gcDump);
+
+        if (runAll || suites.Contains(BenchmarkSuite.TermInSet))
+            RunSuite<TermInSetQueryBenchmarks>("terminset", runDir, benchmarkArgs, suiteSummaries, gcDump);
+
+        if (runAll || suites.Contains(BenchmarkSuite.Aggregation))
+            RunSuite<AggregationBenchmarks>("aggregation", runDir, benchmarkArgs, suiteSummaries, gcDump);
+
+        if (runAll || suites.Contains(BenchmarkSuite.QueryCache))
+            RunSuite<QueryCacheBenchmarks>("query-cache", runDir, benchmarkArgs, suiteSummaries, gcDump);
+
+        if (runAll || suites.Contains(BenchmarkSuite.ParallelSearch))
+            RunSuite<ParallelSearchBenchmarks>("parallel", runDir, benchmarkArgs, suiteSummaries, gcDump);
+
+        if (runAll || suites.Contains(BenchmarkSuite.FunctionScore))
+            RunSuite<FunctionScoreQueryBenchmarks>("function-score", runDir, benchmarkArgs, suiteSummaries, gcDump);
+
+        if (runAll || suites.Contains(BenchmarkSuite.Geo))
+            RunSuite<GeoQueryBenchmarks>("geo", runDir, benchmarkArgs, suiteSummaries, gcDump);
+
+        if (runAll || suites.Contains(BenchmarkSuite.CollapseAndFacet))
+            RunSuite<CollapseAndFacetBenchmarks>("collapse-facet", runDir, benchmarkArgs, suiteSummaries, gcDump);
+
+        if (runAll || suites.Contains(BenchmarkSuite.Similarity))
+            RunSuite<SimilarityBenchmarks>("similarity", runDir, benchmarkArgs, suiteSummaries, gcDump);
+
+        // Phase 4: analysis
+        if (runAll || suites.Contains(BenchmarkSuite.Stemmer))
+            RunSuite<StemmerParityBenchmarks>("stemmer", runDir, benchmarkArgs, suiteSummaries, gcDump);
+
+        if (runAll || suites.Contains(BenchmarkSuite.NGram))
+            RunSuite<NGramTokeniserBenchmarks>("ngram", runDir, benchmarkArgs, suiteSummaries, gcDump);
+
+        if (runAll || suites.Contains(BenchmarkSuite.Synonym))
+            RunSuite<SynonymBenchmarks>("synonym", runDir, benchmarkArgs, suiteSummaries, gcDump);
+
+        if (runAll || suites.Contains(BenchmarkSuite.AsyncIndex))
+            RunSuite<AsyncIndexingBenchmarks>("async-index", runDir, benchmarkArgs, suiteSummaries, gcDump);
+
         if (suiteSummaries.Count == 0)
         {
             Console.Error.WriteLine("No benchmark suite selected.");
@@ -424,6 +491,27 @@ internal static class Program
         BlockJoin,
         GutenbergAnalysis,
         GutenbergIndex,
-        GutenbergSearch
+        GutenbergSearch,
+        Range,
+        Regexp,
+        Dismax,
+        MultiPhrase,
+        Span,
+        MoreLikeThis,
+        Highlighter,
+        SearcherManager,
+        CombinedFields,
+        TermInSet,
+        Aggregation,
+        QueryCache,
+        ParallelSearch,
+        FunctionScore,
+        Geo,
+        CollapseAndFacet,
+        Similarity,
+        Stemmer,
+        NGram,
+        Synonym,
+        AsyncIndex,
     }
 }
