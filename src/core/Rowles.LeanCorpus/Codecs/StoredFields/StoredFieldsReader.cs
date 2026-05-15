@@ -51,12 +51,6 @@ internal sealed class StoredFieldsReader : IDisposable
         if (firstInt == CodecConstants.Magic)
         {
             version = fdxReader.ReadByte();
-            if (version > CodecConstants.StoredFieldsVersion)
-                throw new InvalidDataException(
-                    $"Unsupported stored fields format version {version}. " +
-                    $"This build supports up to version {CodecConstants.StoredFieldsVersion}. " +
-                    "Please upgrade LeanCorpus.");
-
             blockSize = fdxReader.ReadInt32();
             docCount = fdxReader.ReadInt32();
             blockCount = fdxReader.ReadInt32();
@@ -69,6 +63,8 @@ internal sealed class StoredFieldsReader : IDisposable
             docCount = fdxReader.ReadInt32();
             blockCount = fdxReader.ReadInt32();
         }
+
+        ValidateSupportedVersion(version, "stored fields index (.fdx)");
 
         var blockOffsets = new long[blockCount];
         for (int i = 0; i < blockCount; i++)
@@ -84,6 +80,8 @@ internal sealed class StoredFieldsReader : IDisposable
         {
             byte fdtVersion = reader.ReadByte();
             int fdtBlockSize = reader.ReadInt32();
+            ValidateSupportedVersion(fdtVersion, "stored fields data (.fdt)");
+            ValidateMatchingHeaders(fdtPath, fdxPath, fdtVersion, version, fdtBlockSize, blockSize);
             if (fdtVersion >= 5)
             {
                 compression = (FieldCompressionPolicy)reader.ReadByte();
@@ -98,12 +96,46 @@ internal sealed class StoredFieldsReader : IDisposable
         {
             // Pre-magic: Brotli
             fs.Seek(0, SeekOrigin.Begin);
-            reader.ReadByte(); // old version byte
-            reader.ReadInt32(); // blockSize
+            byte fdtVersion = reader.ReadByte();
+            int fdtBlockSize = reader.ReadInt32();
+            ValidateSupportedVersion(fdtVersion, "stored fields data (.fdt)");
+            ValidateMatchingHeaders(fdtPath, fdxPath, fdtVersion, version, fdtBlockSize, blockSize);
             compression = FieldCompressionPolicy.Brotli;
         }
 
         return new StoredFieldsReader(fs, reader, blockSize, blockOffsets, compression, version);
+    }
+
+    private static void ValidateSupportedVersion(byte version, string fileType)
+    {
+        if (version > CodecConstants.StoredFieldsVersion)
+        {
+            throw new InvalidDataException(
+                $"Unsupported {fileType} format version {version}. " +
+                $"This build supports up to version {CodecConstants.StoredFieldsVersion}. " +
+                "Please upgrade LeanCorpus.");
+        }
+    }
+
+    private static void ValidateMatchingHeaders(
+        string fdtPath,
+        string fdxPath,
+        byte fdtVersion,
+        byte fdxVersion,
+        int fdtBlockSize,
+        int fdxBlockSize)
+    {
+        if (fdtVersion != fdxVersion)
+        {
+            throw new InvalidDataException(
+                $"Mismatched stored fields versions between '{fdtPath}' and '{fdxPath}'.");
+        }
+
+        if (fdtBlockSize != fdxBlockSize)
+        {
+            throw new InvalidDataException(
+                $"Mismatched stored fields block sizes between '{fdtPath}' and '{fdxPath}'.");
+        }
     }
 
     public Dictionary<string, List<string>> ReadDocument(int docId)
