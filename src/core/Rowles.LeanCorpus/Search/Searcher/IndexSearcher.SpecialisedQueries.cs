@@ -10,6 +10,214 @@ public sealed partial class IndexSearcher
     [ThreadStatic] private static float[]? t_patternScores;
     [ThreadStatic] private static bool[]? t_patternSeen;
     [ThreadStatic] private static int[]? t_patternDocIds;
+    [ThreadStatic] private static int[]? t_patternCounts;
+    [ThreadStatic] private static float[]? t_patternScratchScores;
+    [ThreadStatic] private static int[]? t_patternScratchDocIds;
+
+    private void ExecuteMatchAllDocsQuery(MatchAllDocsQuery query, SegmentReader reader, ref TopNCollector collector)
+    {
+        float score = query.Boost != 1.0f ? query.Boost : 1.0f;
+        int docBase = reader.DocBase;
+        for (int docId = 0; docId < reader.MaxDoc; docId++)
+        {
+            if (reader.IsLive(docId))
+                collector.Collect(docBase + docId, score);
+        }
+    }
+
+    private static void ExecuteMatchNoDocsQuery(MatchNoDocsQuery query, SegmentReader reader, ref TopNCollector collector)
+    {
+    }
+
+    private void ExecuteFieldExistsQuery(FieldExistsQuery query, SegmentReader reader, ref TopNCollector collector)
+    {
+        float score = query.Boost != 1.0f ? query.Boost : 1.0f;
+        int docBase = reader.DocBase;
+        for (int docId = 0; docId < reader.MaxDoc; docId++)
+        {
+            if (reader.IsLive(docId) && reader.HasFieldValue(query.Field, docId))
+                collector.Collect(docBase + docId, ApplyFieldBoost(reader, docId, query.Field, score));
+        }
+    }
+
+    private void ExecuteTermInSetQuery(TermInSetQuery query, SegmentReader reader, ref TopNCollector collector)
+    {
+        if (query.Terms.Count == 0)
+            return;
+
+        var seen = EnsureScratch(ref t_patternSeen, reader.MaxDoc);
+        var docIds = EnsureScratch(ref t_patternDocIds, reader.MaxDoc);
+        int docCount = 0;
+
+        try
+        {
+            foreach (var qualifiedTerm in query.QualifiedTerms)
+            {
+                using var postings = reader.GetPostingsEnum(qualifiedTerm);
+                while (postings.MoveNext())
+                {
+                    int docId = postings.DocId;
+                    if (!reader.IsLive(docId) || seen[docId])
+                        continue;
+
+                    seen[docId] = true;
+                    docIds[docCount++] = docId;
+                }
+            }
+
+            int docBase = reader.DocBase;
+            float score = query.Boost != 1.0f ? query.Boost : 1.0f;
+            for (int i = 0; i < docCount; i++)
+            {
+                int docId = docIds[i];
+                collector.Collect(docBase + docId, ApplyFieldBoost(reader, docId, query.Field, score));
+            }
+        }
+        finally
+        {
+            for (int i = 0; i < docCount; i++)
+            {
+                seen[docIds[i]] = false;
+                docIds[i] = 0;
+            }
+        }
+    }
+
+    private void ExecutePointInSetQuery(PointInSetQuery query, SegmentReader reader, ref TopNCollector collector)
+    {
+        if (query.Points.Count == 0)
+            return;
+
+        var pointSet = query.Points.ToHashSet();
+        var matches = reader.GetNumericPointsInSet(query.Field, pointSet);
+        if (matches.Count == 0)
+            return;
+
+        int docBase = reader.DocBase;
+        float score = query.Boost != 1.0f ? query.Boost : 1.0f;
+        foreach (var match in matches)
+            collector.Collect(docBase + match.DocId, ApplyFieldBoost(reader, match.DocId, query.Field, score));
+    }
+
+    private void ExecuteCombinedFieldsQuery(
+        CombinedFieldsQuery query,
+        SegmentReader reader,
+        Dictionary<(string Field, string Term), int> globalDFs,
+        ref TopNCollector collector)
+    {
+        if (query.Fields.Count == 0 || query.Terms.Count == 0)
+            return;
+
+        var totalScores = EnsureScratch(ref t_patternScores, reader.MaxDoc);
+        var seenDocs = EnsureScratch(ref t_patternSeen, reader.MaxDoc);
+        var matchedTermCounts = EnsureScratch(ref t_patternCounts, reader.MaxDoc);
+        var docIds = EnsureScratch(ref t_patternDocIds, reader.MaxDoc);
+        var termPseudoFrequencies = EnsureScratch(ref t_patternScratchScores, reader.MaxDoc);
+        var termDocIds = EnsureScratch(ref t_patternScratchDocIds, reader.MaxDoc);
+        int docCount = 0;
+
+        try
+        {
+            foreach (var term in query.Terms)
+            {
+                int termDocCount = 0;
+                foreach (var field in query.Fields)
+                {
+                    float avgFieldLength = _stats.GetAvgFieldLength(field);
+                    using var postings = reader.GetPostingsEnum(string.Concat(field, "\x00", term));
+                    while (postings.MoveNext())
+                    {
+                        int docId = postings.DocId;
+                        if (!reader.IsLive(docId))
+                            continue;
+
+                        if (termPseudoFrequencies[docId] == 0f)
+                            termDocIds[termDocCount++] = docId;
+
+                        float fieldWeight = query.GetFieldWeight(field) * reader.GetFieldBoost(docId, field);
+                        int docLength = reader.GetFieldLength(docId, field);
+                        termPseudoFrequencies[docId] += Bm25Scorer.NormaliseFieldTermFrequency(
+                            postings.Freq,
+                            docLength,
+                            avgFieldLength,
+                            fieldWeight);
+                    }
+                }
+
+                if (termDocCount == 0)
+                    continue;
+
+                int unionDocFreq = globalDFs.TryGetValue((CombinedFieldsDocFreqKey, term), out int precomputedDocFreq)
+                    ? precomputedDocFreq
+                    : ComputeCombinedFieldUnionDocFreq(query, term);
+                float idf = Bm25Scorer.Idf(_totalDocCount, unionDocFreq);
+                for (int i = 0; i < termDocCount; i++)
+                {
+                    int docId = termDocIds[i];
+                    float score = Bm25Scorer.ScoreCombinedWithIdf(idf, termPseudoFrequencies[docId]);
+                    if (score <= 0f)
+                    {
+                        termPseudoFrequencies[docId] = 0f;
+                        termDocIds[i] = 0;
+                        continue;
+                    }
+
+                    totalScores[docId] += score;
+                    matchedTermCounts[docId]++;
+                    if (!seenDocs[docId])
+                    {
+                        seenDocs[docId] = true;
+                        docIds[docCount++] = docId;
+                    }
+
+                    termPseudoFrequencies[docId] = 0f;
+                    termDocIds[i] = 0;
+                }
+            }
+
+            int docBase = reader.DocBase;
+            float queryBoost = query.Boost != 1.0f ? query.Boost : 1.0f;
+            for (int i = 0; i < docCount; i++)
+            {
+                int docId = docIds[i];
+                if (matchedTermCounts[docId] >= query.MinimumShouldMatch)
+                    collector.Collect(docBase + docId, totalScores[docId] * queryBoost);
+            }
+        }
+        finally
+        {
+            for (int i = 0; i < docCount; i++)
+            {
+                int docId = docIds[i];
+                totalScores[docId] = 0f;
+                seenDocs[docId] = false;
+                matchedTermCounts[docId] = 0;
+                docIds[i] = 0;
+            }
+        }
+    }
+
+    private int ComputeCombinedFieldUnionDocFreq(CombinedFieldsQuery query, string term)
+    {
+        int total = 0;
+        foreach (var reader in _readers)
+        {
+            var docs = new HashSet<int>();
+            foreach (var field in query.Fields)
+            {
+                using var postings = reader.GetPostingsEnum(string.Concat(field, "\x00", term));
+                while (postings.MoveNext())
+                {
+                    if (reader.IsLive(postings.DocId))
+                        docs.Add(postings.DocId);
+                }
+            }
+
+            total += docs.Count;
+        }
+
+        return total;
+    }
 
     private void ExecuteRangeQuery(RangeQuery query, SegmentReader reader, ref TopNCollector collector)
     {
@@ -19,7 +227,7 @@ public sealed partial class IndexSearcher
         if (rangeResults.Count > 0)
         {
             foreach (var r in rangeResults)
-                collector.Collect(docBase + r.DocId, score);
+                collector.Collect(docBase + r.DocId, ApplyFieldBoost(reader, r.DocId, query.Field, score));
             return;
         }
 
@@ -31,7 +239,7 @@ public sealed partial class IndexSearcher
             if (stored.TryGetValue(query.Field, out var values) && values.Count > 0 && double.TryParse(values[0], out var val))
             {
                 if (val >= query.Min && val <= query.Max)
-                    collector.Collect(docBase + docId, score);
+                    collector.Collect(docBase + docId, ApplyFieldBoost(reader, docId, query.Field, score));
             }
         }
     }
@@ -67,7 +275,7 @@ public sealed partial class IndexSearcher
                 }
                 var (f1, f2) = _similarity.PrecomputeFactors(_totalDocCount, docFreq, avgDocLength);
 
-                AccumulatePostingsScores(reader, postings, f1, f2, fieldLengths, boost, scores, seen, docIds, ref docCount);
+                AccumulatePostingsScores(reader, postings, query.Field, f1, f2, fieldLengths, boost, scores, seen, docIds, ref docCount);
             }
 
             CollectAccumulatedScores(scores, docIds, docCount, docBase, ref collector);
@@ -111,7 +319,7 @@ public sealed partial class IndexSearcher
                     if (postings.IsExhausted) continue;
 
                     var (f1, f2) = _similarity.PrecomputeFactors(_totalDocCount, postings.DocFreq, avgDocLength);
-                    AccumulatePostingsScores(reader, postings, f1, f2, fieldLengths, boost, scores, seen, docIds, ref docCount);
+                    AccumulatePostingsScores(reader, postings, query.Field, f1, f2, fieldLengths, boost, scores, seen, docIds, ref docCount);
                 }
 
                 CollectAccumulatedScores(scores, docIds, docCount, docBase, ref collector);
@@ -131,7 +339,7 @@ public sealed partial class IndexSearcher
                 docFreq = globalDFs.GetValueOrDefault((query.Field, termPart), docFreq);
                 var (f1, f2) = _similarity.PrecomputeFactors(_totalDocCount, docFreq, avgDocLength);
 
-                AccumulatePostingsScores(reader, postings, f1, f2, fieldLengths, boost, scores, seen, docIds, ref docCount);
+                AccumulatePostingsScores(reader, postings, query.Field, f1, f2, fieldLengths, boost, scores, seen, docIds, ref docCount);
             }
 
             CollectAccumulatedScores(scores, docIds, docCount, docBase, ref collector);
@@ -143,7 +351,7 @@ public sealed partial class IndexSearcher
     }
 
     private void AccumulatePostingsScores(SegmentReader reader, PostingsEnum postings,
-        float f1, float f2, int[]? fieldLengths, float boost,
+        string field, float f1, float f2, int[]? fieldLengths, float boost,
         float[] scores, bool[] seen, int[] docIds, ref int docCount)
     {
         while (postings.MoveNext())
@@ -156,6 +364,7 @@ public sealed partial class IndexSearcher
                 ? fieldLengths[docId] : 1;
             float score = _similarity.ScorePrecomputed(f1, f2, tf, docLength);
             if (boost != 1.0f) score *= boost;
+            score = ApplyFieldBoost(reader, docId, field, score);
             if (!seen[docId])
             {
                 seen[docId] = true;
@@ -238,6 +447,7 @@ public sealed partial class IndexSearcher
                     ? fieldLengths[docId] : 1;
                 float score = _similarity.ScorePrecomputed(f1, f2, tf, docLength) * distanceFactor;
                 if (boost != 1.0f) score *= boost;
+                score = ApplyFieldBoost(reader, docId, query.Field, score);
                 collector.Collect(docBase + docId, score);
             }
         }
@@ -276,6 +486,7 @@ public sealed partial class IndexSearcher
                     ? fieldLengths[docId] : 1;
                 float score = _similarity.ScorePrecomputed(f1, f2, tf, docLength);
                 if (boost != 1.0f) score *= boost;
+                score = ApplyFieldBoost(reader, docId, query.Field, score);
                 collector.Collect(docBase + docId, score);
             }
         }
@@ -313,6 +524,7 @@ public sealed partial class IndexSearcher
                     ? fieldLengths[docId] : 1;
                 float score = _similarity.ScorePrecomputed(f1, f2, tf, docLength);
                 if (boost != 1.0f) score *= boost;
+                score = ApplyFieldBoost(reader, docId, query.Field, score);
                 collector.Collect(docBase + docId, score);
             }
         }
@@ -329,7 +541,7 @@ public sealed partial class IndexSearcher
         if (query.Boost != 1.0f) constantScore *= query.Boost;
 
         foreach (var sd in innerCollector.ToTopDocs().ScoreDocs)
-            collector.Collect(sd.DocId, constantScore);
+            collector.Collect(sd.DocId, ApplyFieldBoost(reader, sd.DocId - reader.DocBase, query.Field, constantScore));
     }
 
     private void ExecuteDisjunctionMaxQuery(DisjunctionMaxQuery query, SegmentReader reader,
@@ -449,6 +661,7 @@ public sealed partial class IndexSearcher
                 var docVector = reader.GetVector(query.Field, hit.DocId);
                 if (docVector is null || docVector.Length == 0) continue;
                 float similarity = VectorQuery.CosineSimilarity(queryVec, docVector);
+                similarity = ApplyFieldBoost(reader, hit.DocId, query.Field, similarity);
                 collector.Collect(docBase + hit.DocId, similarity);
             }
             return;
@@ -475,6 +688,7 @@ public sealed partial class IndexSearcher
                 var docVector = reader.GetVector(query.Field, hit.DocId);
                 if (docVector is null || docVector.Length == 0) continue;
                 float similarity = VectorQuery.CosineSimilarity(queryVec, docVector);
+                similarity = ApplyFieldBoost(reader, hit.DocId, query.Field, similarity);
                 collector.Collect(docBase + hit.DocId, similarity);
             }
             return;
@@ -493,6 +707,7 @@ public sealed partial class IndexSearcher
             var docVector = reader.GetVector(query.Field, docId);
             if (docVector is null || docVector.Length == 0) continue;
             float similarity = VectorQuery.CosineSimilarity(queryVec, docVector);
+            similarity = ApplyFieldBoost(reader, docId, query.Field, similarity);
             collector.Collect(docBase + docId, similarity);
         }
     }
@@ -512,6 +727,7 @@ public sealed partial class IndexSearcher
             var docVector = reader.GetVector(query.Field, docId);
             if (docVector is null || docVector.Length == 0) continue;
             float similarity = VectorQuery.CosineSimilarity(queryVec, docVector);
+            similarity = ApplyFieldBoost(reader, docId, query.Field, similarity);
             collector.Collect(docBase + docId, similarity);
         }
     }
@@ -582,7 +798,7 @@ public sealed partial class IndexSearcher
             if (!reader.IsLive(docId)) continue;
             if (!reader.TryGetNumericValue(lonField, docId, out double lon)) continue;
             if (lon >= query.MinLon && lon <= query.MaxLon)
-                collector.Collect(docBase + docId, score);
+                collector.Collect(docBase + docId, ApplyFieldBoost(reader, docId, query.Field, score));
         }
     }
 
@@ -614,7 +830,7 @@ public sealed partial class IndexSearcher
             // Precise Haversine check
             double dist = GeoEncodingUtils.HaversineDistance(query.CentreLat, query.CentreLon, lat, lon);
             if (dist <= query.RadiusMetres)
-                collector.Collect(docBase + docId, score);
+                collector.Collect(docBase + docId, ApplyFieldBoost(reader, docId, query.Field, score));
         }
     }
 }

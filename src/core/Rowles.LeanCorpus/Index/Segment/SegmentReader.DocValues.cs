@@ -251,6 +251,71 @@ public sealed partial class SegmentReader
     }
 
     /// <summary>
+    /// Returns all document IDs whose numeric point value is equal to any value in the supplied set.
+    /// </summary>
+    public List<(int DocId, double Value)> GetNumericPointsInSet(string field, IReadOnlySet<double> values)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+
+        var results = new List<(int, double)>();
+        if (values.Count == 0)
+            return results;
+
+        var bkd = EnsureBkdReader();
+        if (bkd is not null && bkd.HasField(field))
+        {
+            var raw = bkd.ExactSetQuery(field, values);
+            if (_liveDocs is null)
+                return raw;
+
+            results.Capacity = raw.Count;
+            foreach (var hit in raw)
+            {
+                if (IsLive(hit.DocId))
+                    results.Add(hit);
+            }
+            return results;
+        }
+
+        var numericIndex = EnsureNumericIndex();
+        if (!numericIndex.TryGetValue(field, out var fieldMap))
+            return results;
+
+        foreach (var (docId, value) in fieldMap)
+        {
+            if (values.Contains(value) && IsLive(docId))
+                results.Add((docId, value));
+        }
+
+        return results;
+    }
+
+    /// <summary>Returns <see langword="true"/> when the document contains at least one value for the named field.</summary>
+    public bool HasFieldValue(string field, int docId)
+    {
+        if (TryGetFieldLengths(field, out var lengths) &&
+            (uint)docId < (uint)lengths.Length &&
+            lengths[docId] > 0)
+        {
+            return true;
+        }
+
+        if (TryGetNumericValue(field, docId, out _) ||
+            TryGetSortedDocValue(field, docId, out _) ||
+            TryGetSortedSetDocValues(field, docId, out var sortedSetValues) && sortedSetValues.Count > 0 ||
+            TryGetSortedNumericDocValues(field, docId, out var sortedNumericValues) && sortedNumericValues.Count > 0 ||
+            TryGetBinaryDocValues(field, docId, out var binaryValues) && binaryValues.Count > 0)
+        {
+            return true;
+        }
+
+        if (_vectorPaths.ContainsKey(field) && GetVector(field, docId) is { Length: > 0 })
+            return true;
+
+        return _storedReader is not null && _storedReader.HasField(docId, field);
+    }
+
+    /// <summary>
     /// Lazily opens the BKD reader for this segment if a .bkd file is present.
     /// Returns null when there is no BKD file or it cannot be opened.
     /// </summary>

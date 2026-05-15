@@ -147,7 +147,7 @@ public sealed class DwptTests
     {
         // Arrange — create a DWPT directly (internal class, accessible via InternalsVisibleTo)
         var analyser = new StandardAnalyser();
-        var dwpt = new DocumentsWriterPerThread(analyser, new Dictionary<string, IAnalyser>());
+        var dwpt = new DocumentsWriterPerThread(analyser, new Dictionary<string, IAnalyser>(), storePayloads: false);
 
         Assert.Equal(0, dwpt.EstimatedRamBytes);
 

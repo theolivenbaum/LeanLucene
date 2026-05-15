@@ -71,13 +71,81 @@ public sealed partial class IndexSearcher
 
             if (hasAllPositions && HasPositionsWithinSlopSpan(postingsArr, termCount, leaderIdx, slop))
             {
-                collector.Collect(docBase + docId, score);
+                collector.Collect(docBase + docId, ApplyFieldBoost(reader, docId, query.Field, score));
             }
             // No fallback to stored fields — positions are required for phrase matching
         }
 
         for (int i = 0; i < termCount; i++)
             postingsArr[i].Dispose();
+    }
+
+    private void ExecuteMultiPhraseQuery(MultiPhraseQuery query, SegmentReader reader, ref TopNCollector collector)
+    {
+        if (query.TermGroups.Count == 0)
+            return;
+
+        var perGroupPositions = new List<Dictionary<int, int[]>>(query.TermGroups.Count);
+        HashSet<int>? candidateDocs = null;
+
+        foreach (var group in query.TermGroups)
+        {
+            var positionsByDoc = new Dictionary<int, List<int>>();
+            foreach (var term in group)
+            {
+                using var postings = reader.GetPostingsEnumWithPositions(string.Concat(query.Field, "\x00", term));
+                while (postings.MoveNext())
+                {
+                    int docId = postings.DocId;
+                    if (!reader.IsLive(docId))
+                        continue;
+
+                    var positions = postings.GetCurrentPositions();
+                    if (positions.IsEmpty)
+                        continue;
+
+                    if (!positionsByDoc.TryGetValue(docId, out var docPositions))
+                    {
+                        docPositions = [];
+                        positionsByDoc[docId] = docPositions;
+                    }
+
+                    for (int i = 0; i < positions.Length; i++)
+                        docPositions.Add(positions[i]);
+                }
+            }
+
+            if (positionsByDoc.Count == 0)
+                return;
+
+            var compacted = new Dictionary<int, int[]>(positionsByDoc.Count);
+            foreach (var (docId, docPositions) in positionsByDoc)
+            {
+                docPositions.Sort();
+                compacted[docId] = docPositions.Distinct().ToArray();
+            }
+
+            candidateDocs ??= new HashSet<int>(compacted.Keys);
+            candidateDocs.IntersectWith(compacted.Keys);
+            if (candidateDocs.Count == 0)
+                return;
+
+            perGroupPositions.Add(compacted);
+        }
+
+        int[] expectedPositions = query.Positions.ToArray();
+        int docBase = reader.DocBase;
+        float baseScore = query.Boost != 1.0f ? query.Boost : 1.0f;
+
+        foreach (int docId in candidateDocs!)
+        {
+            var slotPositions = new int[perGroupPositions.Count][];
+            for (int i = 0; i < perGroupPositions.Count; i++)
+                slotPositions[i] = perGroupPositions[i][docId];
+
+            if (HasMultiPhrasePositionsWithinSlop(slotPositions, expectedPositions, query.Slop))
+                collector.Collect(docBase + docId, ApplyFieldBoost(reader, docId, query.Field, baseScore));
+        }
     }
 
     /// <summary>
@@ -196,6 +264,53 @@ public sealed partial class IndexSearcher
                 if (rentedArrays[i] != null)
                     ArrayPool<int>.Shared.Return(rentedArrays[i]);
             }
+        }
+    }
+
+    private static bool HasMultiPhrasePositionsWithinSlop(IReadOnlyList<int[]> slotPositions, IReadOnlyList<int> expectedPositions, int slop)
+    {
+        if (slotPositions.Count == 0)
+            return false;
+        if (slotPositions.Count == 1)
+            return slotPositions[0].Length > 0;
+
+        var selected = new int[slotPositions.Count];
+
+        return SelectPosition(0);
+
+        bool SelectPosition(int slotIndex)
+        {
+            var positions = slotPositions[slotIndex];
+            for (int i = 0; i < positions.Length; i++)
+            {
+                int candidate = positions[i];
+                if (slotIndex > 0 && candidate < selected[slotIndex - 1])
+                    continue;
+
+                selected[slotIndex] = candidate;
+                if (slotIndex + 1 == slotPositions.Count)
+                {
+                    int totalDeviation = 0;
+                    for (int j = 1; j < slotPositions.Count; j++)
+                    {
+                        int expectedDelta = expectedPositions[j] - expectedPositions[j - 1];
+                        int actualDelta = selected[j] - selected[j - 1];
+                        totalDeviation += Math.Abs(actualDelta - expectedDelta);
+                        if (totalDeviation > slop)
+                            goto NextCandidate;
+                    }
+
+                    return true;
+                }
+
+                if (SelectPosition(slotIndex + 1))
+                    return true;
+
+            NextCandidate:
+                ;
+            }
+
+            return false;
         }
     }
 }

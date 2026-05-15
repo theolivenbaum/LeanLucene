@@ -723,7 +723,7 @@ public static class IndexCodecMigrator
                     temporaryFdtPath,
                     temporaryFdxPath,
                     info.DocCount,
-                    reader.ReadDocument,
+                    reader.ReadDocumentValues,
                     compression: FieldCompressionPolicy.Deflate);
             }
 

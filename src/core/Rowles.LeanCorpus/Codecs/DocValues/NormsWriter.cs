@@ -9,7 +9,12 @@ namespace Rowles.LeanCorpus.Codecs.DocValues;
 /// </summary>
 internal static class NormsWriter
 {
-    internal static void Write(string filePath, IReadOnlyDictionary<string, float[]> fieldNorms, int docCount = -1, bool durable = false)
+    internal static void Write(
+        string filePath,
+        IReadOnlyDictionary<string, float[]> fieldNorms,
+        IReadOnlyDictionary<string, float[]>? fieldBoosts = null,
+        int docCount = -1,
+        bool durable = false)
     {
         using var output = new IndexOutput(filePath, durable);
 
@@ -30,6 +35,17 @@ internal static class NormsWriter
             {
                 byte quantised = (byte)Math.Clamp(MathF.Round(norms[i] * 255f), 0f, 255f);
                 output.WriteByte(quantised);
+            }
+
+            if (fieldBoosts is not null && fieldBoosts.TryGetValue(fieldName, out var boosts))
+            {
+                for (int i = 0; i < count; i++)
+                    output.WriteSingle(boosts[i]);
+            }
+            else
+            {
+                for (int i = 0; i < count; i++)
+                    output.WriteSingle(1.0f);
             }
         }
     }

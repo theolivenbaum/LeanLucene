@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.3.1] - 2026-xx-xx
 
 ### Added
+- Added Unicode-aware analysis components: `IcuAnalyser`, `IcuTokeniser`, `Uax29UrlEmailTokeniser`, `ThaiTokeniser`, `MediaWikiTokeniser`, `KeepWordFilter`, `TypeTokenFilter`, `LimitTokenCountFilter`, `FlattenGraphFilter`, `MetaphoneFilter`, `PhoneticAlternatesFilter`, `HunspellStemFilter`, `LightEnglishStemmer`, and a compatibility `KStemmer`, plus targeted unit, integration, and chaos coverage for extensible token types, MediaWiki token classes, phonetic alternates, Hunspell stemming, and token-budget guardrails.
+- Added `BinaryField` for stored raw byte values, with typed stored-field codec support, binary doc-values mirroring, and binary retrieval through `SegmentReader` and `IndexSearcher`.
+- Added index-time field boosting on document fields, persisted through norms, applied across text, boolean, range, vector, and geo scoring paths, and surfaced in score explanations.
+- Added payload-bearing term vectors and payload-preserving merge paths for postings and stored term vectors, plus focused unit, integration, and chaos coverage for binary fields, boost scoring, merge round-trips, and truncated payload and boost tails.
 - Added integration and chaos tests covering previously untested `SegmentReader` methods: `GetFieldLength`, `GetDocIds`, `GetDocFreq`, `GetStoredFields` null path, `GetNumericRange` variants, all DocValues readers, postings methods (`GetPostingsEnumWithPositions`, `GetPositions`, `GetTermFrequency`), pattern-matching methods (`GetTermsMatching`, `IntersectAutomaton`), and vector methods (`GetVector`, `EnsureVectorReaderNoLock`).
 - Added chaos property tests for corrupted `.pos`, `.dvn`, and `.vec` codec files to verify structured exceptions are raised rather than silent data corruption.
 - Added integration tests covering previously untested `IndexValidator` branches: corrupt migration marker catch block, stale temp file patterns, segment-missing-files path, `.fdt`/`.fdx` magic and version checks, doc count and block offset validation, missing deletion file, live-doc count mismatch, vector/HNSW magic, dimension, and normalisation checks, and deep vector/HNSW validation.
@@ -25,9 +29,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `GeoDistanceQuery` equality tests for previously uncovered branches: differ-by-field, differ-by-CentreLat, differ-by-CentreLon, `Equals(null)`, and `Equals(wrong-type)`.
 - Added chaos tests for `IndexStats.WriteTo`: read-only destination fires the `UnauthorisedException` catch block and cleans up the tmp file; file-locked destination fires the `IOException` catch block.
 - Added integration and chaos tests for `SearcherManager` refresh-failure paths: `LastRefreshError`, `LastRefreshErrorAt`, `ConsecutiveRefreshFailures`, `RefreshFailed` event, subscriber-exception guard, and counter reset after recovery.
+- Added `MatchAllDocsQuery`, `MatchNoDocsQuery`, `FieldExistsQuery`, `TermInSetQuery`, `PointInSetQuery`, `MultiPhraseQuery`, `IntervalsQuery`, and `CombinedFieldsQuery`, with execution support in `IndexSearcher`, order-stable query-cache fingerprints, BKD exact-set lookup, and stored-only field-existence fallback.
+- Added focused unit, integration, and chaos coverage for the new query families, including BM25F helper logic, multiphrase slot alternates, interval span semantics, set-query fingerprinting, BKD fallback on corrupt point trees, and explicit corruption failure paths for stored fields and positional queries.
+- Added async indexing APIs on `IndexWriter` for single-document, batched, block, and commit workflows, using cancellation-aware backpressure waits while preserving the existing synchronous indexing core.
+- Added streamed bulk ingestion from `IAsyncEnumerable<LeanDocument>` with bounded batching, plus focused integration coverage for async ingestion, source-failure retention semantics, backpressure cancellation, and async block indexing.
 
 ### Changed
 - License changed to Apache 2
+- Replaced the enum-based `TokenKind` analysis contract with string token types, removed the public generic `TokenTypes` taxonomy, and moved producer-specific token type names onto the tokenisers that emit them.
+- Tightened new query constructors so empty fields, empty term groups, unknown combined-field weights, and non-finite point values fail fast instead of being silently filtered or coerced.
+- Scoped lightweight phonetic and English stemming APIs to honest names, and added Hunspell condition parsing plus generated-form limits.
+- Hardened async and batch indexing so schema validation runs before slot acquisition, dispose drains active indexing operations, block indexing suppresses mid-block threshold flushes until the parent marker is present, and partial indexing failures make the writer unusable until reopened.
+- Precomputed `CombinedFieldsQuery` union document frequencies once per search execution and bounded `TermInSetQuery` term counts.
+
+### Fixed
+- `FieldExistsQuery` no longer deserialises full stored-field values just to check stored-field presence.
+- Stored binary field reads now return defensive copies so callers cannot mutate cached stored-field buffers.
 
 ## [1.3.0] - 2026-05-11
 

@@ -9,11 +9,11 @@ namespace Rowles.LeanCorpus.Codecs.DocValues;
 /// </summary>
 internal static class NormsReader
 {
-    public static Dictionary<string, byte[]> Read(string filePath)
+    public static NormsData Read(string filePath)
     {
         var fileInfo = new FileInfo(filePath);
         if (!fileInfo.Exists || fileInfo.Length == 0)
-            return new Dictionary<string, byte[]>(StringComparer.Ordinal);
+            return new NormsData();
 
         using var mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
         using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
@@ -39,7 +39,7 @@ internal static class NormsReader
         int fieldCount = accessor.ReadInt32(offset);
         offset += 4;
 
-        var result = new Dictionary<string, byte[]>(fieldCount, StringComparer.Ordinal);
+        var result = new NormsData();
         Span<byte> nameBuf = stackalloc byte[256];
 
         for (int f = 0; f < fieldCount; f++)
@@ -59,7 +59,23 @@ internal static class NormsReader
             accessor.ReadArray(offset, norms, 0, docCount);
             offset += docCount;
 
-            result[fieldName] = norms;
+            result.Norms[fieldName] = norms;
+
+            var boosts = new float[docCount];
+            if (version >= 2)
+            {
+                for (int i = 0; i < docCount; i++)
+                {
+                    boosts[i] = accessor.ReadSingle(offset);
+                    offset += sizeof(float);
+                }
+            }
+            else
+            {
+                Array.Fill(boosts, 1.0f);
+            }
+
+            result.Boosts[fieldName] = boosts;
         }
 
         return result;

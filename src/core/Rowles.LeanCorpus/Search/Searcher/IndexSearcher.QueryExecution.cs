@@ -98,6 +98,9 @@ public sealed partial class IndexSearcher
             case PhraseQuery pq:
                 ExecutePhraseQuery(pq, reader, ref collector);
                 break;
+            case MultiPhraseQuery mpq:
+                ExecuteMultiPhraseQuery(mpq, reader, ref collector);
+                break;
             case VectorQuery vq:
                 ExecuteVectorQuery(vq, reader, globalDFs, ref collector);
                 break;
@@ -124,6 +127,27 @@ public sealed partial class IndexSearcher
                 break;
             case FunctionScoreQuery fsq:
                 ExecuteFunctionScoreQuery(fsq, reader, globalDFs, ref collector);
+                break;
+            case MatchAllDocsQuery madq:
+                ExecuteMatchAllDocsQuery(madq, reader, ref collector);
+                break;
+            case MatchNoDocsQuery mndq:
+                ExecuteMatchNoDocsQuery(mndq, reader, ref collector);
+                break;
+            case FieldExistsQuery feq:
+                ExecuteFieldExistsQuery(feq, reader, ref collector);
+                break;
+            case TermInSetQuery tisq:
+                ExecuteTermInSetQuery(tisq, reader, ref collector);
+                break;
+            case PointInSetQuery pisq:
+                ExecutePointInSetQuery(pisq, reader, ref collector);
+                break;
+            case CombinedFieldsQuery cfq:
+                ExecuteCombinedFieldsQuery(cfq, reader, globalDFs, ref collector);
+                break;
+            case IntervalsQuery iq:
+                ExecuteIntervalsQuery(iq, reader, ref collector);
                 break;
             case SpanNearQuery snq:
                 ExecuteSpanNearQuery(snq, reader, globalDFs, ref collector);
@@ -166,6 +190,7 @@ public sealed partial class IndexSearcher
                 ? fieldLengths[docId] : 1;
             float score = _similarity.ScorePrecomputed(factors.Factor1, factors.Factor2, postings.Freq, docLength);
             if (boost != 1.0f) score *= boost;
+            score = ApplyFieldBoost(reader, docId, query.Field, score);
             collector.Collect(docBase + docId, score);
         }
     }
@@ -317,9 +342,9 @@ public sealed partial class IndexSearcher
                     for (int i = 0; i < mustCount; i++)
                     {
                         int docLength = mustFieldLens![i] is { } mfl && (uint)docId < (uint)mfl.Length ? mfl[docId] : 1;
-                        score += _similarity.ScorePrecomputed(
+                        score += ApplyFieldBoost(reader, docId, mustFields![i], _similarity.ScorePrecomputed(
                             mustFactors![i].Idf, mustFactors[i].K1BOverAvgDL,
-                            mustEnums[i].Freq, docLength);
+                            mustEnums[i].Freq, docLength));
                     }
 
                     // Add Should bonus
@@ -328,9 +353,9 @@ public sealed partial class IndexSearcher
                         if (shouldEnums![i].Advance(docId) && shouldEnums[i].DocId == docId)
                         {
                             int docLength = shouldFieldLens![i] is { } sfl && (uint)docId < (uint)sfl.Length ? sfl[docId] : 1;
-                            score += _similarity.ScorePrecomputed(
+                            score += ApplyFieldBoost(reader, docId, shouldFields![i], _similarity.ScorePrecomputed(
                                 shouldFactors![i].Idf, shouldFactors[i].K1BOverAvgDL,
-                                shouldEnums[i].Freq, docLength);
+                                shouldEnums[i].Freq, docLength));
                         }
                     }
 
@@ -373,9 +398,9 @@ public sealed partial class IndexSearcher
                         if (currentDocs[i] == minDoc)
                         {
                             int docLength = shouldFieldLens![i] is { } sfl && (uint)minDoc < (uint)sfl.Length ? sfl[minDoc] : 1;
-                            score += _similarity.ScorePrecomputed(
+                            score += ApplyFieldBoost(reader, minDoc, shouldFields![i], _similarity.ScorePrecomputed(
                                 shouldFactors![i].Idf, shouldFactors[i].K1BOverAvgDL,
-                                shouldEnums![i].Freq, docLength);
+                                shouldEnums![i].Freq, docLength));
                             currentDocs[i] = shouldEnums[i].MoveNext() ? shouldEnums[i].DocId : int.MaxValue;
                         }
                     }
@@ -615,6 +640,7 @@ public sealed partial class IndexSearcher
                         int docLength = fieldLengths is not null && (uint)docId < (uint)fieldLengths.Length
                             ? fieldLengths[docId] : 1;
                         float score = _similarity.ScorePrecomputed(factors.Factor1, factors.Factor2, postings.Freq, docLength);
+                        score = ApplyFieldBoost(reader, docId, tq.Field, score);
                         results.Add(new ScoreDoc(docId, score));
                     }
                     break;
@@ -634,7 +660,7 @@ public sealed partial class IndexSearcher
                     var rangeResults = reader.GetNumericRange(rq.Field, rq.Min, rq.Max);
                     float rqScore = rq.Boost != 1.0f ? rq.Boost : 1.0f;
                     foreach (var r in rangeResults)
-                        results.Add(new ScoreDoc(r.DocId, rqScore));
+                        results.Add(new ScoreDoc(r.DocId, ApplyFieldBoost(reader, r.DocId, rq.Field, rqScore)));
                     break;
                 }
             case PrefixQuery pfq:

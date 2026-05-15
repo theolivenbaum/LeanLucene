@@ -155,14 +155,17 @@ public sealed class CodecsTests : IClassFixture<TestDirectoryFixture>
         NormsWriter.Write(filePath + ".nrm", fieldNorms);
         var restored = NormsReader.Read(filePath + ".nrm");
 
-        Assert.True(restored.ContainsKey("testfield"));
-        var restoredNorms = restored["testfield"];
+        Assert.True(restored.Norms.ContainsKey("testfield"));
+        var restoredNorms = restored.Norms["testfield"];
         Assert.Equal(norms.Length, restoredNorms.Length);
         for (int i = 0; i < norms.Length; i++)
         {
             float restoredFloat = restoredNorms[i] / 255f;
             Assert.InRange(restoredFloat, norms[i] - 0.01f, norms[i] + 0.01f);
         }
+
+        var restoredBoosts = restored.Boosts["testfield"];
+        Assert.All(restoredBoosts, boost => Assert.Equal(1.0f, boost));
     }
 
     /// <summary>
