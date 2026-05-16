@@ -104,7 +104,8 @@ public sealed class HunspellDictionary
             if (parts[0].Equals("COMPLEXPREFIXES", StringComparison.OrdinalIgnoreCase))
                 throw new NotSupportedException("COMPLEXPREFIXES is not supported.");
 
-            if (parts[0] is not ("PFX" or "SFX"))
+            if (!parts[0].Equals("PFX", StringComparison.OrdinalIgnoreCase) &&
+                !parts[0].Equals("SFX", StringComparison.OrdinalIgnoreCase))
                 continue;
 
             if (parts.Length == 4)
@@ -112,7 +113,8 @@ public sealed class HunspellDictionary
                 char flag = parts[1][0];
                 bool crossProduct = parts[2].Equals("Y", StringComparison.OrdinalIgnoreCase);
                 int count = int.Parse(parts[3], System.Globalization.CultureInfo.InvariantCulture);
-                var kind = parts[0] == "PFX" ? AffixKind.Prefix : AffixKind.Suffix;
+                var kind = parts[0].Equals("PFX", StringComparison.OrdinalIgnoreCase) ? AffixKind.Prefix : AffixKind.Suffix;
+                var expectedDirective = kind == AffixKind.Prefix ? "PFX" : "SFX";
 
                 for (int ruleIndex = 0; ruleIndex < count; ruleIndex++)
                 {
@@ -123,6 +125,12 @@ public sealed class HunspellDictionary
                     var ruleParts = lines[i].Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
                     if (ruleParts.Length < 5)
                         throw new InvalidDataException($"Invalid Hunspell AFF rule: '{lines[i]}'.");
+                    if (!ruleParts[0].Equals(expectedDirective, StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidDataException(
+                            $"Invalid Hunspell AFF rule: expected {expectedDirective} rule for flag '{flag}', got '{lines[i]}'.");
+                    if (ruleParts[1].Length == 0 || ruleParts[1][0] != flag)
+                        throw new InvalidDataException(
+                            $"Invalid Hunspell AFF rule: expected flag '{flag}', got '{lines[i]}'.");
 
                     var rule = new AffixRule(
                         flag,
@@ -187,7 +195,7 @@ public sealed class HunspellDictionary
 
         if (suffix is not null)
         {
-            if (!suffix.Matches(baseWord))
+            if (!suffix.Matches(candidate))
                 return;
             candidate = suffix.Apply(candidate);
         }
@@ -239,6 +247,9 @@ public sealed class HunspellDictionary
 
         public string Apply(string baseWord)
         {
+            if (Strip.Length > baseWord.Length)
+                return baseWord;
+
             return Kind switch
             {
                 AffixKind.Prefix => string.Concat(Append, Strip.Length == 0 ? baseWord : baseWord[Strip.Length..]),
@@ -325,18 +336,19 @@ public sealed class HunspellDictionary
 
         public static ConditionElement Any => new(kind: 0, literal: '\0', set: null, negated: false);
 
-        public static ConditionElement Literal(char literal) => new(kind: 1, literal, set: null, negated: false);
+        public static ConditionElement Literal(char literal) => new(kind: 1, char.ToUpperInvariant(literal), set: null, negated: false);
 
-        public static ConditionElement Set(string set, bool negated) => new(kind: 2, literal: '\0', set, negated);
+        public static ConditionElement Set(string set, bool negated) => new(kind: 2, literal: '\0', set.ToUpperInvariant(), negated);
 
         public bool Matches(char value)
         {
             if (_kind == 0)
                 return true;
+            char normalised = char.ToUpperInvariant(value);
             if (_kind == 1)
-                return char.ToUpperInvariant(value) == char.ToUpperInvariant(_literal);
+                return normalised == _literal;
 
-            bool contains = _set!.IndexOf(value, StringComparison.OrdinalIgnoreCase) >= 0;
+            bool contains = _set!.IndexOf(normalised, StringComparison.Ordinal) >= 0;
             return Negated ? !contains : contains;
         }
     }

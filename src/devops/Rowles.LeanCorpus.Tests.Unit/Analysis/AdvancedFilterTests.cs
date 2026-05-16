@@ -89,6 +89,79 @@ play/Y
         Assert.Empty(dictionary.Stem("plaies"));
     }
 
+    [Fact(DisplayName = "Hunspell Dictionary: Cross Product Suffix Condition Uses Prefix Candidate")]
+    public void HunspellDictionary_CrossProductSuffixCondition_UsesPrefixCandidate()
+    {
+        const string aff = """
+SET UTF-8
+PFX R Y 1
+PFX R 0 re .
+SFX D Y 1
+SFX D 0 ing rework
+""";
+        const string dic = """
+1
+work/RD
+""";
+
+        var dictionary = HunspellDictionary.Parse(aff, dic);
+
+        Assert.Contains("work", dictionary.Stem("reworking"));
+    }
+
+    [Fact(DisplayName = "Hunspell Dictionary: Malformed Cross Product Does Not Throw")]
+    public void HunspellDictionary_MalformedCrossProduct_DoesNotThrow()
+    {
+        const string aff = """
+SET UTF-8
+PFX R Y 1
+PFX R abc 0 .
+SFX D Y 1
+SFX D abc x .
+""";
+        const string dic = """
+1
+abc/RD
+""";
+
+        var dictionary = HunspellDictionary.Parse(aff, dic);
+
+        Assert.Contains("abc", dictionary.Stem("abc"));
+    }
+
+    [Fact(DisplayName = "Hunspell Dictionary: AFF Count Rejects Wrong Directive")]
+    public void HunspellDictionary_AffCountRejectsWrongDirective()
+    {
+        const string aff = """
+SET UTF-8
+PFX A Y 2
+PFX A 0 re .
+SFX A 0 ing .
+""";
+        const string dic = """
+1
+work/A
+""";
+
+        Assert.Throws<InvalidDataException>(() => HunspellDictionary.Parse(aff, dic));
+    }
+
+    [Fact(DisplayName = "Hunspell Dictionary: AFF Count Rejects Wrong Flag")]
+    public void HunspellDictionary_AffCountRejectsWrongFlag()
+    {
+        const string aff = """
+SET UTF-8
+SFX A Y 1
+SFX B 0 ing .
+""";
+        const string dic = """
+1
+work/A
+""";
+
+        Assert.Throws<InvalidDataException>(() => HunspellDictionary.Parse(aff, dic));
+    }
+
     [Fact(DisplayName = "Hunspell Dictionary: Generated Form Limit Rejects Runaway Rules")]
     public void HunspellDictionary_GeneratedFormLimit_RejectsRunawayRules()
     {
