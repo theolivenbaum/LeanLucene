@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed norms boost storage to sparse entries so default field boosts do not write or load per-document `float[]` arrays.
 - Added offsets-only prefix enumeration for prefix and trailing-wildcard query execution when global document-frequency remapping is not needed.
 - Changed phrase query execution to intersect candidate documents before decoding positional data for common multi-term phrases.
+- Hardened benchmark suites by splitting block-join and deletion workloads, broadening Boolean and fuzzy query scenarios, aligning Lucene.NET disk-backed comparison paths, and making suite selection fail fast on unknown names.
 
 ### Fixed
 - `FieldExistsQuery` no longer deserialises full stored-field values just to check stored-field presence.

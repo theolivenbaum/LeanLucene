@@ -10,8 +10,8 @@
 .PARAMETER Suite
     Which benchmark suite to run. Default: all.
     Valid values: all, index, query, analysis, boolean, phrase, prefix,
-    fuzzy, wildcard, deletion, suggester, schemajson, compound, indexsort,
-    blockjoin, range, regexp, dismax, multiphrase, span, mlt, highlighter,
+    fuzzy, wildcard, deletion, deletion-queue, deletion-commit, suggester, schemajson, indexsort,
+    blockjoin, blockjoin-index, blockjoin-search, range, regexp, dismax, multiphrase, span, mlt, highlighter,
     searcher-mgr, combined, terminset, aggregation, query-cache, parallel,
     function-score, geo, collapse-facet, similarity, stemmer, ngram, synonym,
     async-index, gutenberg-analysis, gutenberg-index, gutenberg-search,
@@ -103,8 +103,8 @@
 [CmdletBinding(PositionalBinding = $false)]
 param(
     [ValidateSet('all', 'index', 'query', 'analysis', 'boolean', 'phrase',
-                 'prefix', 'fuzzy', 'wildcard', 'deletion',
-                 'suggester', 'schemajson', 'compound', 'indexsort', 'blockjoin',
+                 'prefix', 'fuzzy', 'wildcard', 'deletion', 'deletion-queue', 'deletion-commit',
+                 'suggester', 'schemajson', 'indexsort', 'blockjoin', 'blockjoin-index', 'blockjoin-search',
                  'range', 'regexp', 'dismax', 'multiphrase', 'span',
                  'mlt', 'highlighter', 'searcher-mgr',
                  'combined', 'terminset', 'aggregation', 'query-cache',
@@ -179,17 +179,20 @@ $suiteDescriptions = [ordered]@{
     index                = 'IndexingBenchmarks          -- bulk indexing throughput (vs Lucene.NET)'
     query                = 'TermQueryBenchmarks         -- single-term search (vs Lucene.NET)'
     analysis             = 'AnalysisBenchmarks          -- tokenisation pipeline'
-    boolean              = 'BooleanQueryBenchmarks      -- Must / Should / MustNot'
+    boolean              = 'BooleanQueryBenchmarks      -- deterministic BooleanQuery clause shapes'
     phrase               = 'PhraseQueryBenchmarks       -- exact and slop phrase'
     prefix               = 'PrefixQueryBenchmarks       -- prefix matching (vs Lucene.NET)'
-    fuzzy                = 'FuzzyQueryBenchmarks        -- fuzzy/edit-distance'
+    fuzzy                = 'FuzzyQueryBenchmarks        -- deterministic fuzzy/edit-distance scenarios'
     wildcard             = 'WildcardQueryBenchmarks     -- wildcard patterns'
-    deletion             = 'DeletionBenchmarks          -- delete throughput (vs Lucene.NET)'
+    deletion             = 'DeletionQueue/Commit        -- delete queueing and commit application'
+    'deletion-queue'     = 'DeletionQueueBenchmarks     -- enqueue delete terms (vs Lucene.NET)'
+    'deletion-commit'    = 'DeletionCommitBenchmarks    -- apply queued deletes on commit (vs Lucene.NET)'
     suggester            = 'SuggesterBenchmarks         -- DidYouMean spelling (vs Lucene.NET)'
     schemajson           = 'SchemaAndJsonBenchmarks     -- schema validation + JSON mapping'
-    compound             = 'CompoundFileIndex/Search    -- compound file read/write (vs Lucene.NET)'
     indexsort            = 'IndexSortIndex/Search       -- index-time sort + early termination'
-    blockjoin            = 'BlockJoinBenchmarks         -- block-join queries (vs Lucene.NET)'
+    blockjoin            = 'BlockJoinIndex/Search       -- block-join indexing and query hot path'
+    'blockjoin-index'    = 'BlockJoinIndexBenchmarks    -- block-join indexing (vs Lucene.NET)'
+    'blockjoin-search'   = 'BlockJoinSearchBenchmarks   -- block-join query hot path (vs Lucene.NET)'
     range                = 'RangeQueryBenchmarks        -- BKD range query (vs Lucene.NET NumericRange)'
     regexp               = 'RegexpQueryBenchmarks       -- regexp query parity (vs Lucene.NET)'
     dismax               = 'DisjunctionMaxQueryBenchmarks -- tie-breaker parity (vs Lucene.NET)'
@@ -266,7 +269,7 @@ if ($Help) {
     Write-Host '    bench/{machine-name}/index.json   Per-machine run index'
     Write-Host ''
     Write-Host '  BenchmarkDotNet pass-through examples:'
-    Write-Host '    --filter *LeanCorpus*      Run only methods whose name contains LeanCorpus'
+    Write-Host '    --filter *Lean*            Run only LeanCorpus methods'
     Write-Host '    --job short                Use the Short job instead of Default'
     Write-Host '    --runtimes net10.0         Override the target runtime'
     Write-Host ''
