@@ -1,4 +1,5 @@
 ﻿using System.Buffers;
+
 namespace Rowles.LeanCorpus.Search.Searcher;
 
 /// <summary>
@@ -6,89 +7,10 @@ namespace Rowles.LeanCorpus.Search.Searcher;
 /// </summary>
 public sealed partial class IndexSearcher
 {
-    private const int PhraseTwoPhaseCandidateThreshold = 1024;
-
     private void ExecutePhraseQuery(PhraseQuery query, SegmentReader reader, ref TopNCollector collector)
     {
         if (query.Terms.Length == 0) return;
-        if (query.Terms.Length > 1 && TryExecutePhraseQueryTwoPhase(query, reader, ref collector))
-            return;
-
         ExecutePhraseQueryWithPositionEnums(query, reader, ref collector);
-    }
-
-    private bool TryExecutePhraseQueryTwoPhase(PhraseQuery query, SegmentReader reader, ref TopNCollector collector)
-    {
-        int termCount = query.Terms.Length;
-        var qualifiedTerms = query.QualifiedTerms;
-        var postingsArr = new PostingsEnum[termCount];
-        var candidates = ArrayPool<int>.Shared.Rent(PhraseTwoPhaseCandidateThreshold);
-        int candidateCount = 0;
-
-        try
-        {
-            for (int i = 0; i < termCount; i++)
-            {
-                postingsArr[i] = reader.GetPostingsEnum(qualifiedTerms[i]);
-                if (postingsArr[i].IsExhausted)
-                    return true;
-            }
-
-            int leaderIdx = 0;
-            for (int i = 1; i < termCount; i++)
-            {
-                if (postingsArr[i].DocFreq < postingsArr[leaderIdx].DocFreq)
-                    leaderIdx = i;
-            }
-
-            bool hasDeletions = reader.HasDeletions;
-            while (postingsArr[leaderIdx].MoveNext())
-            {
-                int docId = postingsArr[leaderIdx].DocId;
-                if (hasDeletions && !reader.IsLive(docId)) continue;
-
-                bool allMatch = true;
-                for (int i = 0; i < termCount; i++)
-                {
-                    if (i == leaderIdx) continue;
-                    if (!postingsArr[i].Advance(docId) || postingsArr[i].DocId != docId)
-                    {
-                        allMatch = false;
-                        break;
-                    }
-                }
-
-                if (!allMatch)
-                    continue;
-
-                if (candidateCount == PhraseTwoPhaseCandidateThreshold)
-                    return false;
-
-                candidates[candidateCount++] = docId;
-            }
-
-            if (candidateCount == 0)
-                return true;
-
-            int docBase = reader.DocBase;
-            float score = query.Boost != 1.0f ? query.Boost : 1.0f;
-            int slop = query.Slop;
-            reader.TryGetFieldBoosts(query.Field, out var fieldBoosts);
-            for (int i = 0; i < candidateCount; i++)
-            {
-                int docId = candidates[i];
-                if (HasPhrasePositionsWithinSlop(reader, qualifiedTerms, docId, slop))
-                    collector.Collect(docBase + docId, ApplyFieldBoost(fieldBoosts, docId, score));
-            }
-
-            return true;
-        }
-        finally
-        {
-            for (int i = 0; i < termCount; i++)
-                postingsArr[i].Dispose();
-            ArrayPool<int>.Shared.Return(candidates, clearArray: false);
-        }
     }
 
     private void ExecutePhraseQueryWithPositionEnums(PhraseQuery query, SegmentReader reader, ref TopNCollector collector)
@@ -167,43 +89,11 @@ public sealed partial class IndexSearcher
             postingsArr[i].Dispose();
     }
 
-    private static bool HasPhrasePositionsWithinSlop(SegmentReader reader, string[] qualifiedTerms, int docId, int slop)
-    {
-        if (qualifiedTerms.Length == 2)
-        {
-            var pos0 = reader.GetPositionsArray(qualifiedTerms[0], docId);
-            var pos1 = reader.GetPositionsArray(qualifiedTerms[1], docId);
-            return pos0 is { Length: > 0 } &&
-                   pos1 is { Length: > 0 } &&
-                   HasTwoTermPositionsWithinSlop(pos0, pos1, slop);
-        }
-
-        if (qualifiedTerms.Length == 3)
-        {
-            var pos0 = reader.GetPositionsArray(qualifiedTerms[0], docId);
-            var pos1 = reader.GetPositionsArray(qualifiedTerms[1], docId);
-            var pos2 = reader.GetPositionsArray(qualifiedTerms[2], docId);
-            return pos0 is { Length: > 0 } &&
-                   pos1 is { Length: > 0 } &&
-                   pos2 is { Length: > 0 } &&
-                   HasThreeTermPositionsWithinSlop(pos0, pos1, pos2, slop);
-        }
-
-        var positions = new int[qualifiedTerms.Length][];
-        for (int i = 0; i < qualifiedTerms.Length; i++)
-        {
-            var termPositions = reader.GetPositionsArray(qualifiedTerms[i], docId);
-            if (termPositions is not { Length: > 0 })
-                return false;
-            positions[i] = termPositions;
-        }
-
-        return HasManyTermPositionsWithinSlop(positions, slop);
-    }
-
     private void ExecuteMultiPhraseQuery(MultiPhraseQuery query, SegmentReader reader, ref TopNCollector collector)
     {
         if (query.TermGroups.Count == 0)
+            return;
+        if (TryExecuteTwoSlotMultiPhraseQuery(query, reader, ref collector))
             return;
 
         var perGroupPositions = new List<Dictionary<int, int[]>>(query.TermGroups.Count);
@@ -267,6 +157,166 @@ public sealed partial class IndexSearcher
             if (HasMultiPhrasePositionsWithinSlop(slotPositions, expectedPositions, query.Slop))
                 collector.Collect(docBase + docId, ApplyFieldBoost(reader, docId, query.Field, baseScore));
         }
+    }
+
+    private bool TryExecuteTwoSlotMultiPhraseQuery(MultiPhraseQuery query, SegmentReader reader, ref TopNCollector collector)
+    {
+        if (query.TermGroups.Count != 2 || query.Positions.Count != 2)
+            return false;
+
+        var group0 = query.TermGroups[0];
+        var group1 = query.TermGroups[1];
+        var postings0 = new PostingsEnum[group0.Count];
+        var postings1 = new PostingsEnum[group1.Count];
+        var docs0 = new int[group0.Count];
+        var docs1 = new int[group1.Count];
+        var positions0 = new List<int>();
+        var positions1 = new List<int>();
+
+        try
+        {
+            if (!InitialiseMultiPhraseGroup(query.Field, group0, reader, postings0, docs0) ||
+                !InitialiseMultiPhraseGroup(query.Field, group1, reader, postings1, docs1))
+            {
+                return true;
+            }
+
+            int docBase = reader.DocBase;
+            int expectedDelta = query.Positions[1] - query.Positions[0];
+            int slop = query.Slop;
+            float score = query.Boost != 1.0f ? query.Boost : 1.0f;
+            reader.TryGetFieldBoosts(query.Field, out var fieldBoosts);
+            bool hasDeletions = reader.HasDeletions;
+
+            int doc0 = GetCurrentGroupDoc(docs0);
+            int doc1 = GetCurrentGroupDoc(docs1);
+            while (doc0 != int.MaxValue && doc1 != int.MaxValue)
+            {
+                if (doc0 < doc1)
+                {
+                    AdvanceMultiPhraseGroup(postings0, docs0, doc0);
+                    doc0 = GetCurrentGroupDoc(docs0);
+                    continue;
+                }
+
+                if (doc1 < doc0)
+                {
+                    AdvanceMultiPhraseGroup(postings1, docs1, doc1);
+                    doc1 = GetCurrentGroupDoc(docs1);
+                    continue;
+                }
+
+                int docId = doc0;
+                if (!hasDeletions || reader.IsLive(docId))
+                {
+                    CollectMultiPhraseGroupPositions(postings0, docs0, docId, positions0);
+                    CollectMultiPhraseGroupPositions(postings1, docs1, docId, positions1);
+                    if (HasTwoSlotMultiPhrasePositionsWithinSlop(positions0, positions1, expectedDelta, slop))
+                        collector.Collect(docBase + docId, ApplyFieldBoost(fieldBoosts, docId, score));
+                }
+
+                AdvanceMultiPhraseGroup(postings0, docs0, docId);
+                AdvanceMultiPhraseGroup(postings1, docs1, docId);
+                doc0 = GetCurrentGroupDoc(docs0);
+                doc1 = GetCurrentGroupDoc(docs1);
+            }
+
+            return true;
+        }
+        finally
+        {
+            DisposePostings(postings0);
+            DisposePostings(postings1);
+        }
+    }
+
+    private static bool InitialiseMultiPhraseGroup(string field, IReadOnlyList<string> terms, SegmentReader reader,
+        PostingsEnum[] postings, int[] currentDocs)
+    {
+        bool anyTermHasDocs = false;
+        for (int i = 0; i < terms.Count; i++)
+        {
+            postings[i] = reader.GetPostingsEnumWithPositions(string.Concat(field, "\x00", terms[i]));
+            if (postings[i].MoveNext())
+            {
+                currentDocs[i] = postings[i].DocId;
+                anyTermHasDocs = true;
+            }
+            else
+            {
+                currentDocs[i] = int.MaxValue;
+            }
+        }
+
+        return anyTermHasDocs;
+    }
+
+    private static int GetCurrentGroupDoc(int[] currentDocs)
+    {
+        int docId = int.MaxValue;
+        for (int i = 0; i < currentDocs.Length; i++)
+        {
+            if (currentDocs[i] < docId)
+                docId = currentDocs[i];
+        }
+
+        return docId;
+    }
+
+    private static void AdvanceMultiPhraseGroup(PostingsEnum[] postings, int[] currentDocs, int docId)
+    {
+        for (int i = 0; i < postings.Length; i++)
+        {
+            if (currentDocs[i] == docId)
+                currentDocs[i] = postings[i].MoveNext() ? postings[i].DocId : int.MaxValue;
+        }
+    }
+
+    private static void CollectMultiPhraseGroupPositions(PostingsEnum[] postings, int[] currentDocs, int docId, List<int> positions)
+    {
+        positions.Clear();
+        for (int i = 0; i < postings.Length; i++)
+        {
+            if (currentDocs[i] != docId)
+                continue;
+
+            var currentPositions = postings[i].GetCurrentPositions();
+            for (int j = 0; j < currentPositions.Length; j++)
+                positions.Add(currentPositions[j]);
+        }
+
+        positions.Sort();
+    }
+
+    private static void DisposePostings(PostingsEnum[] postings)
+    {
+        for (int i = 0; i < postings.Length; i++)
+            postings[i].Dispose();
+    }
+
+    private static bool HasTwoSlotMultiPhrasePositionsWithinSlop(List<int> positions0, List<int> positions1,
+        int expectedDelta, int slop)
+    {
+        int j = 0;
+        int? previous0 = null;
+        for (int i = 0; i < positions0.Count; i++)
+        {
+            int pos0 = positions0[i];
+            if (previous0 == pos0)
+                continue;
+            previous0 = pos0;
+
+            int lower = Math.Max(pos0, pos0 + expectedDelta - slop);
+            int upper = pos0 + expectedDelta + slop;
+            while (j < positions1.Count && positions1[j] < lower)
+                j++;
+            if (j >= positions1.Count)
+                return false;
+            if (positions1[j] <= upper)
+                return true;
+        }
+
+        return false;
     }
 
     /// <summary>

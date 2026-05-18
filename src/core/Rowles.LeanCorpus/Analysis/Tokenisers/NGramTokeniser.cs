@@ -44,7 +44,7 @@ public sealed class NGramTokeniser : ITokeniser
     /// <inheritdoc/>
     public List<Token> Tokenise(ReadOnlySpan<char> input)
     {
-        var tokens = new List<Token>();
+        var tokens = new List<Token>(CountNGrams(input.Length));
         int len = input.Length;
         for (int start = 0; start < len; start++)
         {
@@ -56,6 +56,14 @@ public sealed class NGramTokeniser : ITokeniser
             }
         }
         return tokens;
+    }
+
+    private int CountNGrams(int length)
+    {
+        int count = 0;
+        for (int gramLen = MinGram; gramLen <= MaxGram && gramLen <= length; gramLen++)
+            count += length - gramLen + 1;
+        return count;
     }
 
     private string GetOrCacheString(ReadOnlySpan<char> span)

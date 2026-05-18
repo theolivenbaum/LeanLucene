@@ -729,6 +729,32 @@ internal sealed class FSTReader
         return results;
     }
 
+    /// <summary>Returns postings offsets for terms whose bare text contains the given ASCII literal.</summary>
+    public List<long> GetTermOffsetsContaining(string fieldPrefix, ReadOnlySpan<char> literal)
+    {
+        int prefixByteCount = Encoding.UTF8.GetByteCount(fieldPrefix);
+        Span<byte> prefixUtf8 = prefixByteCount <= 256 ? stackalloc byte[prefixByteCount] : new byte[prefixByteCount];
+        Encoding.UTF8.GetBytes(fieldPrefix, prefixUtf8);
+
+        int literalByteCount = Encoding.UTF8.GetByteCount(literal);
+        Span<byte> literalUtf8 = literalByteCount <= 256 ? stackalloc byte[literalByteCount] : new byte[literalByteCount];
+        Encoding.UTF8.GetBytes(literal, literalUtf8);
+
+        var results = new List<long>();
+        int start = LowerBound(prefixUtf8);
+        for (int i = start; i < _termCount; i++)
+        {
+            var key = GetKeySpan(i);
+            if (!key.StartsWith(prefixUtf8))
+                break;
+
+            if (key[prefixByteCount..].IndexOf(literalUtf8) >= 0)
+                results.Add(_offsets[i]);
+        }
+
+        return results;
+    }
+
     private static bool IsRegexMeta(char c) =>
         c is '.' or '*' or '+' or '?' or '[' or '(' or '{' or '|' or '\\' or '^' or '$';
 

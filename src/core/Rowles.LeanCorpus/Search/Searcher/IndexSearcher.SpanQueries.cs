@@ -24,6 +24,9 @@ public sealed partial class IndexSearcher
     private void ExecuteSpanNearQuery(SpanNearQuery query, SegmentReader reader,
         Dictionary<(string Field, string Term), int> globalDFs, ref TopNCollector collector)
     {
+        if (TryExecuteSpanNearTermQuery(query, reader, excludedDocs: null, query.Boost, ref collector))
+            return;
+
         // Collect spans per clause
         var clauseSpans = new List<List<Span>>(query.Clauses.Count);
         foreach (var clause in query.Clauses)
@@ -98,6 +101,9 @@ public sealed partial class IndexSearcher
     private void ExecuteSpanOrQuery(SpanOrQuery query, SegmentReader reader,
         Dictionary<(string Field, string Term), int> globalDFs, ref TopNCollector collector)
     {
+        if (TryExecuteSpanOrTermQuery(query, reader, ref collector))
+            return;
+
         var seen = new HashSet<int>();
         int docBase = reader.DocBase;
         foreach (var clause in query.Clauses)
@@ -114,6 +120,9 @@ public sealed partial class IndexSearcher
     private void ExecuteSpanNotQuery(SpanNotQuery query, SegmentReader reader,
         Dictionary<(string Field, string Term), int> globalDFs, ref TopNCollector collector)
     {
+        if (TryExecuteSpanNotTermQuery(query, reader, ref collector))
+            return;
+
         var includeSpans = CollectSpans(query.Include, reader);
         var excludeSpans = CollectSpans(query.Exclude, reader);
 
@@ -129,6 +138,226 @@ public sealed partial class IndexSearcher
             if (!excludedDocs.Contains(span.DocId) && seen.Add(span.DocId))
                 collector.Collect(docBase + span.DocId, ApplyFieldBoost(reader, span.DocId, query.Field, 1.0f * query.Boost));
         }
+    }
+
+    private bool TryExecuteSpanNearTermQuery(SpanNearQuery query, SegmentReader reader, bool[]? excludedDocs,
+        float boost, ref TopNCollector collector)
+    {
+        int termCount = query.Clauses.Count;
+        if (termCount == 0)
+            return true;
+
+        var postings = new PostingsEnum[termCount];
+        try
+        {
+            for (int i = 0; i < termCount; i++)
+            {
+                if (query.Clauses[i] is not SpanTermQuery termQuery)
+                    return false;
+
+                var qualifiedTerm = termQuery.CachedQualifiedTerm ??= string.Concat(termQuery.Field, "\x00", termQuery.Term);
+                postings[i] = reader.GetPostingsEnumWithPositions(qualifiedTerm);
+                if (postings[i].IsExhausted)
+                    return true;
+            }
+
+            int leaderIdx = 0;
+            for (int i = 1; i < termCount; i++)
+            {
+                if (postings[i].DocFreq < postings[leaderIdx].DocFreq)
+                    leaderIdx = i;
+            }
+
+            int docBase = reader.DocBase;
+            float score = boost != 1.0f ? boost : 1.0f;
+            reader.TryGetFieldBoosts(query.Field, out var fieldBoosts);
+            bool hasDeletions = reader.HasDeletions;
+
+            while (postings[leaderIdx].MoveNext())
+            {
+                int docId = postings[leaderIdx].DocId;
+                if ((hasDeletions && !reader.IsLive(docId)) ||
+                    (excludedDocs is not null && excludedDocs[docId]))
+                {
+                    continue;
+                }
+
+                bool allMatch = true;
+                for (int i = 0; i < termCount; i++)
+                {
+                    if (i == leaderIdx) continue;
+                    if (!postings[i].Advance(docId) || postings[i].DocId != docId)
+                    {
+                        allMatch = false;
+                        break;
+                    }
+                }
+
+                if (allMatch && HasSpanNearPositions(postings, termCount, query.Slop, query.InOrder))
+                    collector.Collect(docBase + docId, ApplyFieldBoost(fieldBoosts, docId, score));
+            }
+
+            return true;
+        }
+        finally
+        {
+            for (int i = 0; i < postings.Length; i++)
+                postings[i].Dispose();
+        }
+    }
+
+    private bool TryExecuteSpanOrTermQuery(SpanOrQuery query, SegmentReader reader, ref TopNCollector collector)
+    {
+        foreach (var clause in query.Clauses)
+        {
+            if (clause is not SpanTermQuery)
+                return false;
+        }
+
+        var seen = EnsureScratch(ref t_patternSeen, reader.MaxDoc);
+        var docIds = EnsureScratch(ref t_patternDocIds, reader.MaxDoc);
+        int docCount = 0;
+        int docBase = reader.DocBase;
+        float score = query.Boost != 1.0f ? query.Boost : 1.0f;
+        reader.TryGetFieldBoosts(query.Field, out var fieldBoosts);
+        bool hasDeletions = reader.HasDeletions;
+
+        try
+        {
+            foreach (var clause in query.Clauses)
+            {
+                var termQuery = (SpanTermQuery)clause;
+                var qualifiedTerm = termQuery.CachedQualifiedTerm ??= string.Concat(termQuery.Field, "\x00", termQuery.Term);
+                using var postings = reader.GetPostingsEnum(qualifiedTerm);
+                while (postings.MoveNext())
+                {
+                    int docId = postings.DocId;
+                    if ((hasDeletions && !reader.IsLive(docId)) || seen[docId])
+                        continue;
+
+                    seen[docId] = true;
+                    docIds[docCount++] = docId;
+                    collector.Collect(docBase + docId, ApplyFieldBoost(fieldBoosts, docId, score));
+                }
+            }
+
+            return true;
+        }
+        finally
+        {
+            for (int i = 0; i < docCount; i++)
+            {
+                seen[docIds[i]] = false;
+                docIds[i] = 0;
+            }
+        }
+    }
+
+    private bool TryExecuteSpanNotTermQuery(SpanNotQuery query, SegmentReader reader, ref TopNCollector collector)
+    {
+        if (query.Include is not SpanNearQuery includeNear || !IsSpanTermDocSetQuery(query.Exclude))
+            return false;
+
+        var excluded = EnsureScratch(ref t_patternSeen, reader.MaxDoc);
+        var excludedDocIds = EnsureScratch(ref t_patternDocIds, reader.MaxDoc);
+        int excludedCount = 0;
+
+        try
+        {
+            MarkExcludedSpanTermDocs(query.Exclude, reader, excluded, excludedDocIds, ref excludedCount);
+            return TryExecuteSpanNearTermQuery(includeNear, reader, excluded, query.Boost, ref collector);
+        }
+        finally
+        {
+            for (int i = 0; i < excludedCount; i++)
+            {
+                excluded[excludedDocIds[i]] = false;
+                excludedDocIds[i] = 0;
+            }
+        }
+    }
+
+    private static bool IsSpanTermDocSetQuery(SpanQuery query)
+    {
+        if (query is SpanTermQuery)
+            return true;
+        if (query is not SpanOrQuery spanOr)
+            return false;
+
+        foreach (var clause in spanOr.Clauses)
+        {
+            if (clause is not SpanTermQuery)
+                return false;
+        }
+
+        return true;
+    }
+
+    private static void MarkExcludedSpanTermDocs(SpanQuery query, SegmentReader reader,
+        bool[] excluded, int[] excludedDocIds, ref int excludedCount)
+    {
+        if (query is SpanTermQuery termQuery)
+        {
+            MarkExcludedSpanTermDocs(termQuery, reader, excluded, excludedDocIds, ref excludedCount);
+            return;
+        }
+
+        var spanOr = (SpanOrQuery)query;
+        foreach (var clause in spanOr.Clauses)
+            MarkExcludedSpanTermDocs((SpanTermQuery)clause, reader, excluded, excludedDocIds, ref excludedCount);
+    }
+
+    private static void MarkExcludedSpanTermDocs(SpanTermQuery query, SegmentReader reader,
+        bool[] excluded, int[] excludedDocIds, ref int excludedCount)
+    {
+        var qualifiedTerm = query.CachedQualifiedTerm ??= string.Concat(query.Field, "\x00", query.Term);
+        using var postings = reader.GetPostingsEnum(qualifiedTerm);
+        bool hasDeletions = reader.HasDeletions;
+        while (postings.MoveNext())
+        {
+            int docId = postings.DocId;
+            if ((hasDeletions && !reader.IsLive(docId)) || excluded[docId])
+                continue;
+
+            excluded[docId] = true;
+            excludedDocIds[excludedCount++] = docId;
+        }
+    }
+
+    private static bool HasSpanNearPositions(PostingsEnum[] postings, int termCount, int slop, bool inOrder)
+    {
+        if (termCount == 1)
+            return !postings[0].GetCurrentPositions().IsEmpty;
+
+        var firstPositions = postings[0].GetCurrentPositions();
+        for (int i = 0; i < firstPositions.Length; i++)
+        {
+            if (HasSpanNearPositions(postings, termCount, slop, inOrder, clauseIndex: 1, firstPositions[i]))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool HasSpanNearPositions(PostingsEnum[] postings, int termCount, int slop, bool inOrder,
+        int clauseIndex, int previousPosition)
+    {
+        var positions = postings[clauseIndex].GetCurrentPositions();
+        for (int i = 0; i < positions.Length; i++)
+        {
+            int position = positions[i];
+            int distance = Math.Abs(position - previousPosition);
+            if (distance > slop + 1 || (inOrder && position <= previousPosition))
+                continue;
+
+            if (clauseIndex + 1 == termCount ||
+                HasSpanNearPositions(postings, termCount, slop, inOrder, clauseIndex + 1, position))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private List<Span> CollectSpans(SpanQuery query, SegmentReader reader)

@@ -430,6 +430,30 @@ public sealed partial class IndexSearcher
         return true;
     }
 
+    private static bool TryGetSimpleContainsRegexLiteral(string pattern, out string literal)
+    {
+        literal = string.Empty;
+        if (pattern.Length <= 4 || !pattern.StartsWith(".*", StringComparison.Ordinal) ||
+            !pattern.EndsWith(".*", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var candidate = pattern.AsSpan(2, pattern.Length - 4);
+        if (candidate.Length == 0)
+            return false;
+
+        for (int i = 0; i < candidate.Length; i++)
+        {
+            char c = candidate[i];
+            if (c > 0x7F || c is '.' or '*' or '+' or '?' or '[' or '(' or '{' or '|' or '\\' or '^' or '$')
+                return false;
+        }
+
+        literal = candidate.ToString();
+        return true;
+    }
+
     private void ExecuteFuzzyQuery(FuzzyQuery query, SegmentReader reader,
         Dictionary<(string Field, string Term), int> globalDFs, ref TopNCollector collector)
     {
@@ -534,6 +558,14 @@ public sealed partial class IndexSearcher
         Dictionary<(string Field, string Term), int> globalDFs, ref TopNCollector collector)
     {
         var fieldPrefix = $"{query.Field}\x00";
+        if (globalDFs.Count == 0 &&
+            (query.CompiledRegex.Options & System.Text.RegularExpressions.RegexOptions.IgnoreCase) == 0 &&
+            TryGetSimpleContainsRegexLiteral(query.Pattern, out var literal))
+        {
+            ExecuteRegexpContainsQuery(query, reader, fieldPrefix, literal, ref collector);
+            return;
+        }
+
         var matchingTerms = reader.GetTermsMatchingRegex(fieldPrefix, query.CompiledRegex);
         if (matchingTerms.Count == 0) return;
 
@@ -568,6 +600,41 @@ public sealed partial class IndexSearcher
         }
     }
 
+    private void ExecuteRegexpContainsQuery(RegexpQuery query, SegmentReader reader, string fieldPrefix,
+        string literal, ref TopNCollector collector)
+    {
+        var matchingOffsets = reader.GetTermOffsetsContaining(fieldPrefix, literal.AsSpan());
+        if (matchingOffsets.Count == 0) return;
+
+        float boost = query.Boost;
+        float avgDocLength = _stats.GetAvgFieldLength(query.Field);
+        int docBase = reader.DocBase;
+        reader.TryGetFieldLengths(query.Field, out var fieldLengths);
+        reader.TryGetFieldBoosts(query.Field, out var fieldBoosts);
+        var scores = EnsureScratch(ref t_patternScores, reader.MaxDoc);
+        var seen = EnsureScratch(ref t_patternSeen, reader.MaxDoc);
+        var docIds = EnsureScratch(ref t_patternDocIds, reader.MaxDoc);
+        int docCount = 0;
+
+        try
+        {
+            foreach (var postingsOffset in matchingOffsets)
+            {
+                using var postings = reader.GetPostingsEnumAtOffset(postingsOffset);
+                if (postings.IsExhausted) continue;
+
+                var (f1, f2) = _similarity.PrecomputeFactors(_totalDocCount, postings.DocFreq, avgDocLength);
+                AccumulatePostingsScores(reader, postings, f1, f2, fieldLengths, fieldBoosts, boost, scores, seen, docIds, ref docCount);
+            }
+
+            CollectAccumulatedScores(scores, docIds, docCount, docBase, ref collector);
+        }
+        finally
+        {
+            ClearAccumulatedScores(scores, seen, docIds, docCount);
+        }
+    }
+
     private void ExecuteConstantScoreQuery(ConstantScoreQuery query, SegmentReader reader,
         Dictionary<(string Field, string Term), int> globalDFs, ref TopNCollector collector)
     {
@@ -586,6 +653,8 @@ public sealed partial class IndexSearcher
         Dictionary<(string Field, string Term), int> globalDFs, ref TopNCollector collector)
     {
         if (query.Disjuncts.Count == 0) return;
+        if (TryExecuteDisjunctionMaxTermQuery(query, reader, globalDFs, ref collector))
+            return;
 
         // Collect per-docId: max score + all scores for tiebreaker
         var docScores = new Dictionary<int, (float Max, float OtherSum)>();
@@ -618,6 +687,98 @@ public sealed partial class IndexSearcher
             float score = max + tieBreaker * otherSum;
             if (boost != 1.0f) score *= boost;
             collector.Collect(docId, score);
+        }
+    }
+
+    private bool TryExecuteDisjunctionMaxTermQuery(DisjunctionMaxQuery query, SegmentReader reader,
+        Dictionary<(string Field, string Term), int> globalDFs, ref TopNCollector collector)
+    {
+        foreach (var disjunct in query.Disjuncts)
+        {
+            if (disjunct is not TermQuery)
+                return false;
+        }
+
+        var maxScores = EnsureScratch(ref t_patternScores, reader.MaxDoc);
+        var otherScores = EnsureScratch(ref t_patternScratchScores, reader.MaxDoc);
+        var seen = EnsureScratch(ref t_patternSeen, reader.MaxDoc);
+        var docIds = EnsureScratch(ref t_patternDocIds, reader.MaxDoc);
+        int docCount = 0;
+
+        try
+        {
+            foreach (var disjunct in query.Disjuncts)
+            {
+                var termQuery = (TermQuery)disjunct;
+                var qualifiedTerm = termQuery.CachedQualifiedTerm ??= string.Concat(termQuery.Field, "\x00", termQuery.Term);
+                using var postings = reader.GetPostingsEnum(qualifiedTerm);
+                if (postings.IsExhausted)
+                    continue;
+
+                int docFreq = globalDFs.GetValueOrDefault((termQuery.Field, termQuery.Term), postings.DocFreq);
+                float avgDocLength = _stats.GetAvgFieldLength(termQuery.Field);
+                var (f1, f2) = _similarity.PrecomputeFactors(_totalDocCount, docFreq, avgDocLength);
+                reader.TryGetFieldLengths(termQuery.Field, out var fieldLengths);
+                reader.TryGetFieldBoosts(termQuery.Field, out var fieldBoosts);
+                float termBoost = termQuery.Boost;
+
+                while (postings.MoveNext())
+                {
+                    int docId = postings.DocId;
+                    if (!reader.IsLive(docId))
+                        continue;
+
+                    int docLength = fieldLengths is not null && (uint)docId < (uint)fieldLengths.Length
+                        ? fieldLengths[docId] : 1;
+                    float score = _similarity.ScorePrecomputed(f1, f2, postings.Freq, docLength);
+                    if (termBoost != 1.0f)
+                        score *= termBoost;
+                    score = ApplyFieldBoost(fieldBoosts, docId, score);
+
+                    if (!seen[docId])
+                    {
+                        seen[docId] = true;
+                        docIds[docCount++] = docId;
+                        maxScores[docId] = score;
+                        continue;
+                    }
+
+                    if (score > maxScores[docId])
+                    {
+                        otherScores[docId] += maxScores[docId];
+                        maxScores[docId] = score;
+                    }
+                    else
+                    {
+                        otherScores[docId] += score;
+                    }
+                }
+            }
+
+            float tieBreaker = query.TieBreakerMultiplier;
+            float queryBoost = query.Boost;
+            int docBase = reader.DocBase;
+            for (int i = 0; i < docCount; i++)
+            {
+                int docId = docIds[i];
+                float score = maxScores[docId] + tieBreaker * otherScores[docId];
+                if (queryBoost != 1.0f)
+                    score *= queryBoost;
+                collector.Collect(docBase + docId, score);
+            }
+
+            return true;
+        }
+        finally
+        {
+            for (int i = 0; i < docCount; i++)
+            {
+                int docId = docIds[i];
+                maxScores[docId] = 0f;
+                otherScores[docId] = 0f;
+                seen[docId] = false;
+                docIds[i] = 0;
+            }
         }
     }
 

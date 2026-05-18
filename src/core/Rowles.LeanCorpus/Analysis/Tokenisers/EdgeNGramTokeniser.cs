@@ -44,7 +44,7 @@ public sealed class EdgeNGramTokeniser : ITokeniser
     /// <inheritdoc/>
     public List<Token> Tokenise(ReadOnlySpan<char> input)
     {
-        var tokens = new List<Token>();
+        var tokens = new List<Token>(CountEdgeNGrams(input));
         int len = input.Length;
         int tokenStart = 0;
 
@@ -68,6 +68,27 @@ public sealed class EdgeNGramTokeniser : ITokeniser
             tokenStart = i + 1;
         }
         return tokens;
+    }
+
+    private int CountEdgeNGrams(ReadOnlySpan<char> input)
+    {
+        int count = 0;
+        int tokenStart = 0;
+
+        for (int i = 0; i <= input.Length; i++)
+        {
+            bool boundary = i == input.Length || input[i] == ' ' || input[i] == '\t'
+                            || input[i] == '\r' || input[i] == '\n';
+            if (!boundary)
+                continue;
+
+            int tokenLen = i - tokenStart;
+            if (tokenLen >= MinGram)
+                count += Math.Min(MaxGram, tokenLen) - MinGram + 1;
+            tokenStart = i + 1;
+        }
+
+        return count;
     }
 
     private string GetOrCacheString(ReadOnlySpan<char> span)

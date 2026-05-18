@@ -62,4 +62,10 @@ public sealed partial class SegmentReader
     {
         return _dicReader.GetTermsMatchingRegex(fieldPrefix, regex);
     }
+
+    /// <summary>Returns postings offsets for terms whose bare text contains the supplied literal.</summary>
+    internal List<long> GetTermOffsetsContaining(string fieldPrefix, ReadOnlySpan<char> literal)
+    {
+        return _dicReader.GetTermOffsetsContaining(fieldPrefix, literal);
+    }
 }
