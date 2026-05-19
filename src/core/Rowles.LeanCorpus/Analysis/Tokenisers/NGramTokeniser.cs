@@ -8,7 +8,7 @@ using Rowles.LeanCorpus.Analysis.Analysers;
 /// Useful for partial-word matching and CJK text.
 ///
 /// When <see cref="SplitOnWhitespace"/> is <see langword="true"/> the tokeniser first splits on
-/// <c>' '</c>, <c>'\t'</c>, <c>'\r'</c>, and <c>'\n'</c> and applies n-grams per word only,
+/// whitespace (via <see cref="char.IsWhiteSpace(char)"/>) and applies n-grams per word only,
 /// which avoids cross-word-boundary grams and substantially reduces allocations.
 ///
 /// Thread-safety: This class maintains an instance-level intern cache for performance.
@@ -34,6 +34,8 @@ public sealed class NGramTokeniser : ITokeniser
 
     private const int MaxTextCacheSize = 65_536;
     private readonly TokenTextCache _textCache = new(MaxTextCacheSize);
+    private readonly WhitespaceTokeniser _ws = new();
+    private readonly List<(int Start, int End)> _wordOffsets = new();
 
     /// <summary>
     /// Initialises a new <see cref="NGramTokeniser"/> with the specified gram size range.
@@ -80,6 +82,106 @@ public sealed class NGramTokeniser : ITokeniser
         FillTokens(input, tokens);
     }
 
+    /// <summary>
+    /// Returns a stack-only <see cref="Enumerator"/> that yields n-gram tokens
+    /// one at a time without materialising a <see cref="List{Token}"/>.
+    /// When <see cref="SplitOnWhitespace"/> is <see langword="true"/>, n-grams are
+    /// generated per word; otherwise they span the full input.
+    /// Use in a <c>foreach</c> loop for zero-list-allocation enumeration.
+    /// </summary>
+    /// <param name="input">The text to tokenise.</param>
+    public Enumerator EnumerateTokens(ReadOnlySpan<char> input) => new(this, input);
+
+    /// <summary>
+    /// Stack-only n-gram enumerator. Each call to <see cref="MoveNext"/> yields the
+    /// next n-gram in increasing start-offset order.
+    /// </summary>
+    public ref struct Enumerator
+    {
+        private readonly NGramTokeniser _owner;
+        private readonly ReadOnlySpan<char> _input;
+        private int _wordIdx;
+        private int _start;
+        private int _gramLen;
+        private Token _current;
+
+        internal Enumerator(NGramTokeniser owner, ReadOnlySpan<char> input)
+        {
+            _owner = owner;
+            _input = input;
+            _wordIdx = 0;
+            _start = 0;
+            _gramLen = owner.MinGram - 1;
+            _current = default;
+
+            if (owner.SplitOnWhitespace)
+                owner._ws.TokeniseOffsets(input, owner._wordOffsets);
+        }
+
+        /// <summary>Gets the current token.</summary>
+        public Token Current => _current;
+
+        /// <summary>Advances to the next n-gram token.</summary>
+        public bool MoveNext()
+        {
+            if (_owner.SplitOnWhitespace)
+                return MoveNextSplit();
+            return MoveNextFull();
+        }
+
+        private bool MoveNextSplit()
+        {
+            while (_wordIdx < _owner._wordOffsets.Count)
+            {
+                var (wordStart, wordEnd) = _owner._wordOffsets[_wordIdx];
+                int wordLen = wordEnd - wordStart;
+
+                _gramLen++;
+                if (_gramLen <= _owner.MaxGram && _start + _gramLen <= wordLen)
+                {
+                    int absStart = wordStart + _start;
+                    var span = _input.Slice(absStart, _gramLen);
+                    _current = new Token(_owner._textCache.GetOrAdd(span), absStart, absStart + _gramLen);
+                    return true;
+                }
+
+                _start++;
+                _gramLen = _owner.MinGram - 1;
+
+                if (_start >= wordLen)
+                {
+                    _wordIdx++;
+                    _start = 0;
+                }
+            }
+
+            return false;
+        }
+
+        private bool MoveNextFull()
+        {
+            int len = _input.Length;
+            while (_start < len)
+            {
+                _gramLen++;
+                if (_gramLen <= _owner.MaxGram && _start + _gramLen <= len)
+                {
+                    var span = _input.Slice(_start, _gramLen);
+                    _current = new Token(TokenTextCache.Allocate(span), _start, _start + _gramLen);
+                    return true;
+                }
+
+                _start++;
+                _gramLen = _owner.MinGram - 1;
+            }
+
+            return false;
+        }
+
+        /// <summary>Returns <c>this</c> for <c>foreach</c> support.</summary>
+        public Enumerator GetEnumerator() => this;
+    }
+
     private void FillTokens(ReadOnlySpan<char> input, List<Token> tokens)
     {
         if (SplitOnWhitespace)
@@ -96,36 +198,27 @@ public sealed class NGramTokeniser : ITokeniser
             for (int gramLen = MinGram; gramLen <= MaxGram && start + gramLen <= len; gramLen++)
             {
                 var span = input.Slice(start, gramLen);
-                tokens.Add(new Token(_textCache.GetOrAdd(span), start, start + gramLen));
+                tokens.Add(new Token(TokenTextCache.Allocate(span), start, start + gramLen));
             }
         }
     }
 
     private void FillSplit(ReadOnlySpan<char> input, List<Token> tokens)
     {
-        int len = input.Length;
-        int wordStart = 0;
+        _ws.TokeniseOffsets(input, _wordOffsets);
 
-        for (int i = 0; i <= len; i++)
+        foreach (var (wordStart, wordEnd) in _wordOffsets)
         {
-            if (i != len && input[i] != ' ' && input[i] != '\t' && input[i] != '\r' && input[i] != '\n')
-                continue;
-
-            int wordLen = i - wordStart;
-            if (wordLen > 0)
+            int wordLen = wordEnd - wordStart;
+            for (int start = 0; start < wordLen; start++)
             {
-                for (int start = 0; start < wordLen; start++)
+                for (int gramLen = MinGram; gramLen <= MaxGram && start + gramLen <= wordLen; gramLen++)
                 {
-                    for (int gramLen = MinGram; gramLen <= MaxGram && start + gramLen <= wordLen; gramLen++)
-                    {
-                        int absStart = wordStart + start;
-                        var span = input.Slice(absStart, gramLen);
-                        tokens.Add(new Token(_textCache.GetOrAdd(span), absStart, absStart + gramLen));
-                    }
+                    int absStart = wordStart + start;
+                    var span = input.Slice(absStart, gramLen);
+                    tokens.Add(new Token(_textCache.GetOrAdd(span), absStart, absStart + gramLen));
                 }
             }
-
-            wordStart = i + 1;
         }
     }
 

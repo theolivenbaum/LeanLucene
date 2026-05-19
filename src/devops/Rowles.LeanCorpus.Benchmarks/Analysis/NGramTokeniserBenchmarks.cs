@@ -90,6 +90,46 @@ public class NGramTokeniserBenchmarks
 
     [Benchmark]
     [MethodImpl(MethodImplOptions.NoInlining)]
+    public int LeanCorpus_EdgeNGramTokeniser_Streaming()
+    {
+        int total = 0;
+        foreach (var doc in _documents)
+        {
+            foreach (var token in _edgeTokeniser.EnumerateTokens(doc.AsSpan()))
+                total++;
+        }
+        return total;
+    }
+
+    [Benchmark]
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public int LeanCorpus_NGramTokeniser_Streaming()
+    {
+        int total = 0;
+        foreach (var doc in _documents)
+        {
+            foreach (var token in _ngramTokeniser.EnumerateTokens(doc.AsSpan()))
+                total++;
+        }
+        return total;
+    }
+
+    /// <summary>NGram tokeniser with per-word whitespace splitting, streaming enumeration.</summary>
+    [Benchmark]
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public int LeanCorpus_NGramTokeniser_WordSplit_Streaming()
+    {
+        int total = 0;
+        foreach (var doc in _documents)
+        {
+            foreach (var token in _ngramTokeniserWs.EnumerateTokens(doc.AsSpan()))
+                total++;
+        }
+        return total;
+    }
+
+    [Benchmark]
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public int LuceneNet_EdgeNGramTokenizer()
     {
         int total = 0;
