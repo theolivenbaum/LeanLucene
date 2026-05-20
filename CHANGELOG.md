@@ -39,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `NGramTokeniser` now accepts a `splitOnWhitespace` constructor parameter (default `false`). When `true`, n-grams are generated per whitespace-delimited word rather than across the full input, eliminating cross-word-boundary grams and dramatically reducing allocations for larger gram ranges.
 - Removed the redundant pre-count pass from the `Tokenise(input, tokens)` buffer overload of both `NGramTokeniser` and `EdgeNGramTokeniser`; the reused list's existing capacity is sufficient after warmup and the O(n) scan is no longer performed on every call. The allocating `Tokenise(input)` overload retains its pre-count for correct initial sizing.
 - Added `LeanCorpus_NGramTokeniser_WordSplit` benchmark variant to `NGramTokeniserBenchmarks` to surface the per-word splitting path in benchmark runs.
+- Added span-backed analysis APIs (`SpanToken`, `ISpanTokeniser`, `ISpanAnalyser`, `ISpanTokenSink`, and `ISpanTokenFilter`) and wired `NGramTokeniser`, `EdgeNGramTokeniser`, `Analyser`, `LowercaseFilter`, `IndexWriter`, and DWPT indexing through them so n-gram indexing no longer materialises token text strings on the hot path.
+- Added span-sink n-gram benchmark variants to measure the allocation-aware tokenisation path separately from the legacy `List<Token>` API.
 - Replaced the enum-based `TokenKind` analysis contract with string token types, removed the public generic `TokenTypes` taxonomy, and moved producer-specific token type names onto the tokenisers that emit them.
 - Tightened new query constructors so empty fields, empty term groups, unknown combined-field weights, and non-finite point values fail fast instead of being silently filtered or coerced.
 - Scoped lightweight phonetic and English stemming APIs to honest names, and added Hunspell condition parsing plus generated-form limits.
@@ -52,7 +54,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hardened benchmark suites by splitting block-join and deletion workloads, broadening Boolean and fuzzy query scenarios, aligning Lucene.NET disk-backed comparison paths, and making suite selection fail fast on unknown names.
 
 ### Fixed
-- `FieldExistsQuery` no longer deserialises full stored-field values just to check stored-field presence.
+- `NGramTokeniser` and `EdgeNGramTokeniser` no longer hold a shared `_wordOffsets` list; each span-path call and each `Enumerator` instance now owns its own local list, making the span tokenisation path safe for concurrent use on a shared tokeniser instance.
+- `LowercaseFilter` no longer holds a shared `_spanBuffer` field; the span path now rents a buffer from `ArrayPool<char>.Shared` per call and returns it in a `finally` block, eliminating the shared mutable state.
+- `Analyser.Clone()` added so `CreateThreadLocalDocumentWriter` can give each DWPT its own `FilteringSpanTokenSink` while sharing the (now stateless) tokeniser and filter references; `IndexWriter.Concurrent` switches on `Analyser` before the fallback arm that shared the original instance across threads.
 - Stored binary field reads now return defensive copies so callers cannot mutate cached stored-field buffers.
 - `StoredFieldsReader` now validates matching `.fdt` and `.fdx` header versions and block sizes before decoding stored values, and rejects unsupported `.fdt` versions up front.
 - `TermInSetQuery` now publishes its cached qualified-term array safely for parallel search execution.

@@ -158,6 +158,7 @@ public sealed partial class IndexWriter
             KeywordAnalyser => new KeywordAnalyser(_config.AnalyserInternCacheSize),
             SimpleAnalyser => new SimpleAnalyser(_config.AnalyserInternCacheSize),
             StemmedAnalyser => new StemmedAnalyser(),
+            Analyser a => a.Clone(),
             _ => _defaultAnalyser
         };
 
@@ -171,6 +172,7 @@ public sealed partial class IndexWriter
                 KeywordAnalyser => new KeywordAnalyser(),
                 SimpleAnalyser => new SimpleAnalyser(),
                 StemmedAnalyser => new StemmedAnalyser(),
+                Analyser a => a.Clone(),
                 _ => kvp.Value
             };
         }

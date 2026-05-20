@@ -8,10 +8,11 @@ using Rowles.LeanCorpus.Analysis.Analysers;
 /// anchored at the start of each whitespace-delimited token (edge n-grams), using
 /// <see cref="char.IsWhiteSpace(char)"/> for Unicode-aware whitespace detection.
 ///
-/// Thread-safety: This class maintains an instance-level intern cache for performance.
-/// Each instance should be used by a single thread, or callers should create separate instances per thread.
+/// Thread-safety: The span path is thread-safe for concurrent use on the same instance.
+/// The legacy <see cref="List{Token}"/> path uses an instance-level intern cache; each thread
+/// should use a separate instance when calling <see cref="Tokenise(ReadOnlySpan{char})"/> concurrently.
 /// </summary>
-public sealed class EdgeNGramTokeniser : ITokeniser
+public sealed class EdgeNGramTokeniser : ITokeniser, ISpanTokeniser
 {
     /// <summary>
     /// Gets the minimum n-gram length (inclusive).
@@ -26,7 +27,6 @@ public sealed class EdgeNGramTokeniser : ITokeniser
     private const int MaxTextCacheSize = 65_536;
     private readonly TokenTextCache _textCache = new(MaxTextCacheSize);
     private readonly WhitespaceTokeniser _ws = new();
-    private readonly List<(int Start, int End)> _wordOffsets = new();
 
     /// <summary>
     /// Initialises a new <see cref="EdgeNGramTokeniser"/> with the specified gram size range.
@@ -65,9 +65,16 @@ public sealed class EdgeNGramTokeniser : ITokeniser
         TokeniseCore(input, tokens);
     }
 
+    /// <inheritdoc/>
+    public void Tokenise(ReadOnlySpan<char> input, ISpanTokenSink sink)
+    {
+        ArgumentNullException.ThrowIfNull(sink);
+        Emit(input, sink);
+    }
+
     /// <summary>
     /// Returns a stack-only <see cref="Enumerator"/> that yields edge n-gram tokens
-    /// one at a time without materialising a <see cref="List{Token}"/>.
+    /// one at a time without materialising a <see cref="List{Token}"/> or token text strings.
     /// Use in a <c>foreach</c> loop when early termination or zero-list-allocation
     /// enumeration is desired.
     /// </summary>
@@ -84,7 +91,8 @@ public sealed class EdgeNGramTokeniser : ITokeniser
         private readonly ReadOnlySpan<char> _input;
         private int _wordIdx;
         private int _gramLen;
-        private Token _current;
+        private SpanToken _current;
+        private List<(int Start, int End)> _wordOffsets;
 
         internal Enumerator(EdgeNGramTokeniser owner, ReadOnlySpan<char> input)
         {
@@ -93,26 +101,26 @@ public sealed class EdgeNGramTokeniser : ITokeniser
             _wordIdx = 0;
             _gramLen = 0;
             _current = default;
-            owner._ws.TokeniseOffsets(input, owner._wordOffsets);
+            _wordOffsets = [];
+            owner._ws.TokeniseOffsets(input, _wordOffsets);
         }
 
         /// <summary>Gets the current token.</summary>
-        public Token Current => _current;
+        public SpanToken Current => _current;
 
         /// <summary>Advances to the next edge n-gram token.</summary>
         public bool MoveNext()
         {
-            while (_wordIdx < _owner._wordOffsets.Count)
+            while (_wordIdx < _wordOffsets.Count)
             {
-                var (wordStart, wordEnd) = _owner._wordOffsets[_wordIdx];
+                var (wordStart, wordEnd) = _wordOffsets[_wordIdx];
                 int tokenLen = wordEnd - wordStart;
                 int maxGramLen = Math.Min(_owner.MaxGram, tokenLen);
 
                 _gramLen++;
                 if (_gramLen >= _owner.MinGram && _gramLen <= maxGramLen)
                 {
-                    var wordSpan = _input.Slice(wordStart, maxGramLen);
-                    _current = new Token(_owner._textCache.GetOrAdd(wordSpan[..(_gramLen)]), wordStart, wordStart + _gramLen);
+                    _current = new SpanToken(_input.Slice(wordStart, _gramLen), wordStart, wordStart + _gramLen);
                     return true;
                 }
 
@@ -130,11 +138,28 @@ public sealed class EdgeNGramTokeniser : ITokeniser
         public Enumerator GetEnumerator() => this;
     }
 
+    private void Emit(ReadOnlySpan<char> input, ISpanTokenSink sink)
+    {
+        List<(int Start, int End)> wordOffsets = [];
+        _ws.TokeniseOffsets(input, wordOffsets);
+
+        foreach (var (wordStart, wordEnd) in wordOffsets)
+        {
+            int tokenLen = wordEnd - wordStart;
+            int maxGramLen = Math.Min(MaxGram, tokenLen);
+            for (int gramLen = MinGram; gramLen <= maxGramLen; gramLen++)
+            {
+                sink.Add(input.Slice(wordStart, gramLen), wordStart, wordStart + gramLen);
+            }
+        }
+    }
+
     private void TokeniseCore(ReadOnlySpan<char> input, List<Token> tokens)
     {
-        _ws.TokeniseOffsets(input, _wordOffsets);
+        List<(int Start, int End)> wordOffsets = [];
+        _ws.TokeniseOffsets(input, wordOffsets);
 
-        foreach (var (wordStart, wordEnd) in _wordOffsets)
+        foreach (var (wordStart, wordEnd) in wordOffsets)
         {
             int tokenLen = wordEnd - wordStart;
             int maxGramLen = Math.Min(MaxGram, tokenLen);
@@ -148,9 +173,10 @@ public sealed class EdgeNGramTokeniser : ITokeniser
 
     private int CountEdgeNGrams(ReadOnlySpan<char> input)
     {
-        _ws.TokeniseOffsets(input, _wordOffsets);
+        List<(int Start, int End)> wordOffsets = [];
+        _ws.TokeniseOffsets(input, wordOffsets);
         int count = 0;
-        foreach (var (start, end) in _wordOffsets)
+        foreach (var (start, end) in wordOffsets)
         {
             int tokenLen = end - start;
             if (tokenLen >= MinGram)
