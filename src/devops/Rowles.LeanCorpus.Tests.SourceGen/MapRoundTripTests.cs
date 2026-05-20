@@ -21,6 +21,14 @@ public sealed class MapRoundTripTests
     }
 
     [Fact]
+    public void Generated_Map_CreateSchema_uses_document_strict_default()
+    {
+        Assert.False(LooseProductIndex.Map.StrictSchema);
+        Assert.False(LooseProductIndex.Map.CreateSchema().StrictMode);
+        Assert.True(LooseProductIndex.Map.CreateSchema(strict: true).StrictMode);
+    }
+
+    [Fact]
     public void ToDocument_emits_expected_fields_for_a_full_product()
     {
         var p = new Product
@@ -122,5 +130,93 @@ public sealed class MapRoundTripTests
     {
         var snapshot = StoredDocument.Empty;
         Assert.Throws<InvalidOperationException>(() => ProductIndex.FromStoredDocument(snapshot));
+    }
+
+    [Fact]
+    public void FromStoredDocument_throws_when_required_collection_missing()
+    {
+        var stored = new Dictionary<string, IReadOnlyList<string>>
+        {
+            ["id"] = new[] { "p-1" }
+        };
+        var snapshot = StoredDocument.Create(stored, null);
+        Assert.Throws<InvalidOperationException>(() => CollectionProductIndex.FromStoredDocument(snapshot));
+    }
+
+    [Fact]
+    public void FromStoredDocument_preserves_null_optional_collection()
+    {
+        var stored = new Dictionary<string, IReadOnlyList<string>>
+        {
+            ["id"] = new[] { "p-1" },
+            ["tag"] = new[] { "red", "blue" }
+        };
+        var snapshot = StoredDocument.Create(stored, null);
+
+        var revived = CollectionProductIndex.FromStoredDocument(snapshot);
+
+        Assert.Equal(new[] { "red", "blue" }, revived.Tags);
+        Assert.Null(revived.Aliases);
+    }
+
+    [Fact]
+    public void FromStoredDocument_round_trips_geo_location()
+    {
+        var stored = new Dictionary<string, IReadOnlyList<string>>
+        {
+            ["id"] = new[] { "p-1" },
+            ["loc"] = new[] { "51.5074,-0.1278" }
+        };
+        var snapshot = StoredDocument.Create(stored, null);
+
+        var revived = GeoProductIndex.FromStoredDocument(snapshot);
+
+        Assert.Equal(new LeanGeoLocation(51.5074, -0.1278), revived.Location);
+    }
+
+    [Fact]
+    public void FromStoredDocument_preserves_null_optional_geo_location()
+    {
+        var stored = new Dictionary<string, IReadOnlyList<string>>
+        {
+            ["id"] = new[] { "p-1" }
+        };
+        var snapshot = StoredDocument.Create(stored, null);
+
+        var revived = GeoProductIndex.FromStoredDocument(snapshot);
+
+        Assert.Null(revived.Location);
+    }
+
+    [Fact]
+    public void FromStoredDocument_throws_for_malformed_geo_payload()
+    {
+        var stored = new Dictionary<string, IReadOnlyList<string>>
+        {
+            ["id"] = new[] { "p-1" },
+            ["loc"] = new[] { "not-a-geo-point" }
+        };
+        var snapshot = StoredDocument.Create(stored, null);
+
+        Assert.Throws<FormatException>(() => GeoProductIndex.FromStoredDocument(snapshot));
+    }
+
+    [Fact]
+    public void FromStoredDocument_round_trips_DateOnly_and_TimeOnly()
+    {
+        var date = new DateOnly(2026, 5, 20);
+        var time = new TimeOnly(21, 30, 45);
+        var stored = new Dictionary<string, IReadOnlyList<string>>
+        {
+            ["id"] = new[] { "p-1" },
+            ["date"] = new[] { LeanNumericEncoders.ToDayNumber(date).ToString(System.Globalization.CultureInfo.InvariantCulture) },
+            ["time"] = new[] { LeanNumericEncoders.ToTimeOnlyTicks(time).ToString(System.Globalization.CultureInfo.InvariantCulture) }
+        };
+        var snapshot = StoredDocument.Create(stored, null);
+
+        var revived = TemporalProductIndex.FromStoredDocument(snapshot);
+
+        Assert.Equal(date, revived.Date);
+        Assert.Equal(time, revived.Time);
     }
 }

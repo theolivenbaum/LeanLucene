@@ -9,6 +9,8 @@
       href: getting-started/02-fields.md
     - name: Writer configuration
       href: getting-started/03-configuration.md
+    - name: Source-generated mapping
+      href: getting-started/04-source-generated-mapping.md
 
 - name: Analysis
   items:
@@ -80,6 +82,8 @@
       href: index-management/03-validation-recovery.md
     - name: Index checker CLI
       href: index-management/04-cli-checker.md
+    - name: Stored round-tripping
+      href: index-management/05-stored-round-tripping.md
 
 - name: Observability
   items:

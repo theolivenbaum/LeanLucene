@@ -153,4 +153,116 @@ public sealed class DiagnosticTests
             """;
         Assert.True(Has(GeneratorTestHarness.Run(source), "LCGEN009"));
     }
+
+    [Fact]
+    public void LCGEN010_unsupported_generic_document_target()
+    {
+        const string source = """
+            using Rowles.LeanCorpus.Mapping.Attributes;
+            namespace Sample;
+            [LeanDocument]
+            public partial class GenericDoc<T>
+            {
+                [LeanString("id", Required = true)] public required string Id { get; init; }
+            }
+            """;
+        Assert.True(Has(GeneratorTestHarness.Run(source), "LCGEN010"));
+    }
+
+    [Fact]
+    public void LCGEN010_unsupported_nested_document_target()
+    {
+        const string source = """
+            using Rowles.LeanCorpus.Mapping.Attributes;
+            namespace Sample;
+            public static class Outer
+            {
+                [LeanDocument]
+                public partial class NestedDoc
+                {
+                    [LeanString("id", Required = true)] public required string Id { get; init; }
+                }
+            }
+            """;
+        Assert.True(Has(GeneratorTestHarness.Run(source), "LCGEN010"));
+    }
+
+    [Fact]
+    public void LCGEN011_inaccessible_mapped_member()
+    {
+        const string source = """
+            using Rowles.LeanCorpus.Mapping.Attributes;
+            namespace Sample;
+            [LeanDocument]
+            public partial class ProtectedDoc
+            {
+                [LeanString("id", Required = true)] protected string Id { get; init; } = "1";
+            }
+            """;
+        Assert.True(Has(GeneratorTestHarness.Run(source), "LCGEN011"));
+    }
+
+    [Fact]
+    public void LCGEN012_missing_parameterless_constructor_blocks_materialiser()
+    {
+        const string source = """
+            using Rowles.LeanCorpus.Mapping.Attributes;
+            namespace Sample;
+            [LeanDocument]
+            public partial class CtorDoc
+            {
+                public CtorDoc(string id) { Id = id; }
+                [LeanString("id", Required = true)] public string Id { get; init; }
+            }
+            """;
+        Assert.True(Has(GeneratorTestHarness.Run(source), "LCGEN012"));
+    }
+
+    [Fact]
+    public void LCGEN012_getter_only_property_blocks_materialiser()
+    {
+        const string source = """
+            using Rowles.LeanCorpus.Mapping.Attributes;
+            namespace Sample;
+            [LeanDocument]
+            public partial class GetterOnlyDoc
+            {
+                [LeanString("id", Required = true)] public string Id { get; } = "1";
+            }
+            """;
+        Assert.True(Has(GeneratorTestHarness.Run(source), "LCGEN012"));
+    }
+
+    [Fact]
+    public void LCGEN012_unmapped_required_member_blocks_materialiser()
+    {
+        const string source = """
+            using Rowles.LeanCorpus.Mapping.Attributes;
+            namespace Sample;
+            [LeanDocument]
+            public partial class RequiredDoc
+            {
+                [LeanString("id", Required = true)] public required string Id { get; init; }
+                public required string Name { get; init; }
+            }
+            """;
+        Assert.True(Has(GeneratorTestHarness.Run(source), "LCGEN012"));
+    }
+
+    [Fact]
+    public void LCGEN013_decimal_as_string_must_be_stored()
+    {
+        const string source = """
+            using Rowles.LeanCorpus.Mapping;
+            using Rowles.LeanCorpus.Mapping.Attributes;
+            namespace Sample;
+            [LeanDocument]
+            public partial class MoneyDoc
+            {
+                [LeanString("id", Required = true)] public required string Id { get; init; }
+                [LeanNumeric("amount", Encoding = LeanNumericEncoding.DecimalAsString, Stored = false)] public decimal Amount { get; init; }
+            }
+            """;
+        Assert.True(Has(GeneratorTestHarness.Run(source), "LCGEN013"));
+    }
 }

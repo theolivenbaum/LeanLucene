@@ -114,4 +114,62 @@ public sealed class GeneratorSnapshotTests
         Assert.Contains("schema.Add(new FieldMapping(\"title\", FieldType.Text)", src);
         Assert.Contains("IsRequired = true", src);
     }
+
+    [Fact]
+    public void Emits_schema_default_from_LeanDocument_StrictSchema()
+    {
+        const string source = """
+            using Rowles.LeanCorpus.Mapping.Attributes;
+            namespace Sample;
+            [LeanDocument(StrictSchema = false)]
+            public partial class Product
+            {
+                [LeanString("id", Required = true)] public required string Id { get; init; }
+            }
+            """;
+        var result = GeneratorTestHarness.Run(source);
+        Assert.Empty(result.GeneratorDiagnostics);
+        Assert.Empty(result.CompilationErrors);
+        Assert.Contains("public static IndexSchema CreateSchema(bool strict = false)", result.CombinedSource);
+    }
+
+    [Fact]
+    public void Escapes_CSharp_keyword_property_names()
+    {
+        const string source = """
+            using Rowles.LeanCorpus.Mapping.Attributes;
+            namespace Sample;
+            [LeanDocument]
+            public partial class KeywordDoc
+            {
+                [LeanString("class", Required = true)] public required string @class { get; init; }
+            }
+            """;
+        var result = GeneratorTestHarness.Run(source);
+        Assert.Empty(result.GeneratorDiagnostics);
+        Assert.Empty(result.CompilationErrors);
+        Assert.Contains("Fields.@class.Name", result.CombinedSource);
+        Assert.Contains("value.@class", result.CombinedSource);
+        Assert.Contains("@class = __class!", result.CombinedSource);
+    }
+
+    [Fact]
+    public void Emits_vector_dimension_guard_and_blocks_FromStoredDocument()
+    {
+        const string source = """
+            using Rowles.LeanCorpus.Mapping.Attributes;
+            namespace Sample;
+            [LeanDocument]
+            public partial class VectorDoc
+            {
+                [LeanString("id", Required = true)] public required string Id { get; init; }
+                [LeanVector("embedding", Dimension = 3)] public float[]? Embedding { get; init; }
+            }
+            """;
+        var result = GeneratorTestHarness.Run(source);
+        Assert.Contains(result.GeneratorDiagnostics, d => d.Id == "LCGEN004");
+        Assert.Empty(result.CompilationErrors);
+        Assert.Contains("value.Embedding.Length != 3", result.CombinedSource);
+        Assert.Contains("throw new NotSupportedException", result.CombinedSource);
+    }
 }

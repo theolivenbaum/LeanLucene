@@ -61,4 +61,20 @@ public readonly record struct StoredDocument(
     /// <returns>The stored string values.</returns>
     public IReadOnlyList<string> GetValues(string name)
         => Fields.TryGetValue(name, out var values) ? values : Array.Empty<string>();
+
+    /// <summary>
+    /// Attempts to get all string values for the named field without treating a missing
+    /// field as an empty collection.
+    /// </summary>
+    /// <param name="name">The field name.</param>
+    /// <param name="values">The stored string values when the field is present.</param>
+    /// <returns><c>true</c> when the field exists; otherwise, <c>false</c>.</returns>
+    public bool TryGetValues(string name, out IReadOnlyList<string> values)
+    {
+        if (Fields.TryGetValue(name, out values!))
+            return true;
+
+        values = Array.Empty<string>();
+        return false;
+    }
 }

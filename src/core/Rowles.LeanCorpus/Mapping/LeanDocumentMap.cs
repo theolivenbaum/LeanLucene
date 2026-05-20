@@ -37,9 +37,16 @@ public abstract class LeanDocumentMap<TDocument>
     public abstract TDocument FromStoredDocument(StoredDocument document);
 
     /// <summary>
+    /// Builds an <see cref="IndexSchema"/> from the generated field bindings using
+    /// the map's configured <see cref="StrictSchema"/> default.
+    /// </summary>
+    /// <returns>A populated <see cref="IndexSchema"/>.</returns>
+    public IndexSchema CreateSchema() => CreateSchema(StrictSchema);
+
+    /// <summary>
     /// Builds an <see cref="IndexSchema"/> from the generated field bindings.
     /// </summary>
     /// <param name="strict">When <c>true</c>, the schema rejects fields it does not know about.</param>
     /// <returns>A populated <see cref="IndexSchema"/>.</returns>
-    public abstract IndexSchema CreateSchema(bool strict = true);
+    public abstract IndexSchema CreateSchema(bool strict);
 }

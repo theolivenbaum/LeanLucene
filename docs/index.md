@@ -20,6 +20,7 @@ dotnet add package LeanCorpus
 | Area | Details |
 |---|---|
 | **Indexing** | Memory-mapped segments, BM25 scoring, index-time sorting, schema validation, concurrent multi-thread indexing, CRC-protected commits |
+| **Mapping** | Optional Roslyn source generator for typed, reflection-free `LeanDocument` mappers, schemas, field descriptors, and stored-field materialisers |
 | **Queries** | Term, boolean, phrase, prefix, wildcard, fuzzy, range, regexp, span, geo bounding box, geo distance, disjunction max |
 | **Advanced queries** | HNSW vector ANN (`VectorQuery`), filtered vector search, reciprocal rank fusion (`RrfQuery`), block-join, more-like-this, function score, constant score |
 | **Analysis** | Pluggable tokenisers (standard, n-gram, edge n-gram, CJK bigram), char filters, token filters, stemmers for 10+ languages |

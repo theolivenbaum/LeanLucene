@@ -42,15 +42,48 @@ internal static class AttributeReader
             }
         }
 
-        var fields = new List<FieldModel>();
         var diagnostics = new List<Diagnostic>();
+
+        string ns = typeSymbol.ContainingNamespace.IsGlobalNamespace
+            ? string.Empty
+            : typeSymbol.ContainingNamespace.ToDisplayString();
+        string fqn = typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        bool isPartial = IsPartial(typeSymbol);
+        string accessibility = typeSymbol.DeclaredAccessibility switch
+        {
+            Accessibility.Public => "public",
+            Accessibility.Internal => "internal",
+            _ => "internal",
+        };
+
+        if (typeSymbol.ContainingType is not null || typeSymbol.TypeParameters.Length > 0)
+        {
+            diagnostics.Add(Diagnostic.Create(
+                DiagnosticDescriptors.UnsupportedDocumentTarget,
+                typeSymbol.Locations.FirstOrDefault(),
+                typeSymbol.ToDisplayString()));
+
+            return new DocumentModel(
+                TypeName: typeSymbol.Name,
+                FullyQualifiedTypeName: fqn,
+                Namespace: ns,
+                DocumentName: documentName,
+                StrictSchema: strictSchema,
+                IsValueType: typeSymbol.IsValueType,
+                IsPartial: isPartial,
+                Accessibility: accessibility,
+                Fields: new List<FieldModel>(),
+                Diagnostics: diagnostics,
+                CanGenerateFromStored: false,
+                FromStoredBlockerProperty: typeSymbol.Name);
+        }
+
+        var fields = new List<FieldModel>();
 
         foreach (var member in typeSymbol.GetMembers())
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (member is not IPropertySymbol property) continue;
-            if (property.IsStatic || property.IsIndexer) continue;
-            if (property.DeclaredAccessibility == Accessibility.Private) continue;
 
             // [LeanIgnore]
             if (HasAttribute(property, LeanIgnoreAttribute)) continue;
@@ -61,6 +94,15 @@ internal static class AttributeReader
                 .ToImmutableArray();
 
             if (fieldAttrs.Length == 0) continue;
+
+            if (property.IsStatic || property.IsIndexer || !CanReadFromGeneratedCode(property))
+            {
+                diagnostics.Add(Diagnostic.Create(
+                    DiagnosticDescriptors.InaccessibleMappedMember,
+                    property.Locations.FirstOrDefault(),
+                    property.Name));
+                continue;
+            }
 
             if (fieldAttrs.Length > 1)
             {
@@ -92,38 +134,67 @@ internal static class AttributeReader
             fields = fields.Where(f => !dupGroups.Any(g => g.Key == f.FieldName)).ToList();
         }
 
-        // FromStoredDocument feasibility: every required field must be storable & round-trippable
+        // FromStoredDocument feasibility: every emitted member must be storable, round-trippable, and assignable.
         bool canFromStored = true;
         string? blocker = null;
         foreach (var f in fields)
         {
-            if (!f.IsRequired) continue;
             if (!CanRoundTrip(f))
             {
                 canFromStored = false;
                 blocker = f.PropertyName;
                 break;
             }
+            if (!f.CanAssignFromGeneratedCode)
+            {
+                canFromStored = false;
+                blocker = f.PropertyName;
+                diagnostics.Add(Diagnostic.Create(
+                    DiagnosticDescriptors.FromStoredConstructionNotAvailable,
+                    f.Location,
+                    typeSymbol.Name, blocker));
+                break;
+            }
         }
         if (!canFromStored && blocker != null)
         {
+            if (!diagnostics.Any(d => d.Id == DiagnosticDescriptors.FromStoredConstructionNotAvailable.Id))
+            {
+                diagnostics.Add(Diagnostic.Create(
+                    DiagnosticDescriptors.FromStoredNotEmitted,
+                    typeSymbol.Locations.FirstOrDefault(),
+                    typeSymbol.Name, blocker));
+            }
+        }
+
+        if (canFromStored && !CanConstructFromStored(typeSymbol))
+        {
+            canFromStored = false;
+            blocker = typeSymbol.Name;
             diagnostics.Add(Diagnostic.Create(
-                DiagnosticDescriptors.FromStoredNotEmitted,
+                DiagnosticDescriptors.FromStoredConstructionNotAvailable,
                 typeSymbol.Locations.FirstOrDefault(),
                 typeSymbol.Name, blocker));
         }
 
-        string ns = typeSymbol.ContainingNamespace.IsGlobalNamespace
-            ? string.Empty
-            : typeSymbol.ContainingNamespace.ToDisplayString();
-        string fqn = typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-        bool isPartial = IsPartial(typeSymbol);
-        string accessibility = typeSymbol.DeclaredAccessibility switch
+        if (canFromStored)
         {
-            Accessibility.Public => "public",
-            Accessibility.Internal => "internal",
-            _ => "internal",
-        };
+            var mappedProperties = fields.Select(f => f.PropertyName).ToImmutableHashSet();
+            foreach (var member in typeSymbol.GetMembers())
+            {
+                if (member is not IPropertySymbol property) continue;
+                if (property.IsStatic || mappedProperties.Contains(property.Name)) continue;
+                if (!property.IsRequired) continue;
+
+                canFromStored = false;
+                blocker = property.Name;
+                diagnostics.Add(Diagnostic.Create(
+                    DiagnosticDescriptors.FromStoredConstructionNotAvailable,
+                    property.Locations.FirstOrDefault(),
+                    typeSymbol.Name, blocker));
+                break;
+            }
+        }
 
         return new DocumentModel(
             TypeName: typeSymbol.Name,
@@ -173,6 +244,29 @@ internal static class AttributeReader
         return false;
     }
 
+    private static bool CanReadFromGeneratedCode(IPropertySymbol property)
+        => property.GetMethod is { } getter && IsAccessibleFromGeneratedCode(getter.DeclaredAccessibility);
+
+    private static bool CanAssignFromGeneratedCode(IPropertySymbol property)
+        => property.SetMethod is { } setter && IsAccessibleFromGeneratedCode(setter.DeclaredAccessibility);
+
+    private static bool IsAccessibleFromGeneratedCode(Accessibility accessibility)
+        => accessibility is Accessibility.Public or Accessibility.Internal or Accessibility.ProtectedOrInternal;
+
+    private static bool CanConstructFromStored(INamedTypeSymbol typeSymbol)
+    {
+        if (typeSymbol.IsValueType) return true;
+        if (typeSymbol.IsAbstract) return false;
+
+        foreach (var ctor in typeSymbol.InstanceConstructors)
+        {
+            if (ctor.Parameters.Length == 0 && IsAccessibleFromGeneratedCode(ctor.DeclaredAccessibility))
+                return true;
+        }
+
+        return false;
+    }
+
     private static FieldModel? BuildFieldModel(IPropertySymbol property, AttributeData attr, List<Diagnostic> diagnostics)
     {
         string attrName = attr.AttributeClass!.ToDisplayString();
@@ -207,6 +301,7 @@ internal static class AttributeReader
 
         string propTypeFqn = property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         var loc = property.Locations.FirstOrDefault();
+        bool canAssign = CanAssignFromGeneratedCode(property);
 
         switch (attrName)
         {
@@ -225,7 +320,7 @@ internal static class AttributeReader
                 }
                 return new FieldModel(property.Name, fieldName!, propTypeFqn,
                     isText ? FieldKind.Text : FieldKind.String,
-                    shape, NumericKind.None, "None", 0, stored, true, isRequired, isNullable, loc);
+                    shape, NumericKind.None, "None", 0, stored, true, isRequired, isNullable, canAssign, loc);
             }
             case LeanNumericAttribute:
             {
@@ -253,8 +348,14 @@ internal static class AttributeReader
                     ? FieldKind.StoredString
                     : FieldKind.Numeric;
 
+                if (fk == FieldKind.StoredString && !stored)
+                {
+                    diagnostics.Add(Diagnostic.Create(DiagnosticDescriptors.InvalidDecimalStringStorage, loc, property.Name));
+                    return null;
+                }
+
                 return new FieldModel(property.Name, fieldName!, propTypeFqn,
-                    fk, ValueShape.SingleValue, numericKind, encoding, 0, stored, fk == FieldKind.Numeric, isRequired, isNullable, loc);
+                    fk, ValueShape.SingleValue, numericKind, encoding, 0, stored, fk == FieldKind.Numeric, isRequired, isNullable, canAssign, loc);
             }
             case LeanVectorAttribute:
             {
@@ -275,7 +376,7 @@ internal static class AttributeReader
                 }
 
                 return new FieldModel(property.Name, fieldName!, propTypeFqn,
-                    FieldKind.Vector, ValueShape.FloatArray, NumericKind.None, "None", dim, true, false, isRequired, isNullable, loc);
+                    FieldKind.Vector, ValueShape.FloatArray, NumericKind.None, "None", dim, true, false, isRequired, isNullable, canAssign, loc);
             }
             case LeanGeoPointAttribute:
             {
@@ -285,19 +386,19 @@ internal static class AttributeReader
                     return null;
                 }
                 return new FieldModel(property.Name, fieldName!, propTypeFqn,
-                    FieldKind.GeoPoint, ValueShape.SingleValue, NumericKind.None, "None", 0, true, true, isRequired, isNullable, loc);
+                    FieldKind.GeoPoint, ValueShape.SingleValue, NumericKind.None, "None", 0, true, true, isRequired, isNullable, canAssign, loc);
             }
             case LeanStoredAttribute:
             {
                 if (IsString(underlying))
                 {
                     return new FieldModel(property.Name, fieldName!, propTypeFqn,
-                        FieldKind.StoredString, ValueShape.SingleValue, NumericKind.None, "None", 0, true, false, isRequired, isNullable, loc);
+                        FieldKind.StoredString, ValueShape.SingleValue, NumericKind.None, "None", 0, true, false, isRequired, isNullable, canAssign, loc);
                 }
                 if (IsByteArray(underlying))
                 {
                     return new FieldModel(property.Name, fieldName!, propTypeFqn,
-                        FieldKind.StoredBinary, ValueShape.ByteArray, NumericKind.None, "None", 0, true, false, isRequired, isNullable, loc);
+                        FieldKind.StoredBinary, ValueShape.ByteArray, NumericKind.None, "None", 0, true, false, isRequired, isNullable, canAssign, loc);
                 }
                 diagnostics.Add(Diagnostic.Create(DiagnosticDescriptors.UnsupportedPropertyType, loc, property.Name, propTypeFqn));
                 return null;
@@ -393,9 +494,8 @@ internal static class AttributeReader
 
     private static bool CanRoundTrip(FieldModel f)
     {
-        // Vector and GeoPoint cannot round-trip via StoredDocument today
+        // Vectors live in the vector store rather than StoredDocument.
         if (f.FieldKind == FieldKind.Vector) return false;
-        if (f.FieldKind == FieldKind.GeoPoint) return false;
         if (!f.IsStored && f.FieldKind != FieldKind.StoredBinary) return false;
         if (f.ValueShape == ValueShape.StringList || f.ValueShape == ValueShape.StringArray) return true;
         return true;

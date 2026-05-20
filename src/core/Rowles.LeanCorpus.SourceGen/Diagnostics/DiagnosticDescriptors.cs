@@ -33,7 +33,7 @@ internal static class DiagnosticDescriptors
     public static readonly DiagnosticDescriptor FromStoredNotEmitted = new(
         id: "LCGEN004",
         title: "FromStoredDocument cannot be generated",
-        messageFormat: "FromStoredDocument for '{0}' will throw at runtime because required member '{1}' is not stored or has an unsupported shape",
+        messageFormat: "FromStoredDocument for '{0}' will throw at runtime because member '{1}' cannot be materialised from stored fields",
         category: Category,
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
@@ -74,6 +74,38 @@ internal static class DiagnosticDescriptors
         id: "LCGEN009",
         title: "Invalid geo-point mapping",
         messageFormat: "Property '{0}' marked [LeanGeoPoint] must be of type LeanGeoLocation",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor UnsupportedDocumentTarget = new(
+        id: "LCGEN010",
+        title: "Unsupported document target",
+        messageFormat: "Type '{0}' cannot be mapped by LeanCorpus source generation; generic and nested document targets are not supported",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor InaccessibleMappedMember = new(
+        id: "LCGEN011",
+        title: "Mapped property is not accessible",
+        messageFormat: "Property '{0}' cannot be mapped because it is not an accessible instance property",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor FromStoredConstructionNotAvailable = new(
+        id: "LCGEN012",
+        title: "FromStoredDocument construction is not available",
+        messageFormat: "FromStoredDocument for '{0}' will throw at runtime because member or constructor '{1}' cannot be assigned by generated code",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor InvalidDecimalStringStorage = new(
+        id: "LCGEN013",
+        title: "Invalid decimal string storage",
+        messageFormat: "Property '{0}' uses LeanNumericEncoding.DecimalAsString and must keep Stored = true",
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);

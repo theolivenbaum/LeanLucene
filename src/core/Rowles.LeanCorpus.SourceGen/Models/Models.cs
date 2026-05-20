@@ -55,6 +55,7 @@ internal sealed record FieldModel(
     bool IsIndexed,
     bool IsRequired,
     bool IsNullable,
+    bool CanAssignFromGeneratedCode,
     Location? Location);
 
 internal sealed record DocumentModel(

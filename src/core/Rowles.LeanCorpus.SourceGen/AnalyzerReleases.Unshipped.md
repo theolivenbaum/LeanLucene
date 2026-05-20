@@ -14,3 +14,7 @@ LCGEN006 | LeanCorpus.Mapping | Error | Missing numeric encoding
 LCGEN007 | LeanCorpus.Mapping | Error | Missing vector dimension
 LCGEN008 | LeanCorpus.Mapping | Error | Unsupported collection shape
 LCGEN009 | LeanCorpus.Mapping | Error | Invalid geo-point mapping
+LCGEN010 | LeanCorpus.Mapping | Error | Unsupported document target
+LCGEN011 | LeanCorpus.Mapping | Error | Mapped property is not accessible
+LCGEN012 | LeanCorpus.Mapping | Warning | FromStoredDocument construction is not available
+LCGEN013 | LeanCorpus.Mapping | Error | Invalid decimal string storage

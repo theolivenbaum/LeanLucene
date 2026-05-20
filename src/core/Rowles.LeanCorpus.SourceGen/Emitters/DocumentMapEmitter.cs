@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using Microsoft.CodeAnalysis.CSharp;
 using Rowles.LeanCorpus.SourceGen.Models;
 
 namespace Rowles.LeanCorpus.SourceGen.Emitters;
@@ -47,6 +48,11 @@ internal static class DocumentMapEmitter
         EmitCreateSchema(sb, doc);
         sb.AppendLine();
         EmitFromStored(sb, doc, typeFq);
+        if (doc.Fields.Any(static f => f.FieldKind == FieldKind.GeoPoint))
+        {
+            sb.AppendLine();
+            EmitGeoParser(sb);
+        }
 
         sb.AppendLine("}");
         sb.AppendLine();
@@ -65,7 +71,7 @@ internal static class DocumentMapEmitter
             string valueType = ValueTypeFor(f);
             string ft = FieldTypeFor(f);
             sb.Append("        public static readonly LeanField<").Append(typeFq).Append(", ").Append(valueType)
-              .Append("> ").Append(f.PropertyName).Append(" = new(")
+              .Append("> ").Append(Id(f.PropertyName)).Append(" = new(")
               .Append(StringLit(f.FieldName)).Append(", FieldType.").Append(ft).Append(", ")
               .Append(B(f.IsStored)).Append(", ").Append(B(f.IsIndexed)).Append(", ").Append(B(f.IsRequired))
               .AppendLine(");");
@@ -92,8 +98,8 @@ internal static class DocumentMapEmitter
 
     private static void EmitToDocumentField(StringBuilder sb, FieldModel f)
     {
-        string prop = "value." + f.PropertyName;
-        string name = "Fields." + f.PropertyName + ".Name";
+        string prop = "value." + Id(f.PropertyName);
+        string name = "Fields." + Id(f.PropertyName) + ".Name";
         bool nullable = f.IsNullable;
 
         switch (f.FieldKind)
@@ -151,9 +157,7 @@ internal static class DocumentMapEmitter
                 sb.Append("            doc.Add(new BinaryField(").Append(name).Append(", ").Append(prop).AppendLine("));");
                 break;
             case FieldKind.Vector:
-                if (nullable)
-                    sb.Append("        if (").Append(prop).AppendLine(" is not null)");
-                sb.Append("            doc.Add(new VectorField(").Append(name).Append(", ").Append(prop).AppendLine("));");
+                EmitVectorProjection(sb, f, prop, name);
                 break;
             case FieldKind.GeoPoint:
                 if (nullable)
@@ -194,9 +198,28 @@ internal static class DocumentMapEmitter
         }
     }
 
+    private static void EmitVectorProjection(StringBuilder sb, FieldModel f, string prop, string name)
+    {
+        if (f.IsNullable)
+        {
+            sb.Append("        if (").Append(prop).AppendLine(" is not null)");
+            sb.AppendLine("        {");
+            sb.Append("            if (").Append(prop).Append(".Length != ").Append(f.VectorDimension).AppendLine(")");
+            sb.Append("                throw new InvalidOperationException(\"Vector field '").Append(f.FieldName).Append("' expected dimension ").Append(f.VectorDimension).AppendLine(".\");");
+            sb.Append("            doc.Add(new VectorField(").Append(name).Append(", ").Append(prop).AppendLine("));");
+            sb.AppendLine("        }");
+        }
+        else
+        {
+            sb.Append("        if (").Append(prop).Append(".Length != ").Append(f.VectorDimension).AppendLine(")");
+            sb.Append("            throw new InvalidOperationException(\"Vector field '").Append(f.FieldName).Append("' expected dimension ").Append(f.VectorDimension).AppendLine(".\");");
+            sb.Append("        doc.Add(new VectorField(").Append(name).Append(", ").Append(prop).AppendLine("));");
+        }
+    }
+
     private static void EmitCreateSchema(StringBuilder sb, DocumentModel doc)
     {
-        sb.AppendLine("    public static IndexSchema CreateSchema(bool strict = true)");
+        sb.Append("    public static IndexSchema CreateSchema(bool strict = ").Append(B(doc.StrictSchema)).AppendLine(")");
         sb.AppendLine("    {");
         sb.AppendLine("        var schema = new IndexSchema { StrictMode = strict };");
         foreach (var f in doc.Fields)
@@ -238,7 +261,7 @@ internal static class DocumentMapEmitter
             var f = doc.Fields[i];
             string local = "__" + f.PropertyName;
             string assigned = AssignFromLocal(f, local);
-            sb.Append("            ").Append(f.PropertyName).Append(" = ").Append(assigned);
+            sb.Append("            ").Append(Id(f.PropertyName)).Append(" = ").Append(assigned);
             sb.AppendLine(i < doc.Fields.Count - 1 ? "," : "");
         }
         sb.AppendLine("        };");
@@ -248,7 +271,7 @@ internal static class DocumentMapEmitter
     private static void EmitFromStoredLocal(StringBuilder sb, FieldModel f)
     {
         string local = "__" + f.PropertyName;
-        string name = "Fields." + f.PropertyName + ".Name";
+        string name = "Fields." + Id(f.PropertyName) + ".Name";
 
         switch (f.FieldKind)
         {
@@ -265,7 +288,11 @@ internal static class DocumentMapEmitter
                 }
                 else
                 {
-                    sb.Append("        var ").Append(local).Append(" = document.GetValues(").Append(name).AppendLine(");");
+                    sb.Append("        var ").Append(local).Append("__present = document.TryGetValues(").Append(name).Append(", out var ").Append(local).AppendLine(");");
+                    if (f.IsRequired)
+                    {
+                        sb.Append("        if (!").Append(local).Append("__present || ").Append(local).Append(".Count == 0) throw new InvalidOperationException(\"Missing required stored field: ").Append(f.FieldName).AppendLine("\");");
+                    }
                 }
                 break;
             case FieldKind.Numeric:
@@ -282,6 +309,13 @@ internal static class DocumentMapEmitter
                     sb.Append("        if (").Append(local).Append(" is null) throw new InvalidOperationException(\"Missing required stored field: ").Append(f.FieldName).AppendLine("\");");
                 }
                 break;
+            case FieldKind.GeoPoint:
+                sb.Append("        var ").Append(local).Append("__raw = document.GetFirst(").Append(name).AppendLine(");");
+                if (f.IsRequired)
+                {
+                    sb.Append("        if (").Append(local).Append("__raw is null) throw new InvalidOperationException(\"Missing required stored field: ").Append(f.FieldName).AppendLine("\");");
+                }
+                break;
         }
     }
 
@@ -296,20 +330,26 @@ internal static class DocumentMapEmitter
                 {
                     // decimal-as-string: parse
                     if (f.IsRequired) return $"LeanNumericEncoders.FromDecimalString({local}!)";
-                    return $"({local} is null ? default(decimal?) : LeanNumericEncoders.FromDecimalString({local}))";
+                    return $"({local} is null ? default({f.PropertyTypeFullName}) : LeanNumericEncoders.FromDecimalString({local}))";
                 }
                 if (f.ValueShape == ValueShape.SingleValue)
                 {
                     return f.IsRequired ? local + "!" : local;
                 }
                 // collection
-                if (f.PropertyTypeFullName.EndsWith("[]"))
-                    return $"System.Linq.Enumerable.ToArray({local})";
-                return local;
+                if (f.ValueShape == ValueShape.StringArray)
+                {
+                    if (f.IsRequired || !f.IsNullable) return $"System.Linq.Enumerable.ToArray({local})";
+                    return $"({local}__present ? System.Linq.Enumerable.ToArray({local}) : default({f.PropertyTypeFullName}))";
+                }
+                if (f.IsRequired || !f.IsNullable) return local;
+                return $"({local}__present ? {local} : default({f.PropertyTypeFullName}))";
             case FieldKind.Numeric:
                 return DecodeNumeric(f, local + "__raw");
             case FieldKind.StoredBinary:
                 return f.IsRequired ? local + "!" : local;
+            case FieldKind.GeoPoint:
+                return DecodeGeoPoint(f, local + "__raw");
             default:
                 return "default!";
         }
@@ -337,6 +377,13 @@ internal static class DocumentMapEmitter
         if (f.IsRequired) return fromDouble;
         // nullable: when raw is null, default
         return $"({raw} is null ? default({f.PropertyTypeFullName}) : {fromDouble})";
+    }
+
+    private static string DecodeGeoPoint(FieldModel f, string raw)
+    {
+        string parsed = $"ParseGeoLocation({raw}!, {StringLit(f.FieldName)})";
+        if (f.IsRequired) return parsed;
+        return $"({raw} is null ? default({f.PropertyTypeFullName}) : {parsed})";
     }
 
     private static string UnderlyingTypeName(FieldModel f)
@@ -369,7 +416,7 @@ internal static class DocumentMapEmitter
         sb.AppendLine();
         sb.Append("    public override LeanDocument ToDocument(").Append(typeFq).Append(" value) => ").Append(indexClass).AppendLine(".ToDocument(value);");
         sb.Append("    public override ").Append(typeFq).Append(" FromStoredDocument(StoredDocument document) => ").Append(indexClass).AppendLine(".FromStoredDocument(document);");
-        sb.Append("    public override IndexSchema CreateSchema(bool strict = true) => ").Append(indexClass).AppendLine(".CreateSchema(strict);");
+        sb.Append("    public override IndexSchema CreateSchema(bool strict) => ").Append(indexClass).AppendLine(".CreateSchema(strict);");
         sb.AppendLine("}");
     }
 
@@ -404,6 +451,25 @@ internal static class DocumentMapEmitter
     }
 
     private static string B(bool b) => b ? "true" : "false";
+
+    private static string Id(string name)
+        => SyntaxFacts.GetKeywordKind(name) != Microsoft.CodeAnalysis.CSharp.SyntaxKind.None
+            || SyntaxFacts.GetContextualKeywordKind(name) != Microsoft.CodeAnalysis.CSharp.SyntaxKind.None
+            ? "@" + name
+            : name;
+
+    private static void EmitGeoParser(StringBuilder sb)
+    {
+        sb.AppendLine("    private static LeanGeoLocation ParseGeoLocation(string value, string fieldName)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        int separator = value.IndexOf(',');");
+        sb.AppendLine("        if (separator <= 0 || separator >= value.Length - 1)");
+        sb.AppendLine("            throw new FormatException(\"Stored geo field '\" + fieldName + \"' must use 'latitude,longitude'.\");");
+        sb.AppendLine("        double latitude = double.Parse(value.Substring(0, separator), NumberStyles.Float, CultureInfo.InvariantCulture);");
+        sb.AppendLine("        double longitude = double.Parse(value.Substring(separator + 1), NumberStyles.Float, CultureInfo.InvariantCulture);");
+        sb.AppendLine("        return new LeanGeoLocation(latitude, longitude);");
+        sb.AppendLine("    }");
+    }
 
     private static string StringLit(string s)
     {
