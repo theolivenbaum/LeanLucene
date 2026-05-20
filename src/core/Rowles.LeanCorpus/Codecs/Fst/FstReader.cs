@@ -152,6 +152,29 @@ public sealed class FstReader
         IAutomaton automaton, ReadOnlySpan<byte> qualifier)
         => IntersectAutomatonQualified(automaton, qualifier.ToArray());
 
+    /// <summary>
+    /// Outputs-only variant of <see cref="IntersectAutomaton(IAutomaton, ReadOnlySpan{byte})"/>.
+    /// Avoids materialising the matched key, suitable for offset-only query paths.
+    /// </summary>
+    public IEnumerable<(long Output, int FinalState)> IntersectAutomatonOutputs(
+        IAutomaton automaton, ReadOnlySpan<byte> qualifier)
+        => IntersectAutomatonOutputsQualified(automaton, qualifier.ToArray());
+
+    /// <summary>
+    /// Outputs-only enumeration of all outputs whose key starts with <paramref name="prefix"/>.
+    /// Does not materialise any keys.
+    /// </summary>
+    public IEnumerable<long> EnumerateOutputsWithPrefix(ReadOnlySpan<byte> prefix)
+        => EnumerateOutputsWithPrefixImpl(prefix.ToArray());
+
+    /// <summary>
+    /// Returns the outputs for every key starting with <paramref name="qualifier"/> whose suffix
+    /// contains <paramref name="needle"/> (UTF-8 byte-wise substring match). The key is kept in a
+    /// reusable buffer and never materialised as an array.
+    /// </summary>
+    public IEnumerable<long> EnumerateContainsOutputs(ReadOnlySpan<byte> qualifier, ReadOnlySpan<byte> needle)
+        => EnumerateContainsOutputsImpl(qualifier.ToArray(), needle.ToArray());
+
     private IEnumerable<(byte[] Key, long Output, int FinalState)> IntersectAutomatonQualified(
         IAutomaton automaton, byte[] qualifier)
     {
@@ -318,7 +341,421 @@ public sealed class FstReader
         }
     }
 
-    // -- arc-level decoding -------------------------------------------------
+    // -- allocation-light outputs-only traversals -------------------------
+
+    /// <summary>
+    /// Collects all outputs whose key matches <paramref name="automaton"/> when applied to the
+    /// suffix following <paramref name="qualifier"/>, appending to <paramref name="sink"/>.
+    /// Allocation-light: no iterator state-machine or per-arc copying.
+    /// </summary>
+    public void CollectIntersectOutputs(IAutomaton automaton, ReadOnlySpan<byte> qualifier, List<long> sink)
+    {
+        if (_count == 0 || _rootAddress == NoAddress) return;
+
+        long nodeAddr = _rootAddress;
+        long accumulated = 0;
+        for (int i = 0; i < qualifier.Length; i++)
+        {
+            if (!TryFollowArc(nodeAddr, qualifier[i], out long target, out long arcOutput, out _, out _))
+                return;
+            accumulated += arcOutput;
+            if (target == NoAddress)
+            {
+                if (i == qualifier.Length - 1 && automaton.IsAccept(automaton.Start))
+                    sink.Add(accumulated);
+                return;
+            }
+            nodeAddr = target;
+        }
+
+        int startState = automaton.Start;
+        if (!automaton.CanMatch(startState)) return;
+
+        if (TryGetFinalOutput(nodeAddr, out long startFinal) && automaton.IsAccept(startState))
+            sink.Add(accumulated + startFinal);
+
+        CollectIntersectRecursive(nodeAddr, startState, accumulated, automaton, sink);
+    }
+
+    private void CollectIntersectRecursive(long nodeAddr, int automatonState, long accumulatedOutput, IAutomaton automaton, List<long> sink)
+    {
+        int firstArc = FirstRealArcOffset(nodeAddr);
+        if (firstArc < 0) return;
+        int pos = firstArc;
+        while (true)
+        {
+            var arc = DecodeArc(ref pos);
+            int nextState = automaton.Step(automatonState, arc.Label);
+            if (automaton.CanMatch(nextState))
+            {
+                long childOutput = accumulatedOutput + arc.Output;
+                if (arc.HasTarget)
+                {
+                    long childAddr = arc.Target;
+                    if (TryGetFinalOutput(childAddr, out long childFinal) && automaton.IsAccept(nextState))
+                        sink.Add(childOutput + childFinal);
+                    CollectIntersectRecursive(childAddr, nextState, childOutput, automaton, sink);
+                }
+                else if (automaton.IsAccept(nextState))
+                {
+                    sink.Add(childOutput);
+                }
+            }
+            if (arc.IsLastArc) break;
+        }
+    }
+
+    /// <summary>
+    /// Collects all outputs whose key starts with <paramref name="prefix"/>, appending to
+    /// <paramref name="sink"/>. Allocation-light: no iterator state-machine.
+    /// </summary>
+    public void CollectOutputsWithPrefix(ReadOnlySpan<byte> prefix, List<long> sink)
+    {
+        if (_count == 0 || _rootAddress == NoAddress) return;
+
+        long nodeAddr = _rootAddress;
+        long accumulated = 0;
+        for (int i = 0; i < prefix.Length; i++)
+        {
+            if (!TryFollowArc(nodeAddr, prefix[i], out long target, out long arcOutput, out _, out _))
+                return;
+            accumulated += arcOutput;
+            if (target == NoAddress)
+            {
+                if (i == prefix.Length - 1) sink.Add(accumulated);
+                return;
+            }
+            nodeAddr = target;
+        }
+
+        if (TryGetFinalOutput(nodeAddr, out long entryFinal))
+            sink.Add(accumulated + entryFinal);
+
+        CollectOutputsRecursive(nodeAddr, accumulated, sink);
+    }
+
+    private void CollectOutputsRecursive(long nodeAddr, long accumulatedOutput, List<long> sink)
+    {
+        int firstArc = FirstRealArcOffset(nodeAddr);
+        if (firstArc < 0) return;
+        int pos = firstArc;
+        while (true)
+        {
+            var arc = DecodeArc(ref pos);
+            long childOutput = accumulatedOutput + arc.Output;
+            if (arc.HasTarget)
+            {
+                long childAddr = arc.Target;
+                if (TryGetFinalOutput(childAddr, out long childFinal))
+                    sink.Add(childOutput + childFinal);
+                CollectOutputsRecursive(childAddr, childOutput, sink);
+            }
+            else
+            {
+                sink.Add(childOutput);
+            }
+            if (arc.IsLastArc) break;
+        }
+    }
+
+    /// <summary>
+    /// Collects outputs for keys starting with <paramref name="qualifier"/> whose suffix contains
+    /// <paramref name="needle"/> (UTF-8 byte-wise). Allocation-light: reuses a single key buffer
+    /// and emits offsets directly into <paramref name="sink"/>.
+    /// </summary>
+    public void CollectContainsOutputs(ReadOnlySpan<byte> qualifier, ReadOnlySpan<byte> needle, List<long> sink)
+    {
+        if (_count == 0 || _rootAddress == NoAddress) return;
+
+        long nodeAddr = _rootAddress;
+        long accumulated = 0;
+        for (int i = 0; i < qualifier.Length; i++)
+        {
+            if (!TryFollowArc(nodeAddr, qualifier[i], out long target, out long arcOutput, out _, out _))
+                return;
+            accumulated += arcOutput;
+            if (target == NoAddress) return;
+            nodeAddr = target;
+        }
+
+        if (needle.Length == 0)
+        {
+            // Empty needle matches every key with this qualifier.
+            if (TryGetFinalOutput(nodeAddr, out long entryFinal))
+                sink.Add(accumulated + entryFinal);
+            CollectOutputsRecursive(nodeAddr, accumulated, sink);
+            return;
+        }
+
+        Span<byte> keyBuf = stackalloc byte[256];
+        byte[]? rented = null;
+        try
+        {
+            CollectContainsRecursive(nodeAddr, accumulated, ref keyBuf, ref rented, 0, needle, sink);
+        }
+        finally
+        {
+            if (rented is not null) System.Buffers.ArrayPool<byte>.Shared.Return(rented);
+        }
+    }
+
+    private void CollectContainsRecursive(long nodeAddr, long accumulatedOutput, ref Span<byte> keyBuf, ref byte[]? rented, int keyLen, ReadOnlySpan<byte> needle, List<long> sink)
+    {
+        int firstArc = FirstRealArcOffset(nodeAddr);
+        if (firstArc < 0) return;
+        int pos = firstArc;
+        while (true)
+        {
+            var arc = DecodeArc(ref pos);
+            EnsureKeyCapacity(ref keyBuf, ref rented, keyLen + 1);
+            keyBuf[keyLen] = arc.Label;
+            int childKeyLen = keyLen + 1;
+            long childOutput = accumulatedOutput + arc.Output;
+
+            if (arc.HasTarget)
+            {
+                long childAddr = arc.Target;
+                if (TryGetFinalOutput(childAddr, out long childFinal))
+                {
+                    if (keyBuf.Slice(0, childKeyLen).IndexOf(needle) >= 0)
+                        sink.Add(childOutput + childFinal);
+                }
+                CollectContainsRecursive(childAddr, childOutput, ref keyBuf, ref rented, childKeyLen, needle, sink);
+            }
+            else
+            {
+                if (keyBuf.Slice(0, childKeyLen).IndexOf(needle) >= 0)
+                    sink.Add(childOutput);
+            }
+
+            if (arc.IsLastArc) break;
+        }
+    }
+
+    private static void EnsureKeyCapacity(ref Span<byte> keyBuf, ref byte[]? rented, int needed)
+    {
+        if (keyBuf.Length >= needed) return;
+        int newSize = keyBuf.Length;
+        while (newSize < needed) newSize *= 2;
+        var fresh = System.Buffers.ArrayPool<byte>.Shared.Rent(newSize);
+        keyBuf.Slice(0, keyBuf.Length).CopyTo(fresh);
+        if (rented is not null) System.Buffers.ArrayPool<byte>.Shared.Return(rented);
+        rented = fresh;
+        keyBuf = fresh;
+    }
+
+    private IEnumerable<(long Output, int FinalState)> IntersectAutomatonOutputsQualified(
+        IAutomaton automaton, byte[] qualifier)
+    {
+        if (_count == 0 || _rootAddress == NoAddress) yield break;
+
+        long nodeAddr = _rootAddress;
+        long accumulated = 0;
+        for (int i = 0; i < qualifier.Length; i++)
+        {
+            if (!TryFollowArc(nodeAddr, qualifier[i], out long target, out long arcOutput, out _, out _))
+                yield break;
+            accumulated += arcOutput;
+            if (target == NoAddress)
+            {
+                if (i == qualifier.Length - 1 && automaton.IsAccept(automaton.Start))
+                    yield return (accumulated, automaton.Start);
+                yield break;
+            }
+            nodeAddr = target;
+        }
+
+        if (!automaton.CanMatch(automaton.Start)) yield break;
+        foreach (var hit in IntersectOutputsInternal(nodeAddr, automaton.Start, accumulated, automaton))
+            yield return hit;
+    }
+
+    private IEnumerable<(long Output, int FinalState)> IntersectOutputsInternal(
+        long startNode, int startState, long accumulatedOutput, IAutomaton automaton)
+    {
+        if (TryGetFinalOutput(startNode, out long startFinal) && automaton.IsAccept(startState))
+            yield return (accumulatedOutput + startFinal, startState);
+
+        var stack = new Stack<IntersectFrame>();
+        stack.Push(new IntersectFrame(startNode, FirstRealArcOffset(startNode), accumulatedOutput, startState, 0));
+
+        while (stack.Count > 0)
+        {
+            var frame = stack.Peek();
+            if (frame.ArcCursor < 0) { stack.Pop(); continue; }
+
+            int pos = frame.ArcCursor;
+            var arc = DecodeArc(ref pos);
+            stack.Pop();
+            stack.Push(new IntersectFrame(frame.NodeAddr, arc.IsLastArc ? -1 : pos, frame.AccumulatedOutput, frame.AutomatonState, 0));
+
+            int nextState = automaton.Step(frame.AutomatonState, arc.Label);
+            if (!automaton.CanMatch(nextState)) continue;
+
+            long childOutput = frame.AccumulatedOutput + arc.Output;
+
+            if (arc.HasTarget)
+            {
+                long childAddr = arc.Target;
+                if (TryGetFinalOutput(childAddr, out long childFinal) && automaton.IsAccept(nextState))
+                    yield return (childOutput + childFinal, nextState);
+
+                int firstChildArc = FirstRealArcOffset(childAddr);
+                if (firstChildArc >= 0)
+                    stack.Push(new IntersectFrame(childAddr, firstChildArc, childOutput, nextState, 0));
+            }
+            else if (automaton.IsAccept(nextState))
+            {
+                yield return (childOutput, nextState);
+            }
+        }
+    }
+
+    private IEnumerable<long> EnumerateOutputsWithPrefixImpl(byte[] prefix)
+    {
+        if (_count == 0 || _rootAddress == NoAddress) yield break;
+
+        long nodeAddr = _rootAddress;
+        long accumulated = 0;
+        for (int i = 0; i < prefix.Length; i++)
+        {
+            if (!TryFollowArc(nodeAddr, prefix[i], out long target, out long arcOutput, out _, out _))
+                yield break;
+            accumulated += arcOutput;
+            if (target == NoAddress)
+            {
+                if (i == prefix.Length - 1)
+                    yield return accumulated;
+                yield break;
+            }
+            nodeAddr = target;
+        }
+
+        foreach (var output in EnumerateOutputsFromNode(nodeAddr, accumulated))
+            yield return output;
+    }
+
+    private IEnumerable<long> EnumerateOutputsFromNode(long nodeAddr, long accumulatedOutput)
+    {
+        if (TryGetFinalOutput(nodeAddr, out long entryFinal))
+            yield return accumulatedOutput + entryFinal;
+
+        var stack = new Stack<Frame>();
+        stack.Push(new Frame(nodeAddr, FirstRealArcOffset(nodeAddr), accumulatedOutput, 0));
+
+        while (stack.Count > 0)
+        {
+            var frame = stack.Peek();
+            if (frame.ArcCursor < 0) { stack.Pop(); continue; }
+
+            int pos = frame.ArcCursor;
+            var arc = DecodeArc(ref pos);
+            stack.Pop();
+            stack.Push(new Frame(frame.NodeAddr, arc.IsLastArc ? -1 : pos, frame.AccumulatedOutput, 0));
+
+            long childOutput = frame.AccumulatedOutput + arc.Output;
+
+            if (arc.HasTarget)
+            {
+                long childAddr = arc.Target;
+                if (TryGetFinalOutput(childAddr, out long childFinal))
+                    yield return childOutput + childFinal;
+
+                int firstChildArc = FirstRealArcOffset(childAddr);
+                if (firstChildArc >= 0)
+                    stack.Push(new Frame(childAddr, firstChildArc, childOutput, 0));
+            }
+            else
+            {
+                yield return childOutput;
+            }
+        }
+    }
+
+    private IEnumerable<long> EnumerateContainsOutputsImpl(byte[] qualifier, byte[] needle)
+    {
+        if (_count == 0 || _rootAddress == NoAddress) yield break;
+
+        long nodeAddr = _rootAddress;
+        long accumulated = 0;
+        for (int i = 0; i < qualifier.Length; i++)
+        {
+            if (!TryFollowArc(nodeAddr, qualifier[i], out long target, out long arcOutput, out _, out _))
+                yield break;
+            accumulated += arcOutput;
+            if (target == NoAddress)
+            {
+                // The qualifier itself is a complete key; nothing follows for substring matching.
+                yield break;
+            }
+            nodeAddr = target;
+        }
+
+        // Stream the suffix bytes through a reusable buffer and run a byte-wise Contains on each accept.
+        var stack = new Stack<Frame>();
+        var keyBuf = new byte[64];
+        int keyLen = 0;
+
+        if (TryGetFinalOutput(nodeAddr, out long entryFinal))
+        {
+            // Empty suffix; matches only when needle itself is empty.
+            if (needle.Length == 0)
+                yield return accumulated + entryFinal;
+        }
+
+        stack.Push(new Frame(nodeAddr, FirstRealArcOffset(nodeAddr), accumulated, 0));
+
+        while (stack.Count > 0)
+        {
+            var frame = stack.Peek();
+            if (frame.ArcCursor < 0)
+            {
+                stack.Pop();
+                if (stack.Count > 0) keyLen = stack.Peek().KeyLengthBeforeArc;
+                continue;
+            }
+
+            int pos = frame.ArcCursor;
+            var arc = DecodeArc(ref pos);
+            stack.Pop();
+            stack.Push(new Frame(frame.NodeAddr, arc.IsLastArc ? -1 : pos, frame.AccumulatedOutput, frame.KeyLengthBeforeArc));
+
+            long childOutput = frame.AccumulatedOutput + arc.Output;
+            keyLen = frame.KeyLengthBeforeArc;
+            EnsureKeyCapacity(ref keyBuf, keyLen + 1);
+            keyBuf[keyLen] = arc.Label;
+            int childKeyLen = keyLen + 1;
+
+            if (arc.HasTarget)
+            {
+                long childAddr = arc.Target;
+                if (TryGetFinalOutput(childAddr, out long childFinal))
+                {
+                    if (ContainsBytes(keyBuf.AsSpan(0, childKeyLen), needle))
+                        yield return childOutput + childFinal;
+                }
+
+                int firstChildArc = FirstRealArcOffset(childAddr);
+                if (firstChildArc >= 0)
+                {
+                    stack.Push(new Frame(childAddr, firstChildArc, childOutput, childKeyLen));
+                    keyLen = childKeyLen;
+                }
+            }
+            else
+            {
+                if (ContainsBytes(keyBuf.AsSpan(0, childKeyLen), needle))
+                    yield return childOutput;
+            }
+        }
+    }
+
+    private static bool ContainsBytes(ReadOnlySpan<byte> haystack, ReadOnlySpan<byte> needle)
+    {
+        if (needle.Length == 0) return true;
+        return haystack.IndexOf(needle) >= 0;
+    }
+
 
     /// <summary>
     /// Reads the final output of the node at <paramref name="nodeAddr"/>, if it is final.

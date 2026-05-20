@@ -200,7 +200,12 @@ public static class IndexCodecMigrator
         if (options.ValidateBeforeMigration)
         {
             var validation = IndexValidator.Check(directory, new IndexCheckOptions { Deep = true });
-            if (HasErrors(validation))
+            var ignoredSegments = new HashSet<string>(
+                plan.Actions
+                    .Where(static action => action.SourcePath.EndsWith(".dic", StringComparison.Ordinal))
+                    .Select(static action => action.SegmentId ?? string.Empty),
+                StringComparer.Ordinal);
+            if (HasErrors(validation, ignoredSegments))
             {
                 return new IndexCodecMigrationResult
                 {
@@ -374,6 +379,16 @@ public static class IndexCodecMigrator
     private static bool HasErrors(IndexCheckResult result)
         => result.DetailedIssues.Any(static issue => issue.Severity == IndexCheckSeverity.Error);
 
+    private static bool HasErrors(IndexCheckResult result, HashSet<string> segmentsAwaitingTermDictionaryMigration)
+        => result.DetailedIssues.Any(issue =>
+            issue.Severity == IndexCheckSeverity.Error &&
+            !(IsLegacyTermDictionaryReadFailure(issue) && segmentsAwaitingTermDictionaryMigration.Contains(issue.SegmentId ?? string.Empty)));
+
+    private static bool IsLegacyTermDictionaryReadFailure(IndexCheckIssue issue)
+        => (issue.Code == IndexCheckIssueCodes.PostingsReadFailure || issue.Code == IndexCheckIssueCodes.StoredFieldsReadFailure)
+           && issue.Message is not null
+           && issue.Message.Contains("term dictionary format", StringComparison.OrdinalIgnoreCase);
+
     private static IndexCheckResult RemoveMigrationMarkerIssue(IndexCheckResult result)
     {
         var filtered = new IndexCheckResult
@@ -494,8 +509,44 @@ public static class IndexCodecMigrator
 
     private static void RewriteTermDictionary(string path)
     {
-        using var reader = TermDictionaryReader.Open(path);
-        var entries = reader.EnumerateAllTerms();
+        // Peek at the version byte so we can dispatch to the right legacy reader.
+        // The live TermDictionaryReader.Open refuses anything older than v3.
+        byte version;
+        using (var probe = new IndexInput(path))
+        {
+            int magic = probe.ReadInt32();
+            if (magic != CodecConstants.Magic)
+                throw new InvalidDataException(
+                    $"Invalid term dictionary file '{path}': expected magic 0x{CodecConstants.Magic:X8}, got 0x{magic:X8}.");
+            version = probe.ReadByte();
+        }
+
+        if (version == CodecConstants.TermDictionaryVersion) return; // already v3
+
+        List<(string Term, long Offset)> entries;
+        using (var input = new IndexInput(path))
+        {
+            // Re-skip the header bytes; legacy readers expect to read straight past them.
+            input.ReadInt32();
+            input.ReadByte();
+
+            if (version == 1)
+            {
+                var v1 = Codecs.TermDictionary.Legacy.TermDictionaryV1Reader.Open(input);
+                entries = v1.EnumerateAllTerms();
+            }
+            else if (version == 2)
+            {
+                var v2 = Codecs.TermDictionary.Legacy.TermDictionaryV2Reader.Open(input);
+                entries = v2.EnumerateAllTerms();
+            }
+            else
+            {
+                throw new InvalidDataException(
+                    $"Unsupported term dictionary version {version}; cannot migrate to v{CodecConstants.TermDictionaryVersion}.");
+            }
+        }
+
         var sortedTerms = new List<string>(entries.Count);
         var offsets = new Dictionary<string, long>(entries.Count, StringComparer.Ordinal);
         foreach (var (term, offset) in entries)
