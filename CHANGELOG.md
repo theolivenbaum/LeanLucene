@@ -1,4 +1,4 @@
-﻿
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
@@ -262,6 +262,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `m*rket` forces a broad body\0m... scan and decodes rejected terms before matching.
+- `PostingsEnum` struct copies no longer access freed pooled buffers after the original is disposed; a shared `DisposalGuard` reference detects disposal across all copies. Additional struct fields marked `readonly` to prevent accidental mutation.
+- `IndexInput` now has a finaliser that releases the native memory-mapped view pointer when `Dispose` is not called, preventing handle leaks.
+- `LiveDocs.Deserialise` catches only `EndOfStreamException` instead of a bare `catch`, and strips orphaned soft-delete timestamps and out-of-range deleted doc IDs from the bitmap for data integrity.
+- `SegmentReader` field-less `GetNorm(int)` and `GetFieldLength(int)` overloads removed; all callers already use the field-specific versions. The removed overloads were ambiguous for multi-field indexes.
+- `CommitData`, `SegmentInfo`, and `VectorFieldInfo` now validate post-deserialisation invariants; called consistently from `IndexBackup`, `IndexFileInspector`, `IndexRecovery`, and `SegmentInfo.ReadFrom` to catch corrupted index files early.
 
 ### Changed
 

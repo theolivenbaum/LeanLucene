@@ -91,8 +91,8 @@ public sealed class SegmentReaderGapsTests: IDisposable
         }
     }
 
-    [Fact(DisplayName = "SegmentReader: GetNorm DocId Returns NonZero For First Field")]
-    public void GetNorm_DocId_ReturnsNonZeroForFirstField()
+    [Fact(DisplayName = "SegmentReader: GetNorm Returns NonZero For Indexed Field")]
+    public void GetNorm_ReturnsNonZeroForIndexedField()
     {
         var (dir, searcher) = BuildAndOpen(w =>
         {
@@ -103,7 +103,7 @@ public sealed class SegmentReaderGapsTests: IDisposable
         using (dir) using (searcher)
         {
             var reader = searcher.GetSegmentReaders()[0];
-            float norm = reader.GetNorm(0);
+            float norm = reader.GetNorm(0, "body");
             Assert.True(norm > 0f);
         }
     }
@@ -425,10 +425,10 @@ public sealed class SegmentReaderGapsTests: IDisposable
         }
     }
 
-    // GetFieldLength(int docId) — field-less overload
+    // GetFieldLength via field-specific overload
 
-    [Fact(DisplayName = "SegmentReader: GetFieldLength DocId Returns Positive For First Field")]
-    public void GetFieldLength_DocId_ReturnsPositiveForFirstField()
+    [Fact(DisplayName = "SegmentReader: GetFieldLength Returns Positive For Indexed Field")]
+    public void GetFieldLength_ReturnsPositiveForIndexedField()
     {
         var (dir, searcher) = BuildAndOpen(w =>
         {
@@ -439,12 +439,12 @@ public sealed class SegmentReaderGapsTests: IDisposable
         using (dir) using (searcher)
         {
             var reader = searcher.GetSegmentReaders()[0];
-            Assert.True(reader.GetFieldLength(0) >= 1);
+            Assert.True(reader.GetFieldLength(0, "body") >= 1);
         }
     }
 
-    [Fact(DisplayName = "SegmentReader: GetFieldLength DocId Out Of Range Returns One")]
-    public void GetFieldLength_DocId_OutOfRange_ReturnsOne()
+    [Fact(DisplayName = "SegmentReader: GetFieldLength Out Of Range DocId Returns One")]
+    public void GetFieldLength_OutOfRangeDocId_ReturnsOne()
     {
         var (dir, searcher) = BuildAndOpen(w =>
         {
@@ -455,7 +455,7 @@ public sealed class SegmentReaderGapsTests: IDisposable
         using (dir) using (searcher)
         {
             var reader = searcher.GetSegmentReaders()[0];
-            Assert.Equal(1, reader.GetFieldLength(999));
+            Assert.Equal(1, reader.GetFieldLength(999, "body"));
         }
     }
 

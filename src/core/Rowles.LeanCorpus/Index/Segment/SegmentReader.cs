@@ -214,17 +214,6 @@ public sealed partial class SegmentReader : IDisposable
         return _fieldBoosts.TryGetValue(field, out boosts);
     }
 
-    /// <summary>Returns the quantised norm value for a document using the first available field.</summary>
-    public float GetNorm(int docId)
-    {
-        foreach (var norms in _fieldNorms.Values)
-        {
-            if ((uint)docId < (uint)norms.Length)
-                return norms[docId] / 255f;
-        }
-        return 0f;
-    }
-
     /// <summary>
     /// Returns an approximate field length for BM25 for a specific field, derived from the stored norm.
     /// </summary>
@@ -244,20 +233,6 @@ public sealed partial class SegmentReader : IDisposable
     public bool TryGetFieldLengths(string field, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out int[]? lengths)
     {
         return _fieldLengthsPerField.TryGetValue(field, out lengths);
-    }
-
-    /// <summary>
-    /// Returns an approximate field length using the first available field (for non-field-specific queries).
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public int GetFieldLength(int docId)
-    {
-        foreach (var fieldLengths in _fieldLengthsPerField.Values)
-        {
-            if ((uint)docId < (uint)fieldLengths.Length)
-                return fieldLengths[docId];
-        }
-        return 1;
     }
 
     /// <summary>

@@ -66,11 +66,29 @@ public sealed class SegmentInfo
     /// <summary>Reads and deserialises segment metadata from the specified JSON file.</summary>
     /// <param name="filePath">The path of the <c>.seg</c> file to read.</param>
     /// <returns>The deserialised <see cref="SegmentInfo"/>.</returns>
-    /// <exception cref="InvalidDataException">Thrown if the file cannot be deserialised.</exception>
+    /// <exception cref="InvalidDataException">Thrown if the file cannot be deserialised or fails validation.</exception>
     public static SegmentInfo ReadFrom(string filePath)
     {
         var json = File.ReadAllText(filePath);
-        return JsonSerializer.Deserialize(json, LeanCorpusJsonContext.Default.SegmentInfo)
+        var info = JsonSerializer.Deserialize(json, LeanCorpusJsonContext.Default.SegmentInfo)
             ?? throw new InvalidDataException("Failed to deserialise segment info.");
+        info.Validate();
+        return info;
+    }
+
+    /// <summary>
+    /// Validates invariants after deserialisation. Throws <see cref="InvalidDataException"/>
+    /// when required fields are missing, empty, or out of range.
+    /// </summary>
+    internal void Validate()
+    {
+        if (string.IsNullOrEmpty(SegmentId))
+            throw new InvalidDataException("Segment metadata has a null or empty SegmentId.");
+        if (FieldNames is null)
+            throw new InvalidDataException($"Segment '{SegmentId}' has a null FieldNames list.");
+        if (VectorFields is null)
+            throw new InvalidDataException($"Segment '{SegmentId}' has a null VectorFields list.");
+        foreach (var vf in VectorFields)
+            vf.Validate();
     }
 }

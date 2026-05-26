@@ -1,3 +1,4 @@
+using System.IO;
 using Rowles.LeanCorpus.Util;
 using Rowles.LeanCorpus.Store;
 
@@ -151,10 +152,36 @@ internal sealed class LiveDocs
                     }
                 }
             }
-            catch
+            catch (EndOfStreamException)
             {
                 // Graceful fallback for truncated soft-delete section
             }
+
+            // Remove timestamps for doc IDs that are not in the deleted bitmap
+            if (timestamps is not null)
+            {
+                var orphanKeys = new List<int>();
+                foreach (var kvp in timestamps)
+                {
+                    if (!deletedDocs.Contains(kvp.Key))
+                        orphanKeys.Add(kvp.Key);
+                }
+                foreach (var key in orphanKeys)
+                    timestamps.Remove(key);
+            }
+        }
+
+        // Strip out-of-range doc IDs from the deleted bitmap
+        if (maxDoc > 0)
+        {
+            var outOfRangeDocs = new List<int>();
+            foreach (var docId in deletedDocs)
+            {
+                if ((uint)docId >= (uint)maxDoc)
+                    outOfRangeDocs.Add(docId);
+            }
+            foreach (var docId in outOfRangeDocs)
+                deletedDocs.Remove(docId);
         }
 
         return new LiveDocs(deletedDocs, maxDoc, timestamps);
