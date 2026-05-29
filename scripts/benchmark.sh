@@ -117,14 +117,15 @@ SUITE_ORDER=(
 )
 
 declare -A STRAT_DESC=(
-    [default]="No overrides, uses BDN defaults."
+    [default]="20K docs, --job short (development baseline)."
     [fast]="500 docs, --job dry (minimal smoke-test)."
     [quick-compare]="1000 docs, --job short (quick comparison)."
-    [intense]="10000 docs, default BDN job."
-    [stress]="50000 docs, default BDN job."
+    [intense]="10K docs, default BDN job."
+    [stress]="50K docs, default BDN job."
+    [exhaustive]="100K docs, default BDN job (official reference)."
 )
 
-STRAT_ORDER=(default fast quick-compare intense stress)
+STRAT_ORDER=(default fast quick-compare intense stress exhaustive)
 
 contains() {
     local needle="$1"
@@ -313,6 +314,9 @@ STRAT_DOC_COUNT=0
 STRAT_JOB_ARGS=()
 
 case "$STRAT" in
+    default)
+        STRAT_JOB_ARGS=(--job short)
+        ;;
     fast)
         STRAT_DOC_COUNT=500
         STRAT_JOB_ARGS=(--job dry)
@@ -326,6 +330,9 @@ case "$STRAT" in
         ;;
     stress)
         STRAT_DOC_COUNT=50000
+        ;;
+    exhaustive)
+        STRAT_DOC_COUNT=100000
         ;;
 esac
 

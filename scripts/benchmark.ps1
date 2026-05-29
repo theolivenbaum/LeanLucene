@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Unified LeanCorpus benchmark runner.
 
@@ -19,12 +19,13 @@
 
 .PARAMETER Strat
     Predefined strategy that configures DocCount and BDN job.
-    Valid values: default, fast, quick-compare, intense, stress.
-      default       - No overrides, uses BDN defaults. Type: full.
+    Valid values: default, fast, quick-compare, intense, stress, exhaustive.
+      default       - 20K docs, --job short (development baseline). Type: short.
       fast          - 500 docs, --job dry (minimal smoke-test). Type: smoke.
       quick-compare - 1000 docs, --job short (quick comparison). Type: partial.
-      intense       - 10000 docs, default BDN job. Type: full.
-      stress        - 50000 docs, default BDN job. Type: stress.
+      intense       - 10K docs, default BDN job. Type: full.
+      stress        - 50K docs, default BDN job. Type: stress.
+      exhaustive    - 100K docs, default BDN job (official reference). Type: exhaustive.
 
 .PARAMETER DocCount
     Override document count for all suites.
@@ -114,7 +115,7 @@ param(
                  'tokenbudget', 'diagnostics')]
     [string]$Suite = 'all',
 
-    [ValidateSet('default', 'fast', 'quick-compare', 'intense', 'stress')]
+    [ValidateSet('default', 'fast', 'quick-compare', 'intense', 'stress', 'exhaustive')]
     [string]$Strat = 'default',
 
     [ValidateSet('net10.0', 'net11.0')]
@@ -225,11 +226,12 @@ $suiteDescriptions = [ordered]@{
 }
 
 $stratDescriptions = [ordered]@{
-    'default'       = 'No overrides, uses BDN defaults.'
+    'default'       = '20K docs, --job short (development baseline).'
     'fast'          = '500 docs, --job dry (minimal smoke-test).'
     'quick-compare' = '1000 docs, --job short (quick comparison).'
-    'intense'       = '10000 docs, default BDN job.'
-    'stress'        = '50000 docs, default BDN job.'
+    'intense'       = '10K docs, default BDN job.'
+    'stress'        = '50K docs, default BDN job.'
+    'exhaustive'    = '100K docs, default BDN job (official reference).'
 }
 
 if ($Help) {
@@ -310,6 +312,9 @@ $stratDocCount = 0
 $stratJobArgs = @()
 
 switch ($Strat) {
+    'default' {
+        $stratJobArgs = @('--job', 'short')
+    }
     'fast' {
         $stratDocCount = 500
         $stratJobArgs = @('--job', 'dry')
@@ -323,6 +328,9 @@ switch ($Strat) {
     }
     'stress' {
         $stratDocCount = 50000
+    }
+    'exhaustive' {
+        $stratDocCount = 100000
     }
 }
 

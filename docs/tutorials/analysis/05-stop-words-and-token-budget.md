@@ -1,4 +1,4 @@
-﻿# Stop words and the token budget
+# Stop words and the token budget
 
 ## Stop words
 
@@ -20,8 +20,10 @@ Per-document token count is capped via `IndexWriterConfig.MaxTokensPerDocument`
 (default `0`, unlimited). When the cap is hit, behaviour is governed by
 `TokenBudgetPolicy`:
 
-- `Truncate` (default) — silently stop processing additional tokens.
-- `Reject` — throw, refusing the document.
+| Policy | Behaviour |
+|---|---|
+| `Truncate` (default) | Silently stop processing additional tokens. |
+| `Reject` | Throw, refusing the document. |
 
 ```csharp
 var config = new IndexWriterConfig

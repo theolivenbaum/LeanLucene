@@ -26,6 +26,8 @@
       href: analysis/04-stemmers.md
     - name: Stop words and token budget
       href: analysis/05-stop-words-and-token-budget.md
+    - name: Lexicons
+      href: analysis/06-lexicons.md
 
 - name: Searching
   items:
@@ -84,6 +86,8 @@
       href: index-management/04-cli-checker.md
     - name: Stored round-tripping
       href: index-management/05-stored-round-tripping.md
+    - name: Async indexing
+      href: index-management/06-async-indexing.md
 
 - name: Observability
   items:
