@@ -41,7 +41,7 @@ internal static class StreamingPostingsMerger
                 else c.Dispose();
             }
 
-            using var posOutput = new IndexOutput(posOutputPath, durable: true);
+            using var posOutput = new IndexOutput(posOutputPath, dropPageCache: true);
             CodecConstants.WriteHeader(posOutput, CodecConstants.PostingsVersion);
             using var blockWriter = new BlockPostingsWriter(posOutput);
 
@@ -171,7 +171,7 @@ internal static class StreamingPostingsMerger
             blockWriter.Dispose();
             posOutput.Dispose();
 
-            TermDictionaryWriter.Write(dicOutputPath, sortedTerms, offsets);
+            TermDictionaryWriter.Write(dicOutputPath, sortedTerms, offsets, dropPageCache: true);
             return new Result(sortedTerms, offsets);
         }
         finally
@@ -213,6 +213,7 @@ internal static class StreamingPostingsMerger
         {
             var dic = TermDictionaryReader.Open(src.DicPath);
             var pos = new IndexInput(src.PosPath);
+            pos.Prefetch();
             byte ver = CodecConstants.ReadHeaderVersion(pos, CodecConstants.PostingsVersion, "postings (.pos)");
             var terms = dic.EnumerateAllTerms();
             return new Cursor(src, dic, pos, ver, terms);

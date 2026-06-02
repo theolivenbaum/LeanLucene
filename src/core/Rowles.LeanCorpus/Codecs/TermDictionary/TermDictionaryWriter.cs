@@ -15,9 +15,10 @@ namespace Rowles.LeanCorpus.Codecs.TermDictionary;
 /// </summary>
 internal static class TermDictionaryWriter
 {
-    internal static void Write(string filePath, List<string> sortedTerms, Dictionary<string, long> postingsOffsets, bool durable = false)
+    internal static void Write(string filePath, List<string> sortedTerms, Dictionary<string, long> postingsOffsets,
+        bool durable = false, bool dropPageCache = false)
     {
-        using var output = new IndexOutput(filePath, durable);
+        using var output = new IndexOutput(filePath, durable, dropPageCache);
         CodecConstants.WriteHeader(output, CodecConstants.TermDictionaryVersion);
 
         // The caller passes terms ordered by StringComparer.Ordinal, but FstBuilder enforces
