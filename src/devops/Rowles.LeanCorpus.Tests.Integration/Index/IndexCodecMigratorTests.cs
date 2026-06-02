@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Text;
 using Rowles.LeanCorpus.Codecs;
 using Rowles.LeanCorpus.Codecs.Postings;
@@ -10,6 +10,8 @@ using Rowles.LeanCorpus.Index.Compatibility;
 using Rowles.LeanCorpus.Index.Migration;
 using Rowles.LeanCorpus.Store;
 using Rowles.LeanCorpus.Tests.Shared.Fixtures;
+using Rowles.LeanCorpus.Codecs.CodecKit;
+using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
 
 namespace Rowles.LeanCorpus.Tests.Integration.Index;
 
@@ -274,17 +276,32 @@ public sealed class IndexCodecMigratorTests : IClassFixture<TestDirectoryFixture
 
     private static byte ReadCodecVersion(string path)
     {
+        var extension = Path.GetExtension(path);
+        var format = extension switch
+        {
+            ".dic" => CodecFormats.TermDictionary,
+            ".pos" => CodecFormats.Postings,
+            ".dvn" => CodecFormats.NumericDocValues,
+            ".dvs" => CodecFormats.SortedDocValues,
+            ".dss" => CodecFormats.SortedSetDocValues,
+            ".dsn" => CodecFormats.SortedNumericDocValues,
+            ".dvb" => CodecFormats.BinaryDocValues,
+            ".fln" => CodecFormats.FieldLengths,
+            ".fdt" => CodecFormats.StoredFields,
+            ".fdx" => CodecFormats.StoredFields,
+            ".nrm" => CodecFormats.Norms,
+            _ => throw new ArgumentOutOfRangeException(nameof(extension), extension, "Unknown codec extension.")
+        };
         using var stream = File.OpenRead(path);
         using var reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: false);
-        Assert.Equal(CodecConstants.Magic, reader.ReadInt32());
-        return reader.ReadByte();
+        return CodecFileHeader.ReadVersion(reader, format);
     }
 
     private static void WriteCodecVersion(MMapDirectory directory, string pattern, byte version)
     {
         var path = Directory.GetFiles(directory.DirectoryPath, pattern).Single();
         using var stream = File.Open(path, FileMode.Open, FileAccess.Write, FileShare.None);
-        stream.Position = sizeof(int);
+        stream.Position = 0;
         stream.WriteByte(version);
     }
 

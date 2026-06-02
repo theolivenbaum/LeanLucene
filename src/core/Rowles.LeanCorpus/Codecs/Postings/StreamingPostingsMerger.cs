@@ -1,6 +1,8 @@
 using System.Buffers;
 using Rowles.LeanCorpus.Codecs.TermDictionary;
 using Rowles.LeanCorpus.Store;
+using Rowles.LeanCorpus.Codecs.CodecKit;
+using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
 
 namespace Rowles.LeanCorpus.Codecs.Postings;
 
@@ -214,7 +216,7 @@ internal static class StreamingPostingsMerger
             var dic = TermDictionaryReader.Open(src.DicPath);
             var pos = new IndexInput(src.PosPath);
             pos.Prefetch();
-            byte ver = CodecConstants.ReadHeaderVersion(pos, CodecConstants.PostingsVersion, "postings (.pos)");
+            byte ver = CodecFileHeader.ReadVersion(pos, CodecFormats.Postings);
             var terms = dic.EnumerateAllTerms();
             return new Cursor(src, dic, pos, ver, terms);
         }

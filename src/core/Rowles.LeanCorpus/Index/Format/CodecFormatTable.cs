@@ -1,4 +1,4 @@
-﻿using Rowles.LeanCorpus.Codecs;
+using Rowles.LeanCorpus.Codecs;
 
 namespace Rowles.LeanCorpus.Index.Format;
 
@@ -10,6 +10,7 @@ internal static class CodecFormatTable
         [".pos"] = new("Postings", CodecConstants.PostingsVersion, HasHeader: true),
         [".nrm"] = new("Norms", CodecConstants.NormsVersion, HasHeader: true),
         [".vec"] = new("Vectors", CodecConstants.VectorVersion, HasHeader: true),
+        [".vq"] = new("Quantised vectors", CodecConstants.QuantisedVectorVersion, HasHeader: true),
         [".hnsw"] = new("HNSW", CodecConstants.HnswVersion, HasHeader: true),
         [".fdt"] = new("Stored fields data", CodecConstants.StoredFieldsVersion, HasHeader: true),
         [".fdx"] = new("Stored fields index", CodecConstants.StoredFieldsVersion, HasHeader: true),

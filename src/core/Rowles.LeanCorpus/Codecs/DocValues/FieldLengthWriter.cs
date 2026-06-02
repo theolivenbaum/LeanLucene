@@ -1,4 +1,7 @@
-﻿using System.Text;
+using System.IO;
+using System.Text;
+using Rowles.LeanCorpus.Codecs.CodecKit;
+using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
 using Rowles.LeanCorpus.Store;
 
 namespace Rowles.LeanCorpus.Codecs.DocValues;
@@ -12,24 +15,30 @@ internal static class FieldLengthWriter
 {
     internal static void Write(string filePath, IReadOnlyDictionary<string, int[]> fieldTokenCounts, int docCount = -1, bool durable = false)
     {
-        using var output = new IndexOutput(filePath, durable);
+        using var bodyMs = new MemoryStream();
+        using var bw = new BinaryWriter(bodyMs, Encoding.UTF8, leaveOpen: true);
 
-        CodecConstants.WriteHeader(output, CodecConstants.FieldLengthVersion);
-        output.WriteInt32(fieldTokenCounts.Count);
+        bw.Write(fieldTokenCounts.Count);
 
         foreach (var (fieldName, counts) in fieldTokenCounts)
         {
             int count = docCount >= 0 ? docCount : counts.Length;
             var fieldBytes = Encoding.UTF8.GetBytes(fieldName);
-            output.WriteInt32(fieldBytes.Length);
-            output.WriteBytes(fieldBytes);
-            output.WriteInt32(count);
+            bw.Write(fieldBytes.Length);
+            bw.Write(fieldBytes);
+            bw.Write(count);
 
             for (int i = 0; i < count; i++)
             {
                 int val = Math.Clamp(counts[i], 0, ushort.MaxValue);
-                output.WriteVarInt(val);
+                bw.Write7BitEncodedInt(val);
             }
         }
+
+        bw.Flush();
+        byte[] body = bodyMs.ToArray();
+
+        using var output = new IndexOutput(filePath, durable);
+        CodecFileHeader.Write(output, CodecFormats.FieldLengths, body);
     }
 }

@@ -1,5 +1,7 @@
-﻿using System.IO.MemoryMappedFiles;
 using System.Text;
+using Rowles.LeanCorpus.Codecs.CodecKit;
+using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
+using Rowles.LeanCorpus.Store;
 
 namespace Rowles.LeanCorpus.Codecs.DocValues;
 
@@ -11,70 +13,38 @@ internal static class NormsReader
 {
     public static NormsData Read(string filePath)
     {
-        var fileInfo = new FileInfo(filePath);
-        if (!fileInfo.Exists || fileInfo.Length == 0)
-            return new NormsData();
+        using var input = new IndexInput(filePath);
 
-        using var mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-        using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
+        byte version = CodecFileHeader.ReadVersion(input, CodecFormats.Norms);
 
-        long offset = 0;
-
-        // Validate header: magic (4 bytes) + version (1 byte)
-        int magic = accessor.ReadInt32(offset);
-        offset += 4;
-        if (magic != CodecConstants.Magic)
-            throw new InvalidDataException(
-                $"Invalid norms file: expected magic 0x{CodecConstants.Magic:X8}, got 0x{magic:X8}. " +
-                "The file may be corrupted or from an incompatible version.");
-
-        byte version = accessor.ReadByte(offset);
-        offset += 1;
-        if (version > CodecConstants.NormsVersion)
-            throw new InvalidDataException(
-                $"Unsupported norms format version {version}. " +
-                $"This build supports up to version {CodecConstants.NormsVersion}. " +
-                "Please upgrade LeanCorpus.");
-
-        int fieldCount = accessor.ReadInt32(offset);
-        offset += 4;
+        int fieldCount = input.ReadInt32();
 
         var result = new NormsData();
-        Span<byte> nameBuf = stackalloc byte[256];
 
         for (int f = 0; f < fieldCount; f++)
         {
-            int fieldNameLen = accessor.ReadInt32(offset);
-            offset += 4;
+            int fieldNameLen = input.ReadInt32();
 
-            byte[] nameBytes = fieldNameLen <= 256 ? nameBuf[..fieldNameLen].ToArray() : new byte[fieldNameLen];
-            accessor.ReadArray(offset, nameBytes, 0, fieldNameLen);
+            byte[] nameBytes = input.ReadBytes(fieldNameLen);
             string fieldName = Encoding.UTF8.GetString(nameBytes, 0, fieldNameLen);
-            offset += fieldNameLen;
 
-            int docCount = accessor.ReadInt32(offset);
-            offset += 4;
+            int docCount = input.ReadInt32();
 
-            var norms = new byte[docCount];
-            accessor.ReadArray(offset, norms, 0, docCount);
-            offset += docCount;
+            byte[] norms = input.ReadBytes(docCount);
 
             result.Norms[fieldName] = norms;
 
             if (version >= 3)
             {
-                int boostCount = accessor.ReadInt32(offset);
-                offset += sizeof(int);
+                int boostCount = input.ReadInt32();
                 if ((uint)boostCount > (uint)docCount)
                     throw new InvalidDataException($"Invalid norms file: boost count {boostCount} exceeds document count {docCount} for field '{fieldName}'.");
 
                 float[]? boosts = null;
                 for (int i = 0; i < boostCount; i++)
                 {
-                    int docId = accessor.ReadInt32(offset);
-                    offset += sizeof(int);
-                    float boost = accessor.ReadSingle(offset);
-                    offset += sizeof(float);
+                    int docId = input.ReadInt32();
+                    float boost = input.ReadSingle();
 
                     if ((uint)docId >= (uint)docCount)
                         throw new InvalidDataException($"Invalid norms file: boost doc ID {docId} is outside field '{fieldName}' document count {docCount}.");
@@ -91,8 +61,7 @@ internal static class NormsReader
                 float[]? boosts = null;
                 for (int i = 0; i < docCount; i++)
                 {
-                    float boost = accessor.ReadSingle(offset);
-                    offset += sizeof(float);
+                    float boost = input.ReadSingle();
                     if (boost == 1.0f)
                         continue;
 

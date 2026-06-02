@@ -1,3 +1,5 @@
+using Rowles.LeanCorpus.Codecs.CodecKit;
+using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
 using System.Diagnostics;
 using Rowles.LeanCorpus.Codecs;
 using Rowles.LeanCorpus.Codecs.DocValues;
@@ -512,13 +514,15 @@ public static class IndexCodecMigrator
         // Peek at the version byte so we can dispatch to the right legacy reader.
         // The live TermDictionaryReader.Open refuses anything older than v3.
         byte version;
-        using (var probe = new IndexInput(path))
+        using var probe = new IndexInput(path);
+        try
         {
-            int magic = probe.ReadInt32();
-            if (magic != CodecConstants.Magic)
-                throw new InvalidDataException(
-                    $"Invalid term dictionary file '{path}': expected magic 0x{CodecConstants.Magic:X8}, got 0x{magic:X8}.");
-            version = probe.ReadByte();
+            version = CodecFileHeader.ReadVersion(probe, CodecFormats.TermDictionary);
+        }
+        catch (Exception ex) when (ex is InvalidDataException)
+        {
+            throw new InvalidDataException(
+                $"Invalid term dictionary file '{path}': {ex.Message}", ex);
         }
 
         if (version == CodecConstants.TermDictionaryVersion) return; // already v3
@@ -585,7 +589,7 @@ public static class IndexCodecMigrator
 
         try
         {
-            using (var output = new IndexOutput(temporaryPosPath, durable: true))
+            using (var output = new IndexOutput(temporaryPosPath))
             {
                 CodecConstants.WriteHeader(output, CodecConstants.PostingsVersion);
                 using var blockWriter = new BlockPostingsWriter(output);

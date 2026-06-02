@@ -1,4 +1,6 @@
-﻿using Rowles.LeanCorpus.Index.Migration;
+using Rowles.LeanCorpus.Index.Migration;
+using Rowles.LeanCorpus.Codecs.CodecKit;
+using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
 using Rowles.LeanCorpus.Index.Format;
 using Rowles.LeanCorpus.Store;
 
@@ -70,14 +72,11 @@ internal static class IndexOpenGuard
         {
             using var stream = File.OpenRead(filePath);
             using var reader = new BinaryReader(stream);
-            if (reader.ReadInt32() != Codecs.CodecConstants.Magic)
-                return false;
-
-            version = reader.ReadByte();
+            version = CodecFileHeader.ReadVersion(reader, CodecFormats.TermDictionary);
             currentVersion = descriptor.CurrentVersion.Value;
             return true;
         }
-        catch (Exception ex) when (ex is IOException or EndOfStreamException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or EndOfStreamException or UnauthorizedAccessException or InvalidDataException)
         {
             return false;
         }

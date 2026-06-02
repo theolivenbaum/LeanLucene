@@ -1,3 +1,8 @@
+using System.IO;
+using System.Text;
+using Rowles.LeanCorpus.Codecs.CodecKit;
+using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
+
 namespace Rowles.LeanCorpus.Codecs.Bkd;
 
 /// <summary>
@@ -13,18 +18,22 @@ internal static class BKDWriter
     internal static void Write(string filePath, Dictionary<string, List<(double Value, int DocId)>> fieldPoints, int maxLeafSize = DefaultMaxLeafSize)
     {
         using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
-        using var writer = new BinaryWriter(fs, System.Text.Encoding.UTF8, leaveOpen: false);
+        using var writer = new BinaryWriter(fs, Encoding.UTF8, leaveOpen: false);
 
-        CodecConstants.WriteHeader(writer, CodecConstants.BKDVersion);
-
-        writer.Write(fieldPoints.Count);
+        // Buffer entire body so CodecKit can wrap it in a version envelope.
+        using var bodyMs = new MemoryStream();
+        using var bw = new BinaryWriter(bodyMs, Encoding.UTF8, leaveOpen: true);
+        bw.Write(fieldPoints.Count);
         foreach (var (field, points) in fieldPoints)
         {
-            writer.Write(field);
+            bw.Write(field);
             points.Sort((a, b) => a.Value.CompareTo(b.Value));
-            WriteNode(writer, points, 0, points.Count, maxLeafSize);
+            WriteNode(bw, points, 0, points.Count, maxLeafSize);
         }
-        fs.Flush(flushToDisk: true);
+        bw.Flush();
+        byte[] body = bodyMs.ToArray();
+
+        CodecFileHeader.Write(writer, CodecFormats.Bkd, body);
     }
 
     private static void WriteNode(BinaryWriter writer, List<(double Value, int DocId)> points, int start, int end, int maxLeafSize)

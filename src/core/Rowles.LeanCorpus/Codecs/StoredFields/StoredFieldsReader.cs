@@ -1,6 +1,8 @@
 using System.Buffers;
-using Rowles.LeanCorpus.Store;
-
+using System.IO;
+using System.Text;
+using Rowles.LeanCorpus.Codecs.CodecKit;
+using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
 namespace Rowles.LeanCorpus.Codecs.StoredFields;
 
 /// <summary>
@@ -40,7 +42,7 @@ internal sealed class StoredFieldsReader : IDisposable
     public static StoredFieldsReader Open(string fdtPath, string fdxPath)
     {
         // Read .fdx to get block offsets
-        using var fdxStream = FileOpenRetry.OpenReadDelete(fdxPath);
+        using var fdxStream = new FileStream(fdxPath, FileMode.Open, FileAccess.Read, FileShare.Read);
         using var fdxReader = new BinaryReader(fdxStream, System.Text.Encoding.UTF8, leaveOpen: false);
 
         int firstInt = fdxReader.ReadInt32();
@@ -59,7 +61,7 @@ internal sealed class StoredFieldsReader : IDisposable
         else
         {
             fdxStream.Seek(0, SeekOrigin.Begin);
-            version = fdxReader.ReadByte();
+            version = CodecFileHeader.ReadVersion(fdxReader, CodecFormats.StoredFields);
             blockSize = fdxReader.ReadInt32();
             docCount = fdxReader.ReadInt32();
             blockCount = fdxReader.ReadInt32();
@@ -72,7 +74,7 @@ internal sealed class StoredFieldsReader : IDisposable
             blockOffsets[i] = fdxReader.ReadInt64();
 
         // Open .fdt and read its header to get compression type
-        var fs = FileOpenRetry.OpenReadDelete(fdtPath);
+        var fs = new FileStream(fdtPath, FileMode.Open, FileAccess.Read, FileShare.Read);
         var reader = new BinaryReader(fs, System.Text.Encoding.UTF8, leaveOpen: true);
 
         FieldCompressionPolicy compression;
@@ -89,19 +91,24 @@ internal sealed class StoredFieldsReader : IDisposable
             }
             else
             {
-                // v4: Brotli
                 compression = FieldCompressionPolicy.Brotli;
             }
         }
         else
         {
-            // Pre-magic: Brotli
             fs.Seek(0, SeekOrigin.Begin);
-            byte fdtVersion = reader.ReadByte();
+            byte fdtVersion = CodecFileHeader.ReadVersion(reader, CodecFormats.StoredFields);
             int fdtBlockSize = reader.ReadInt32();
             ValidateSupportedVersion(fdtVersion, "stored fields data (.fdt)");
             ValidateMatchingHeaders(fdtPath, fdxPath, fdtVersion, version, fdtBlockSize, blockSize);
-            compression = FieldCompressionPolicy.Brotli;
+            if (fdtVersion >= 5)
+            {
+                compression = (FieldCompressionPolicy)reader.ReadByte();
+            }
+            else
+            {
+                compression = FieldCompressionPolicy.Brotli;
+            }
         }
 
         return new StoredFieldsReader(fs, reader, blockSize, blockOffsets, compression, version);
@@ -161,11 +168,6 @@ internal sealed class StoredFieldsReader : IDisposable
 
     internal Dictionary<string, List<StoredFieldValue>> ReadDocumentValues(int docId)
     {
-        return ReadDocumentValues(docId, null);
-    }
-
-    internal Dictionary<string, List<StoredFieldValue>> ReadDocumentValues(int docId, ISet<string>? fieldsToLoad)
-    {
         var br = PositionDocumentReader(docId);
 
         int fieldCount = br.ReadInt32();
@@ -177,26 +179,6 @@ internal sealed class StoredFieldsReader : IDisposable
             string name = System.Text.Encoding.UTF8.GetString(br.ReadBytes(nameLen));
 
             int valueCount = br.ReadInt32();
-
-            if (fieldsToLoad is not null && !fieldsToLoad.Contains(name))
-            {
-                for (int v = 0; v < valueCount; v++)
-                {
-                    if (_version >= 6)
-                    {
-                        br.ReadByte(); // kind
-                        int valueLength = br.ReadInt32();
-                        br.BaseStream.Seek(valueLength, SeekOrigin.Current);
-                    }
-                    else
-                    {
-                        int valueLength = br.ReadInt32();
-                        br.BaseStream.Seek(valueLength, SeekOrigin.Current);
-                    }
-                }
-                continue;
-            }
-
             var values = new List<StoredFieldValue>(valueCount);
             for (int v = 0; v < valueCount; v++)
             {

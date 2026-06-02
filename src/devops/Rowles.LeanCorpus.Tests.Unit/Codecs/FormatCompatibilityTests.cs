@@ -1,6 +1,8 @@
-﻿using Rowles.LeanCorpus.Analysis;
+using Rowles.LeanCorpus.Analysis;
 using Rowles.LeanCorpus.Analysis.Analysers;
 using Rowles.LeanCorpus.Codecs;
+using Rowles.LeanCorpus.Codecs.CodecKit;
+using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
 using Rowles.LeanCorpus.Codecs.Hnsw;
 using Rowles.LeanCorpus.Codecs.Fst;
 using Rowles.LeanCorpus.Codecs.Bkd;
@@ -217,10 +219,7 @@ public sealed class FormatCompatibilityTests : IDisposable
             using var fs = new FileStream(dicFile, FileMode.Open, FileAccess.Read, FileShare.Read);
             using var reader = new BinaryReader(fs, System.Text.Encoding.UTF8, leaveOpen: false);
 
-            int magic = reader.ReadInt32();
-            byte version = reader.ReadByte();
-
-            Assert.Equal(CodecConstants.Magic, magic);
+            byte version = CodecFileHeader.ReadVersion(reader, CodecFormats.TermDictionary);
             Assert.Equal(CodecConstants.TermDictionaryVersion, version);
         }
 
@@ -230,10 +229,7 @@ public sealed class FormatCompatibilityTests : IDisposable
             using var fs = new FileStream(posFile, FileMode.Open, FileAccess.Read, FileShare.Read);
             using var reader = new BinaryReader(fs, System.Text.Encoding.UTF8, leaveOpen: false);
 
-            int magic = reader.ReadInt32();
-            byte version = reader.ReadByte();
-
-            Assert.Equal(CodecConstants.Magic, magic);
+            byte version = CodecFileHeader.ReadVersion(reader, CodecFormats.Postings);
             Assert.Equal(CodecConstants.PostingsVersion, version);
         }
     }

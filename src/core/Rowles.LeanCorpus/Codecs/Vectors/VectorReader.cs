@@ -1,3 +1,7 @@
+using Rowles.LeanCorpus.Codecs.CodecKit;
+using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
+using Rowles.LeanCorpus.Store;
+
 using System.IO.MemoryMappedFiles;
 namespace Rowles.LeanCorpus.Codecs.Vectors;
 
@@ -34,45 +38,34 @@ internal sealed class VectorReader : IDisposable
 
     public static VectorReader Open(string filePath)
     {
-        var mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-        var accessor = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
+        using var input = new IndexInput(filePath);
+        byte version = CodecFileHeader.ReadVersion(input, CodecFormats.Vectors);
 
-        long offset = 0;
-
-        int magic = accessor.ReadInt32(offset);
-        offset += 4;
-        if (magic != CodecConstants.Magic)
-            throw new InvalidDataException(
-                $"Invalid vector file: expected magic 0x{CodecConstants.Magic:X8}, got 0x{magic:X8}. " +
-                "The file may be corrupted or from an incompatible version.");
-
-        byte version = accessor.ReadByte(offset);
-        offset += 1;
         if (version > CodecConstants.VectorVersion)
             throw new InvalidDataException(
                 $"Unsupported vector format version {version}. " +
                 $"This build supports up to version {CodecConstants.VectorVersion}. " +
                 "Please upgrade LeanCorpus.");
 
-        int vectorCount = accessor.ReadInt32(offset);
-        offset += 4;
-        int dimension = accessor.ReadInt32(offset);
-        offset += 4;
+        int vectorCount = input.ReadInt32();
+        int dimension = input.ReadInt32();
 
-        byte format = accessor.ReadByte(offset);
-        offset += 1;
+        byte format = input.ReadByte();
 
         float int8Min = 0f, int8Alpha = 0f;
         bool isInt8 = format == (byte)VectorQuantisation.Int8;
         if (isInt8)
         {
-            int8Min = accessor.ReadSingle(offset);
-            offset += 4;
-            int8Alpha = accessor.ReadSingle(offset);
-            offset += 4;
+            int8Min = input.ReadSingle();
+            int8Alpha = input.ReadSingle();
         }
 
-        return new VectorReader(mmf, accessor, vectorCount, dimension, offset, isInt8, int8Min, int8Alpha);
+        long dataStart = input.Position;
+
+        var mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+        var accessor = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
+
+        return new VectorReader(mmf, accessor, vectorCount, dimension, dataStart, isInt8, int8Min, int8Alpha);
     }
 
     public float[] ReadVector(int docId)

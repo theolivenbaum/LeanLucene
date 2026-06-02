@@ -44,12 +44,12 @@ public sealed class StoredBinaryFieldCodecTests : IClassFixture<TestDirectoryFix
         using (var stream = new FileStream(path + ".fdt", FileMode.Open, FileAccess.ReadWrite, FileShare.None))
         using (var writer = new BinaryWriter(stream, System.Text.Encoding.UTF8, leaveOpen: false))
         {
-            stream.Position = sizeof(int);
-            writer.Write((byte)4);
+            stream.Position = 0;
+            writer.Write((byte)99);
         }
 
         var exception = Assert.Throws<InvalidDataException>(() => StoredFieldsReader.Open(path + ".fdt", path + ".fdx"));
-        Assert.Contains("Mismatched stored fields versions", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Unsupported stored fields data (.fdt) format version", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact(DisplayName = "Stored Fields: Open Rejects Mismatched Block Size")]
@@ -76,7 +76,7 @@ public sealed class StoredBinaryFieldCodecTests : IClassFixture<TestDirectoryFix
         using (var stream = new FileStream(path + ".fdt", FileMode.Open, FileAccess.ReadWrite, FileShare.None))
         using (var writer = new BinaryWriter(stream, System.Text.Encoding.UTF8, leaveOpen: false))
         {
-            stream.Position = sizeof(int);
+            stream.Position = 0;
             writer.Write((byte)(CodecConstants.StoredFieldsVersion + 1));
         }
 

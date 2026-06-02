@@ -1,4 +1,4 @@
-﻿using Rowles.LeanCorpus.Codecs;
+using Rowles.LeanCorpus.Codecs;
 using Rowles.LeanCorpus.Codecs.Hnsw;
 using Rowles.LeanCorpus.Codecs.Fst;
 using Rowles.LeanCorpus.Codecs.Bkd;
@@ -108,6 +108,7 @@ public sealed class CodecsTests : IClassFixture<TestDirectoryFixture>
         using (var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None))
         using (var writer = new BinaryWriter(fs, System.Text.Encoding.UTF8, leaveOpen: false))
         {
+            CodecConstants.WriteHeader(writer, CodecConstants.PostingsVersion);
             writer.Write("overflow".Length);
             writer.Write("overflow".ToCharArray());
             writer.Write(2); // count

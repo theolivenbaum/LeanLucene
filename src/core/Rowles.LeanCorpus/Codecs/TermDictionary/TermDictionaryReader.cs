@@ -1,10 +1,12 @@
 using System.Buffers;
 using System.Text;
 using System.Text.RegularExpressions;
+using Rowles.LeanCorpus.Codecs.CodecKit;
+using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
 using Rowles.LeanCorpus.Codecs.Fst;
 using Rowles.LeanCorpus.Store;
-namespace Rowles.LeanCorpus.Codecs.TermDictionary;
 
+namespace Rowles.LeanCorpus.Codecs.TermDictionary;
 /// <summary>
 /// Reads a v3 .dic file: a real FST (Daciuk minimal acyclic transducer) emitting postings
 /// offsets as outputs. All query primitives are thin wrappers around <see cref="FstReader"/>:
@@ -33,24 +35,14 @@ internal sealed class TermDictionaryReader : IDisposable
     {
         using var input = new IndexInput(filePath);
 
-        int magic = input.ReadInt32();
-        if (magic != CodecConstants.Magic)
-            throw new InvalidDataException(
-                $"Invalid term dictionary (.dic) file: expected magic 0x{CodecConstants.Magic:X8}, got 0x{magic:X8}.");
-
-        byte version = input.ReadByte();
+        var result = CodecFileHeader.Read(input, CodecFormats.TermDictionary);
+        byte version = result.Version;
         if (version != CodecConstants.TermDictionaryVersion)
             throw new InvalidDataException(
                 $"Unsupported term dictionary format version {version}. This build expects v{CodecConstants.TermDictionaryVersion}. " +
                 "Run 'leancorpus-cli migrate' (or IndexCodecMigrator) to upgrade the segment.");
 
-        long remaining = input.Length - input.Position;
-        if (remaining < 0 || remaining > int.MaxValue)
-            throw new InvalidDataException("Term dictionary FST blob length is out of range.");
-
-        var span = input.ReadSpan((int)remaining);
-        var blob = span.ToArray();
-        var fst = FstReader.Open(blob);
+        var fst = FstReader.Open(result.Body);
         return new TermDictionaryReader(fst);
     }
 

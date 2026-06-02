@@ -1,4 +1,7 @@
 using System.Text.Json;
+using Rowles.LeanCorpus.Codecs.CodecKit;
+using Rowles.LeanCorpus.Codecs.CodecKit.Codecs;
+using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
 using Rowles.LeanCorpus.Serialization;
 
 namespace Rowles.LeanCorpus.Index;
@@ -80,14 +83,14 @@ public static class IndexRecovery
     private static readonly string[] RequiredSegmentExtensions = [".seg", ".dic", ".pos", ".nrm", ".fdt", ".fdx"];
 
     /// <summary>
-    /// Per-extension expected codec magic header version. Files that exist but fail header
-    /// validation cause the commit to be rejected and recovery to fall back.
+    /// Per-extension codec format for dual-format header validation.
+    /// Files that exist but fail header validation cause the commit to be rejected.
     /// </summary>
-    private static readonly (string Ext, byte Version, string FileType)[] HeaderChecks =
+    private static readonly (string Ext, ICodec<byte[]> Format)[] HeaderChecks =
     [
-        (".dic", Codecs.CodecConstants.TermDictionaryVersion, "term dictionary"),
-        (".pos", Codecs.CodecConstants.PostingsVersion, "postings"),
-        (".nrm", Codecs.CodecConstants.NormsVersion, "norms"),
+        (".dic", CodecFormats.TermDictionary),
+        (".pos", CodecFormats.Postings),
+        (".nrm", CodecFormats.Norms),
     ];
 
     /// <summary>
@@ -102,15 +105,13 @@ public static class IndexRecovery
         {
             var json = CommitFileFormat.TryReadJson(commitFilePath);
             if (json is null)
-                return null; // CRC mismatch — torn write
+                return null;
             var commitData = JsonSerializer.Deserialize(json, LeanCorpusJsonContext.Default.CommitData);
             if (commitData is null || commitData.Segments is null)
                 return null;
 
-            // Validate deserialised data
             try { commitData.Validate(); } catch (InvalidDataException) { return null; }
 
-            // Validate generation matches
             if (commitData.Generation != generation)
                 return null;
 
@@ -133,80 +134,57 @@ public static class IndexRecovery
         }
         catch (JsonException)
         {
-            return null; // corrupt JSON
+            return null;
         }
         catch (IOException)
         {
-            return null; // file read error
+            return null;
         }
     }
 
-    /// <summary>
-    /// Returns true if every required file for the given segment exists, is non-empty,
-    /// and the optional vector and HNSW files declared in the segment metadata are present.
-    /// </summary>
     private static bool ValidateSegment(string directoryPath, string segId)
     {
-        var basePath = Path.Combine(directoryPath, segId);
-        foreach (var ext in RequiredSegmentExtensions)
-        {
-            var path = basePath + ext;
-            var info = new FileInfo(path);
-            if (!info.Exists || info.Length == 0)
-                return false;
-        }
-
-        Segment.SegmentInfo segInfo;
         try
         {
-            segInfo = Segment.SegmentInfo.ReadFrom(basePath + ".seg");
+            var basePath = Path.Combine(directoryPath, segId);
+            foreach (var ext in RequiredSegmentExtensions)
+            {
+                var path = basePath + ext;
+                var info = new FileInfo(path);
+                if (!info.Exists || info.Length == 0)
+                    return false;
+            }
+
+            var segInfo = Segment.SegmentInfo.ReadFrom(basePath + ".seg");
+
+            foreach (var (ext, format) in HeaderChecks)
+            {
+                var path = basePath + ext;
+                if (!File.Exists(path)) return false;
+                using var fs = File.OpenRead(path);
+                using var reader = new BinaryReader(fs);
+                CodecFileHeader.ReadVersion(reader, format);
+            }
+
+            foreach (var vf in segInfo.VectorFields)
+            {
+                var vecPath = vf.Quantisation != Codecs.Vectors.VectorQuantisation.None
+                    ? Codecs.Vectors.VectorFilePaths.QuantisedVectorFile(basePath, vf.FieldName)
+                    : Codecs.Vectors.VectorFilePaths.VectorFile(basePath, vf.FieldName);
+                if (!File.Exists(vecPath)) return false;
+                if (vf.HasHnsw)
+                {
+                    var hnswPath = Codecs.Vectors.VectorFilePaths.HnswFile(basePath, vf.FieldName);
+                    if (!File.Exists(hnswPath)) return false;
+                }
+            }
+
+            return true;
         }
-        catch (Exception)
+        catch
         {
             return false;
         }
-
-        // Validate codec headers on the per-segment files that carry them.
-        foreach (var (ext, version, fileType) in HeaderChecks)
-        {
-            var path = basePath + ext;
-            if (!File.Exists(path)) return false;
-            try
-            {
-                using var fs = File.OpenRead(path);
-                using var reader = new BinaryReader(fs);
-                Codecs.CodecConstants.ValidateHeader(reader, version, fileType);
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-        }
-
-        // .del file presence is intentionally NOT validated here. A missing .del
-        // is treated as a fully-live segment by the reader, which is the documented
-        // graceful-degradation behaviour for fault-injection scenarios.
-
-        foreach (var vf in segInfo.VectorFields)
-        {
-            if (vf.Quantisation != Codecs.Vectors.VectorQuantisation.None)
-            {
-                var vqPath = Codecs.Vectors.VectorFilePaths.QuantisedVectorFile(basePath, vf.FieldName);
-                if (!File.Exists(vqPath)) return false;
-            }
-            else
-            {
-                var vecPath = Codecs.Vectors.VectorFilePaths.VectorFile(basePath, vf.FieldName);
-                if (!File.Exists(vecPath)) return false;
-            }
-            if (vf.HasHnsw)
-            {
-                var hnswPath = Codecs.Vectors.VectorFilePaths.HnswFile(basePath, vf.FieldName);
-                if (!File.Exists(hnswPath)) return false;
-            }
-        }
-
-        return true;
     }
 
     /// <summary>

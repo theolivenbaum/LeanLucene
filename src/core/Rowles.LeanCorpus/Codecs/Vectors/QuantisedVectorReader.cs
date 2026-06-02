@@ -1,4 +1,7 @@
 using System.IO.MemoryMappedFiles;
+using System.IO;
+using Rowles.LeanCorpus.Codecs.CodecKit;
+using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
 
 namespace Rowles.LeanCorpus.Codecs.Vectors;
 
@@ -55,23 +58,24 @@ internal sealed class QuantisedVectorReader : IDisposable
 
     public static QuantisedVectorReader Open(string filePath)
     {
-        var mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-        var accessor = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
+        byte version;
+        long bodyStart;
+        using (var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+        using (var reader = new BinaryReader(fs, System.Text.Encoding.UTF8, leaveOpen: false))
+        {
+            version = CodecFileHeader.ReadVersion(reader, CodecFormats.QuantisedVectors);
+            bodyStart = fs.Position;
+        }
 
-        long offset = 0;
-
-        int magic = accessor.ReadInt32(offset);
-        offset += 4;
-        if (magic != CodecConstants.Magic)
-            throw new InvalidDataException(
-                $"Invalid quantised vector file: expected magic 0x{CodecConstants.Magic:X8}, got 0x{magic:X8}.");
-
-        byte version = accessor.ReadByte(offset);
-        offset += 1;
         if (version > CodecConstants.QuantisedVectorVersion)
             throw new InvalidDataException(
                 $"Unsupported quantised vector format version {version}. " +
                 $"This build supports up to version {CodecConstants.QuantisedVectorVersion}.");
+
+        var mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+        var accessor = mmf.CreateViewAccessor(bodyStart, 0, MemoryMappedFileAccess.Read);
+
+        long offset = 0;
 
         int docCount = accessor.ReadInt32(offset);
         offset += 4;

@@ -1,4 +1,7 @@
-﻿namespace Rowles.LeanCorpus.Codecs.TermVectors;
+using Rowles.LeanCorpus.Codecs.CodecKit;
+using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
+
+namespace Rowles.LeanCorpus.Codecs.TermVectors;
 
 /// <summary>Reads per-document term vectors from .tvd/.tvx files using memory-mapped I/O.</summary>
 internal sealed class TermVectorsReader : IDisposable
@@ -18,7 +21,7 @@ internal sealed class TermVectorsReader : IDisposable
     {
         // Read offsets from .tvx index file
         using var tvxInput = new Store.IndexInput(tvxPath);
-        byte tvxVersion = CodecConstants.ReadHeaderVersion(tvxInput, CodecConstants.TermVectorsVersion, "term vectors index (.tvx)");
+        byte tvxVersion = CodecFileHeader.ReadVersion(tvxInput, CodecFormats.TermVectors);
 
         int docCount = tvxInput.ReadInt32();
         var offsets = new long[docCount];
@@ -27,7 +30,7 @@ internal sealed class TermVectorsReader : IDisposable
 
         // Open .tvd data file as mmap
         var tvdInput = new Store.IndexInput(tvdPath);
-        byte tvdVersion = CodecConstants.ReadHeaderVersion(tvdInput, CodecConstants.TermVectorsVersion, "term vectors data (.tvd)");
+        byte tvdVersion = CodecFileHeader.ReadVersion(tvdInput, CodecFormats.TermVectors);
 
         if (tvdVersion != tvxVersion)
             throw new InvalidDataException($"Mismatched term vector versions between '{tvdPath}' and '{tvxPath}'.");

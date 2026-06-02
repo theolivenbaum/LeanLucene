@@ -1,4 +1,6 @@
-﻿using Rowles.LeanCorpus.Store;
+using Rowles.LeanCorpus.Codecs.CodecKit;
+using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
+using Rowles.LeanCorpus.Store;
 using Rowles.LeanCorpus.Util;
 
 namespace Rowles.LeanCorpus.Codecs.DocValues;
@@ -19,7 +21,7 @@ internal static class NumericDocValuesReader
 
         using var input = new IndexInput(filePath);
 
-        byte version = CodecConstants.ReadHeaderVersion(input, CodecConstants.NumericDocValuesVersion, "numeric doc values (.dvn)");
+        byte version = CodecFileHeader.ReadVersion(input, CodecFormats.NumericDocValues);
 
         int fieldCount = input.ReadInt32();
 

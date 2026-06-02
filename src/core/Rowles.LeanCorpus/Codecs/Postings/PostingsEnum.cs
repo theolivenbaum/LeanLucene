@@ -1,6 +1,8 @@
 using System.Buffers;
 using System.Runtime.CompilerServices;
 using Rowles.LeanCorpus.Store;
+using Rowles.LeanCorpus.Codecs.CodecKit;
+using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
 
 namespace Rowles.LeanCorpus.Codecs.Postings;
 
@@ -798,6 +800,12 @@ public unsafe struct PostingsEnum : IDisposable
     public static byte ValidateFileHeader(IndexInput input)
     {
         input.Seek(0);
-        return CodecConstants.ReadHeaderVersion(input, CodecConstants.PostingsVersion, "postings (.pos)");
+        byte version = CodecFileHeader.ReadVersion(input, CodecFormats.Postings);
+        if (version > CodecConstants.PostingsVersion)
+            throw new InvalidDataException(
+                $"Unsupported postings (.pos) format version {version}. " +
+                $"This build supports up to version {CodecConstants.PostingsVersion}. " +
+                "Please upgrade LeanCorpus.");
+        return version;
     }
 }

@@ -1,4 +1,8 @@
-﻿using Rowles.LeanCorpus.Store;
+using System.IO;
+using System.Text;
+using Rowles.LeanCorpus.Codecs.CodecKit;
+using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
+using Rowles.LeanCorpus.Store;
 using Rowles.LeanCorpus.Util;
 
 namespace Rowles.LeanCorpus.Codecs.DocValues;
@@ -18,18 +22,23 @@ internal static class NumericDocValuesWriter
         IReadOnlyDictionary<string, IReadOnlySet<int>>? presenceSets = null,
         bool durable = false)
     {
-        using var output = new IndexOutput(filePath, durable);
+        using var bodyMs = new MemoryStream();
+        using var bw = new BinaryWriter(bodyMs, Encoding.UTF8, leaveOpen: true);
 
-        CodecConstants.WriteHeader(output, CodecConstants.NumericDocValuesVersion);
-
-        output.WriteInt32(fields.Count);
+        bw.Write(fields.Count);
 
         foreach (var (fieldName, values) in fields)
         {
             IReadOnlySet<int>? presenceSet = null;
             presenceSets?.TryGetValue(fieldName, out presenceSet);
-            WriteFieldBlock(output, fieldName, values, docCount, presenceSet);
+            WriteFieldBlock(bw, fieldName, values, docCount, presenceSet);
         }
+
+        bw.Flush();
+        byte[] body = bodyMs.ToArray();
+
+        using var output = new IndexOutput(filePath, durable);
+        CodecFileHeader.Write(output, CodecFormats.NumericDocValues, body);
     }
 
     /// <summary>
@@ -108,5 +117,78 @@ internal static class NumericDocValuesWriter
         }
         if (accBits > 0)
             output.WriteByte(accum);
+    }
+
+    private static void WriteFieldBlock(
+        BinaryWriter bw,
+        string fieldName,
+        double[] values,
+        int docCount,
+        IReadOnlySet<int>? presenceSet = null)
+    {
+        var nameBytes = Encoding.UTF8.GetBytes(fieldName);
+        bw.Write7BitEncodedInt(nameBytes.Length);
+        bw.Write(nameBytes);
+
+        // Presence bitmap: 0 = all docs present (dense); > 0 = byte count of serialised bitmap.
+        if (presenceSet is not null && presenceSet.Count < docCount)
+        {
+            var bitmap = new RoaringBitmap();
+            foreach (int docId in presenceSet)
+                bitmap.Add(docId);
+            using var ms = new MemoryStream();
+            using var bwt = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
+            bitmap.Serialise(bwt);
+            bwt.Flush();
+            int bitmapLen = (int)ms.Length;
+            bw.Write(bitmapLen);
+            bw.Write(ms.GetBuffer(), 0, bitmapLen);
+        }
+        else
+        {
+            bw.Write(0); // all docs present
+        }
+
+        bw.Write(docCount);
+
+        long min = long.MaxValue, max = long.MinValue;
+        for (int i = 0; i < docCount; i++)
+        {
+            long v = BitConverter.DoubleToInt64Bits(values[i]);
+            if (v < min) min = v;
+            if (v > max) max = v;
+        }
+
+        bw.Write(min);
+        ulong range = (ulong)max - (ulong)min;
+        int bitsPerValue = range == 0 ? 0 : 64 - System.Numerics.BitOperations.LeadingZeroCount(range);
+        bw.Write((byte)bitsPerValue);
+
+        if (bitsPerValue == 0) return;
+
+        byte accum = 0;
+        int accBits = 0;
+        for (int i = 0; i < docCount; i++)
+        {
+            ulong delta = (ulong)BitConverter.DoubleToInt64Bits(values[i]) - (ulong)min;
+            int remaining = bitsPerValue;
+            while (remaining > 0)
+            {
+                int space = 8 - accBits;
+                int take = Math.Min(remaining, space);
+                accum |= (byte)((delta & ((1UL << take) - 1)) << accBits);
+                delta >>= take;
+                accBits += take;
+                remaining -= take;
+                if (accBits == 8)
+                {
+                    bw.Write(accum);
+                    accum = 0;
+                    accBits = 0;
+                }
+            }
+        }
+        if (accBits > 0)
+            bw.Write(accum);
     }
 }

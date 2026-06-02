@@ -1,4 +1,6 @@
-﻿using System.Text;
+using System.Text;
+using Rowles.LeanCorpus.Codecs.CodecKit;
+using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
 using Rowles.LeanCorpus.Store;
 
 namespace Rowles.LeanCorpus.Codecs.DocValues;
@@ -20,7 +22,7 @@ internal static class FieldLengthReader
         if (!File.Exists(filePath)) return null;
 
         using var input = new IndexInput(filePath);
-        byte version = CodecConstants.ReadHeaderVersion(input, CodecConstants.FieldLengthVersion, "field lengths (.fln)");
+        byte version = CodecFileHeader.ReadVersion(input, CodecFormats.FieldLengths);
 
         int fieldCount = input.ReadInt32();
         var result = new Dictionary<string, int[]>(fieldCount, StringComparer.Ordinal);

@@ -1,4 +1,6 @@
-﻿using Rowles.LeanCorpus.Store;
+using Rowles.LeanCorpus.Codecs.CodecKit;
+using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
+using Rowles.LeanCorpus.Store;
 using Rowles.LeanCorpus.Util;
 
 namespace Rowles.LeanCorpus.Codecs.DocValues;
@@ -19,7 +21,7 @@ internal static class SortedDocValuesReader
 
         using var input = new IndexInput(filePath);
 
-        byte version = CodecConstants.ReadHeaderVersion(input, CodecConstants.SortedDocValuesVersion, "sorted doc values (.dvs)");
+        byte version = CodecFileHeader.ReadVersion(input, CodecFormats.SortedDocValues);
 
         int fieldCount = input.ReadInt32();
 
