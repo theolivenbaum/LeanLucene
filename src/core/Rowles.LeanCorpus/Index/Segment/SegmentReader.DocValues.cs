@@ -288,17 +288,24 @@ public sealed partial class SegmentReader
         var bkd = EnsureBkdReader();
         if (bkd is not null && bkd.HasField(field))
         {
-            var raw = bkd.ExactSetQuery(field, values);
-            if (_liveDocs is null)
-                return raw;
-
-            results.Capacity = raw.Count;
-            foreach (var hit in raw)
+            try
             {
-                if (IsLive(hit.DocId))
-                    results.Add(hit);
+                var raw = bkd.ExactSetQuery(field, values);
+                if (_liveDocs is null)
+                    return raw;
+
+                results.Capacity = raw.Count;
+                foreach (var hit in raw)
+                {
+                    if (IsLive(hit.DocId))
+                        results.Add(hit);
+                }
+                return results;
             }
-            return results;
+            catch (EndOfStreamException)
+            {
+                // BKD file is corrupt or truncated — fall back to numeric index.
+            }
         }
 
         var numericIndex = EnsureNumericIndex();

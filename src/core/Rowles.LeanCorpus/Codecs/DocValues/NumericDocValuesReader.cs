@@ -22,6 +22,10 @@ internal static class NumericDocValuesReader
         using var input = new IndexInput(filePath);
 
         byte version = CodecFileHeader.ReadVersion(input, CodecFormats.NumericDocValues);
+        if (version > CodecConstants.NumericDocValuesVersion)
+            throw new InvalidDataException(
+                $"Unsupported numeric doc values (.dvn) format version {version}. " +
+                $"This build supports up to v{CodecConstants.NumericDocValuesVersion}.");
 
         int fieldCount = input.ReadInt32();
 

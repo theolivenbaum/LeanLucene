@@ -124,6 +124,6 @@ public sealed class MigratorChaosTests : IClassFixture<ChaosDirectoryFixture>
         var path = Directory.GetFiles(directory.DirectoryPath, pattern).Single();
         using var stream = File.Open(path, FileMode.Open, FileAccess.Write, FileShare.None);
         stream.Position = 0;
-        stream.Write([0x00, 0x00, 0x00, 0x00]);
+        stream.Write([0xFF, 0xFF, 0x7F, 0x00]);
     }
 }
