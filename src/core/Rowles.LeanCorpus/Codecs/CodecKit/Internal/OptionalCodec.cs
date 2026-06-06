@@ -30,6 +30,7 @@ internal sealed class OptionalCodec<T> : ICodec<T?>
             if (!present)
                 return default;
 
+            using var depthGuard = context.PushDepth();
             return _innerCodec.Decode(ref reader, context);
         }
         catch
@@ -49,6 +50,7 @@ internal sealed class OptionalCodec<T> : ICodec<T?>
         else
         {
             _flagCodec.Encode(true, writer, context);
+            using var depthGuard = context.PushDepth();
             _innerCodec.Encode(value, writer, context);
         }
     }

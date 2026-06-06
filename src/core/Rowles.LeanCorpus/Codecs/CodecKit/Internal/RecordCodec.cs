@@ -52,6 +52,7 @@ internal sealed class RecordCodec<T> : ICodec<T>
 
         try
         {
+            using var depthGuard = context.PushDepth();
             for (int i = 0; i < _fields.Length; i++)
             {
                 var field = _fields[i];
@@ -88,6 +89,7 @@ internal sealed class RecordCodec<T> : ICodec<T>
 
     public void Encode(T value, IBufferWriter<byte> writer, CodecContext context)
     {
+        using var depthGuard = context.PushDepth();
         for (int i = 0; i < _fields.Length; i++)
         {
             var field = _fields[i];

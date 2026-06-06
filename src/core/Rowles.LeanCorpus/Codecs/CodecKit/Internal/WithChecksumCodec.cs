@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Buffers;
 using Rowles.LeanCorpus.Codecs.CodecKit.Exceptions;
 using Rowles.LeanCorpus.Codecs.CodecKit.Checksum;
@@ -38,6 +38,7 @@ internal sealed class WithChecksumCodec<T> : ICodec<T>
             {
                 // [body][checksum]
                 var bodyStart = reader.Position;
+                using var depthGuard = context.PushDepth();
                 T value = _innerCodec.Decode(ref reader, context);
                 var bodyEnd = reader.Position;
                 var bodyBytes = reader.Sequence.Slice(bodyStart, bodyEnd);
@@ -75,6 +76,7 @@ internal sealed class WithChecksumCodec<T> : ICodec<T>
                 reader.Advance(checksumLen);
 
                 var bodyStart = reader.Position;
+                using var depthGuard = context.PushDepth();
                 T value = _innerCodec.Decode(ref reader, context);
                 var bodyEnd = reader.Position;
                 var bodyBytes = reader.Sequence.Slice(bodyStart, bodyEnd);
@@ -106,6 +108,8 @@ internal sealed class WithChecksumCodec<T> : ICodec<T>
         var scratch = context.RentScratchBuffer();
         try
         {
+
+            using var depthGuard = context.PushDepth();
             _innerCodec.Encode(value, scratch, context);
 
             var stagedBytes = scratch.Written;

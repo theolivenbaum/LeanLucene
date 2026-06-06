@@ -120,4 +120,66 @@ public sealed class CodecContextTests
 
         Assert.Equal(new byte[] { 0xAA, 0xBB }, result);
     }
+
+    [Fact(DisplayName = "FixedFrame nested exceeds MaxNestingDepth")]
+    public void FixedFrame_Nested_Exceeded_Throws()
+    {
+        var opts = new CodecOptions { MaxNestingDepth = 1 };
+        // Chain two FixedFrame codecs to reach depth 2
+        var inner = Codec.FixedFrame(1, Codec.UInt8, FramePadding.ZeroFill, TrailingDataPolicy.Allow);
+        var outer = Codec.FixedFrame(2, inner, FramePadding.ZeroFill, TrailingDataPolicy.Allow);
+
+        // Encode: outer frame is 2 bytes, inner UInt8=42 + 1 pad byte
+        byte[] encoded = Codec.EncodeToArray(outer, (byte)42);
+
+        var ex = Assert.Throws<LimitExceededException>(() =>
+            Codec.Decode(outer, encoded, options: opts));
+
+        Assert.Equal(CodecErrorCode.DepthExceeded, ex.ErrorCode);
+        Assert.Equal("MaxNestingDepth", ex.LimitName);
+    }
+
+    [Fact(DisplayName = "Record nested exceeds MaxNestingDepth")]
+    public void Record_Nested_Exceeded_Throws()
+    {
+        var opts = new CodecOptions { MaxNestingDepth = 1 };
+
+        var innerRecord = Codec.Record<byte>()
+            .Field("value", v => v, Codec.UInt8)
+            .Build<byte>(v => v);
+
+        var outerRecord = Codec.Record<byte>()
+            .Field("inner", v => v, innerRecord)
+            .Build<byte>(v => v);
+
+        byte[] encoded = Codec.EncodeToArray(outerRecord, (byte)99);
+
+        var ex = Assert.Throws<LimitExceededException>(() =>
+            Codec.Decode(outerRecord, encoded, options: opts));
+
+        Assert.Equal(CodecErrorCode.DepthExceeded, ex.ErrorCode);
+        Assert.Equal("MaxNestingDepth", ex.LimitName);
+    }
+
+    [Fact(DisplayName = "Choice nested exceeds MaxNestingDepth")]
+    public void Choice_Nested_Exceeded_Throws()
+    {
+        var opts = new CodecOptions { MaxNestingDepth = 1 };
+
+        var innerChoice = Codec.Choice<byte, byte>(
+            Codec.UInt8,
+            Codec.Case<byte, byte>((byte)42, "answer", Codec.UInt8));
+
+        var outerChoice = Codec.Choice<byte, byte>(
+            Codec.UInt8,
+            Codec.Case<byte, byte>((byte)1, "inner", innerChoice));
+
+        byte[] encoded = Codec.EncodeToArray(outerChoice, (byte)42);
+
+        var ex = Assert.Throws<LimitExceededException>(() =>
+            Codec.Decode(outerChoice, encoded, options: opts));
+
+        Assert.Equal(CodecErrorCode.DepthExceeded, ex.ErrorCode);
+        Assert.Equal("MaxNestingDepth", ex.LimitName);
+    }
 }

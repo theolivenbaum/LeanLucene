@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Linq;
@@ -56,6 +56,7 @@ internal sealed class ChoiceCodec<TBase, TTag> : ICodec<TBase> where TTag : notn
             }
 
             using var pathGuard = context.PushPath($"<{caseDef.Label}>");
+            using var depthGuard = context.PushDepth();
 return caseDef.Handler.Decode(ref reader, context);
         }
         catch
@@ -76,6 +77,7 @@ return caseDef.Handler.Decode(ref reader, context);
             if (caseDef.Handler.MatchesExact(value))
             {
                 _tagCodec.Encode((TTag)caseDef.Tag, writer, context);
+                using var depthGuard = context.PushDepth();
                 caseDef.Handler.Encode(value, writer, context);
                 return;
             }
@@ -87,6 +89,7 @@ return caseDef.Handler.Decode(ref reader, context);
             if (caseDef.Handler.Matches(value))
             {
                 _tagCodec.Encode((TTag)caseDef.Tag, writer, context);
+                using var depthGuard = context.PushDepth();
                 caseDef.Handler.Encode(value, writer, context);
                 return;
             }

@@ -89,6 +89,7 @@ internal sealed class WithCompressionCodec<T> : ICodec<T>
 
             using var offsetGuard = context.SetByteOffsetBase(0);
             using var innerPathGuard = context.PushPath("{decompressed}");
+            using var depthGuard = context.PushDepth();
             T value = _innerCodec.Decode(ref subReader, context);
             return value;
         }
@@ -106,6 +107,8 @@ internal sealed class WithCompressionCodec<T> : ICodec<T>
         var scratch = context.RentScratchBuffer();
         try
         {
+
+            using var depthGuard = context.PushDepth();
             _innerCodec.Encode(value, scratch, context);
 
             var stagedBytes = scratch.Written;

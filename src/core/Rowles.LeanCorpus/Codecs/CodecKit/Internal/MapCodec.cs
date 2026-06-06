@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Buffers;
 using Rowles.LeanCorpus.Codecs.CodecKit.Codecs;
 using Rowles.LeanCorpus.Codecs.CodecKit.Exceptions;
@@ -28,6 +28,7 @@ internal sealed class MapCodec<TIn, TOut> : ICodec<TOut>
         TIn raw;
         try
         {
+            using var depthGuard = context.PushDepth();
             raw = _inner.Decode(ref reader, context);
         }
         catch

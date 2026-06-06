@@ -41,6 +41,7 @@ internal sealed class FixedFrameCodec<T> : ICodec<T>
             var frameReader = new SequenceReader<byte>(frameSequence);
 
             using var scope = context.EnterScope(_size);
+            using var depthGuard = context.PushDepth();
             T value = _innerCodec.Decode(ref frameReader, context);
 
             long trailingBytes = frameReader.Remaining;
@@ -89,6 +90,15 @@ internal sealed class FixedFrameCodec<T> : ICodec<T>
 
             // Advance outer reader past the entire frame
             reader.Advance(_size);
+
+            // Enforce trailing data policy beyond the fixed frame
+            if (_trailingDataPolicy == TrailingDataPolicy.Reject && reader.Remaining > 0)
+            {
+                throw new TrailingDataException(
+                    context.GetByteOffset(ref reader),
+                    context.CurrentPath,
+                    (int)reader.Remaining);
+            }
             return value;
         }
         catch
@@ -105,6 +115,8 @@ internal sealed class FixedFrameCodec<T> : ICodec<T>
         var scratch = context.RentScratchBuffer(_size);
         try
         {
+
+            using var depthGuard = context.PushDepth();
             _innerCodec.Encode(value, scratch, context);
 
             int payloadLength = scratch.Length;

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Buffers;
 using Rowles.LeanCorpus.Codecs.CodecKit.Exceptions;
 using Rowles.LeanCorpus.Codecs.CodecKit.Codecs;
@@ -28,6 +28,7 @@ internal sealed class ValidateCodec<T> : ICodec<T>
         T value;
         try
         {
+            using var depthGuard = context.PushDepth();
             value = _inner.Decode(ref reader, context);
         }
         catch
@@ -53,6 +54,7 @@ internal sealed class ValidateCodec<T> : ICodec<T>
             throw new CodecValidationException(0, context.CurrentPath, _messageFactory(value));
         }
 
+        using var depthGuard = context.PushDepth();
         _inner.Encode(value, writer, context);
     }
 }

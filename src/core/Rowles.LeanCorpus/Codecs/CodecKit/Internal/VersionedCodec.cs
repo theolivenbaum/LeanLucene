@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Linq;
@@ -55,6 +55,7 @@ internal sealed class VersionedCodec<TBase, TVersion> : ICodec<TBase> where TVer
             }
 
             using var pathGuard = context.PushPath($"<{caseDef.Label}>");
+            using var depthGuard = context.PushDepth();
 return caseDef.Handler.Decode(ref reader, context);
         }
         catch
@@ -75,6 +76,7 @@ return caseDef.Handler.Decode(ref reader, context);
             if (caseDef.Handler.MatchesExact(value))
             {
                 _versionCodec.Encode((TVersion)caseDef.Version, writer, context);
+                using var depthGuard = context.PushDepth();
                 caseDef.Handler.Encode(value, writer, context);
                 return;
             }
@@ -86,6 +88,7 @@ return caseDef.Handler.Decode(ref reader, context);
             if (caseDef.Handler.Matches(value))
             {
                 _versionCodec.Encode((TVersion)caseDef.Version, writer, context);
+                using var depthGuard = context.PushDepth();
                 caseDef.Handler.Encode(value, writer, context);
                 return;
             }

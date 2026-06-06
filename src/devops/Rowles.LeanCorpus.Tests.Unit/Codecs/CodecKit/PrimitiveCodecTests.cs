@@ -570,4 +570,83 @@ public sealed class PrimitiveCodecTests
         byte[] data = [0x01, 0x02, 0x03, 0x04, 0x05];
         Codec.Decode(codec, data); // consumes first 3 bytes
     }
+
+    // ═══════════════════════════════════════════════════
+    //  Utf8BytesBorrowed
+    // ═══════════════════════════════════════════════════
+
+    [Fact(DisplayName = "Utf8BytesBorrowed round-trip via Utf8BytesOwned")]
+    public void Utf8BytesBorrowed_RoundTrip()
+    {
+        var owned = Codec.Utf8BytesOwned(5);
+        var borrowed = Codec.Utf8BytesBorrowed(5);
+
+        byte[] encoded = Codec.EncodeToArray(owned, new byte[] { 0x48, 0x65, 0x6C, 0x6C, 0x6F });
+        ReadOnlySequence<byte> decoded = Codec.Decode(borrowed, encoded);
+        Assert.Equal("Hello", System.Text.Encoding.UTF8.GetString(decoded.ToArray()));
+    }
+
+    // ═══════════════════════════════════════════════════
+    //  Utf8BytesOwned
+    // ═══════════════════════════════════════════════════
+
+    [Fact(DisplayName = "Utf8BytesOwned round-trip")]
+    public void Utf8BytesOwned_RoundTrip()
+    {
+        var codec = Codec.Utf8BytesOwned(5);
+        byte[] input = new byte[] { 0x48, 0x65, 0x6C, 0x6C, 0x6F };
+
+        byte[] encoded = Codec.EncodeToArray(codec, input);
+        byte[] decoded = Codec.Decode(codec, encoded);
+
+        Assert.Equal(input, decoded);
+    }
+
+    // ═══════════════════════════════════════════════════
+    //  Utf8StringRemaining
+    // ═══════════════════════════════════════════════════
+
+    [Fact(DisplayName = "Utf8StringRemaining round-trip")]
+    public void Utf8StringRemaining_RoundTrip()
+    {
+        var codec = Codec.LengthPrefixed(Codec.VarUInt32, Codec.Utf8StringRemaining(), TrailingDataPolicy.Allow);
+        string input = "Hello, UTF-8!";
+
+        byte[] encoded = Codec.EncodeToArray(codec, input);
+        string decoded = Codec.Decode(codec, encoded);
+
+        Assert.Equal(input, decoded);
+    }
+
+    // ═══════════════════════════════════════════════════
+    //  BytesBorrowedRemaining
+    // ═══════════════════════════════════════════════════
+
+    [Fact(DisplayName = "BytesBorrowedRemaining round-trip")]
+    public void BytesBorrowedRemaining_RoundTrip()
+    {
+        var codec = Codec.LengthPrefixed(Codec.VarUInt32, Codec.BytesBorrowedRemaining(), TrailingDataPolicy.Allow);
+        byte[] input = new byte[] { 0x01, 0x02, 0x03, 0x04, 0x05 };
+
+        byte[] encoded = Codec.EncodeToArray(codec, new ReadOnlySequence<byte>(input));
+        ReadOnlySequence<byte> decoded = Codec.Decode(codec, encoded);
+
+        Assert.Equal(input, decoded.ToArray());
+    }
+
+    // ═══════════════════════════════════════════════════
+    //  BytesOwnedRemaining (standalone)
+    // ═══════════════════════════════════════════════════
+
+    [Fact(DisplayName = "BytesOwnedRemaining wrapped in LengthPrefixed round-trip")]
+    public void BytesOwnedRemaining_LengthPrefixed_RoundTrip()
+    {
+        var codec = Codec.LengthPrefixed(Codec.VarUInt32, Codec.BytesOwnedRemaining(), TrailingDataPolicy.Allow);
+        byte[] input = new byte[] { 0xAA, 0xBB, 0xCC };
+
+        byte[] encoded = Codec.EncodeToArray(codec, input);
+        byte[] decoded = Codec.Decode(codec, encoded);
+
+        Assert.Equal(input, decoded);
+    }
 }

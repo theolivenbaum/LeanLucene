@@ -1,4 +1,4 @@
-﻿using Rowles.LeanCorpus.Codecs.CodecKit.Codecs;
+using Rowles.LeanCorpus.Codecs.CodecKit.Codecs;
 using System;
 using System.Buffers;
 
@@ -24,6 +24,7 @@ internal sealed class ThenCodec<TFirst, TSecond> : ICodec<TSecond>
         var checkpoint = context.Checkpoint(ref reader);
         try
         {
+            using var depthGuard = context.PushDepth();
             _first.Decode(ref reader, context);
             return _second.Decode(ref reader, context);
         }
@@ -37,6 +38,7 @@ internal sealed class ThenCodec<TFirst, TSecond> : ICodec<TSecond>
     public void Encode(TSecond value, IBufferWriter<byte> writer, CodecContext context)
     {
         _first.Encode(default!, writer, context);
+        using var depthGuard = context.PushDepth();
         _second.Encode(value, writer, context);
     }
 }

@@ -82,6 +82,7 @@ internal sealed class VersionEnvelopeCodec<TBase, TVersion> : ICodec<TBase> wher
 
                 using var pathGuard = context.PushPath($"<{caseDef.Label}>");
                 using var scope = context.EnterScope(bodyLen);
+                using var depthGuard = context.PushDepth();
                 TBase value = caseDef.Handler.Decode(ref bodyReader, context);
 
                 if (bodyReader.Remaining > 0)
@@ -158,6 +159,7 @@ internal sealed class VersionEnvelopeCodec<TBase, TVersion> : ICodec<TBase> wher
         try
         {
             using var pathGuard = context.PushPath($"<{matchedCase.Label}>");
+            using var depthGuard = context.PushDepth();
             matchedCase.Handler.Encode(value, scratch, context);
 
             long bodyLength = scratch.Length;

@@ -37,6 +37,7 @@ internal sealed class RepeatCodec<T> : ICodec<IReadOnlyList<T>>
             var count = 0;
             try
             {
+                using var depthGuard = context.PushDepth();
                 for (int i = 0; i < _count; i++)
                 {
                     using var pathGuard = context.PushPath($"[{i}]");
