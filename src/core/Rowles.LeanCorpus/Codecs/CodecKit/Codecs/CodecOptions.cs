@@ -1,4 +1,4 @@
-﻿using Rowles.LeanCorpus.Codecs.CodecKit.Enums;
+using Rowles.LeanCorpus.Codecs.CodecKit.Enums;
 using System;
 
 namespace Rowles.LeanCorpus.Codecs.CodecKit.Codecs;
@@ -8,29 +8,75 @@ namespace Rowles.LeanCorpus.Codecs.CodecKit.Codecs;
 /// </summary>
 internal sealed record CodecOptions
 {
-    public long MaxFrameBytes { get; init; } = 64 * 1024 * 1024;        // 64 MB
-    public int MaxSequenceElements { get; init; } = 1_000_000;           // 1M
-    public int MaxStringBytes { get; init; } = 16 * 1024 * 1024;         // 16 MB
-    public int MaxScratchBufferBytes { get; init; } = 64 * 1024 * 1024;  // 64 MB
-    public long MaxDecompressedBytes { get; init; } = 256 * 1024 * 1024; // 256 MB
-    public int MaxNestingDepth { get; init; } = 64;
+    private readonly long _maxFrameBytes = 64 * 1024 * 1024;
+    private readonly int _maxSequenceElements = 1_000_000;
+    private readonly int _maxStringBytes = 16 * 1024 * 1024;
+    private readonly int _maxScratchBufferBytes = 64 * 1024 * 1024;
+    private readonly long _maxDecompressedBytes = 256 * 1024 * 1024;
+    private readonly int _maxNestingDepth = 64;
+
+    public long MaxFrameBytes
+    {
+        get => _maxFrameBytes;
+        init
+        {
+            if (value <= 0) throw new ArgumentOutOfRangeException(nameof(MaxFrameBytes), value, "Must be positive.");
+            _maxFrameBytes = value;
+        }
+    }
+
+    public int MaxSequenceElements
+    {
+        get => _maxSequenceElements;
+        init
+        {
+            if (value <= 0) throw new ArgumentOutOfRangeException(nameof(MaxSequenceElements), value, "Must be positive.");
+            _maxSequenceElements = value;
+        }
+    }
+
+    public int MaxStringBytes
+    {
+        get => _maxStringBytes;
+        init
+        {
+            if (value <= 0) throw new ArgumentOutOfRangeException(nameof(MaxStringBytes), value, "Must be positive.");
+            _maxStringBytes = value;
+        }
+    }
+
+    public int MaxScratchBufferBytes
+    {
+        get => _maxScratchBufferBytes;
+        init
+        {
+            if (value <= 0) throw new ArgumentOutOfRangeException(nameof(MaxScratchBufferBytes), value, "Must be positive.");
+            _maxScratchBufferBytes = value;
+        }
+    }
+
+    public long MaxDecompressedBytes
+    {
+        get => _maxDecompressedBytes;
+        init
+        {
+            if (value <= 0) throw new ArgumentOutOfRangeException(nameof(MaxDecompressedBytes), value, "Must be positive.");
+            _maxDecompressedBytes = value;
+        }
+    }
+
+    public int MaxNestingDepth
+    {
+        get => _maxNestingDepth;
+        init
+        {
+            if (value <= 0) throw new ArgumentOutOfRangeException(nameof(MaxNestingDepth), value, "Must be positive.");
+            _maxNestingDepth = value;
+        }
+    }
+
     public bool RejectNonCanonicalVarInts { get; init; } = true;
     public Utf8ValidationMode Utf8Validation { get; init; } = Utf8ValidationMode.Strict;
 
     public static CodecOptions Default { get; } = new();
-
-    public CodecOptions()
-    {
-        Validate();
-    }
-
-    private void Validate()
-    {
-        if (MaxFrameBytes <= 0) throw new ArgumentOutOfRangeException(nameof(MaxFrameBytes), MaxFrameBytes, "Must be positive.");
-        if (MaxSequenceElements <= 0) throw new ArgumentOutOfRangeException(nameof(MaxSequenceElements), MaxSequenceElements, "Must be positive.");
-        if (MaxStringBytes <= 0) throw new ArgumentOutOfRangeException(nameof(MaxStringBytes), MaxStringBytes, "Must be positive.");
-        if (MaxScratchBufferBytes <= 0) throw new ArgumentOutOfRangeException(nameof(MaxScratchBufferBytes), MaxScratchBufferBytes, "Must be positive.");
-        if (MaxDecompressedBytes <= 0) throw new ArgumentOutOfRangeException(nameof(MaxDecompressedBytes), MaxDecompressedBytes, "Must be positive.");
-        if (MaxNestingDepth <= 0) throw new ArgumentOutOfRangeException(nameof(MaxNestingDepth), MaxNestingDepth, "Must be positive.");
-    }
 }

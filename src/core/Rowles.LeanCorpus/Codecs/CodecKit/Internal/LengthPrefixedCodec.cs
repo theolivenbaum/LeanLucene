@@ -63,14 +63,14 @@ internal sealed class LengthPrefixedCodec<T> : ICodec<T>
             var bodySequence = reader.Sequence.Slice(reader.Position, len);
             var bodyReader = new SequenceReader<byte>(bodySequence);
 
+            using var depthGuard = context.PushDepth();
             using var scope = context.EnterScope(len);
             T value = _innerCodec.Decode(ref bodyReader, context);
 
-            // Enforce trailing data policy
+            // Enforce trailing data policy within the body scope
             if (bodyReader.Remaining > 0)
             {
-                var policy = _trailingDataPolicy;
-                if (policy == TrailingDataPolicy.Reject)
+                if (_trailingDataPolicy == TrailingDataPolicy.Reject)
                 {
                     throw new TrailingDataException(
                         context.GetByteOffset(ref reader) + bodyReader.Consumed,
@@ -81,6 +81,16 @@ internal sealed class LengthPrefixedCodec<T> : ICodec<T>
 
             // Advance the outer reader past the entire body
             reader.Advance(len);
+
+            // Enforce trailing data policy beyond the declared frame length
+            if (_trailingDataPolicy == TrailingDataPolicy.Reject && reader.Remaining > 0)
+            {
+                throw new TrailingDataException(
+                    context.GetByteOffset(ref reader),
+                    context.CurrentPath,
+                    (int)reader.Remaining);
+            }
+
             return value;
         }
         catch
@@ -93,6 +103,7 @@ internal sealed class LengthPrefixedCodec<T> : ICodec<T>
     public void Encode(T value, IBufferWriter<byte> writer, CodecContext context)
     {
         using var pathGuard = context.PushPath("{framed}");
+        using var depthGuard = context.PushDepth();
 
         // Stage the inner payload to a scratch buffer to measure its length
         var scratch = context.RentScratchBuffer();

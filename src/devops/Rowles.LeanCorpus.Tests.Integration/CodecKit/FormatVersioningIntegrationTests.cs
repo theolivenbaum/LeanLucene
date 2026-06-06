@@ -46,7 +46,7 @@ public sealed class FormatVersioningIntegrationTests : IClassFixture<TestDirecto
         Assert.True(CodecConstants.RoaringBitmapVersion <= 127);
     }
 
-    [Fact(DisplayName = "VersionEnvelopeCodec handles version=0 (future old-format compat)", Skip = "Version 0 VarInt handling does not decode correctly")]
+    [Fact(DisplayName = "VersionEnvelopeCodec handles version=0 (future old-format compat)")]
     public void VersionEnvelope_Version0_HandledByUnknown()
     {
         // The CodecFormats use CodecConstants values which are all 1.
@@ -58,7 +58,7 @@ public sealed class FormatVersioningIntegrationTests : IClassFixture<TestDirecto
         using (var output = new IndexOutput(path))
         {
             output.WriteByte(0); // version 0
-            output.WriteByte((byte)body.Length); // VarInt bodyLength
+            WriteZigZagVarInt64(output, body.Length);
             output.WriteBytes(body);
             output.Flush();
         }
@@ -71,7 +71,7 @@ public sealed class FormatVersioningIntegrationTests : IClassFixture<TestDirecto
         Assert.Equal(body[0], result.Body[0]);
     }
 
-    [Fact(DisplayName = "BinaryReader-based read of version-0 file succeeds", Skip = "Version 0 VarInt handling does not decode correctly")]
+    [Fact(DisplayName = "BinaryReader-based read of version-0 file succeeds")]
     public void BinaryReader_Version0_Succeeds()
     {
         var path = Path.Combine(_fixture.Path, $"br_v0_{Guid.NewGuid():N}.dat");
@@ -80,7 +80,7 @@ public sealed class FormatVersioningIntegrationTests : IClassFixture<TestDirecto
         using (var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None))
         {
             fs.WriteByte(0); // version 0
-            fs.WriteByte((byte)body.Length); // VarInt bodyLength
+            WriteZigZagVarInt64(fs, body.Length);
             fs.Write(body);
         }
 
@@ -92,6 +92,9 @@ public sealed class FormatVersioningIntegrationTests : IClassFixture<TestDirecto
             Assert.Equal(body, result.Body);
         }
     }
+    // ═══════════════════════════════════════════════════
+    //  Format round-trip
+    // ═══════════════════════════════════════════════════
 
     [Fact(DisplayName = "All CodecFormats decode correctly with BinaryReader round-trip")]
     public void AllCodecFormats_BinaryReader_RoundTrip()
@@ -121,5 +124,27 @@ public sealed class FormatVersioningIntegrationTests : IClassFixture<TestDirecto
                 Assert.Equal(body, result.Body);
             }
         }
+    }
+
+    private static void WriteZigZagVarInt64(Stream stream, long value)
+    {
+        ulong zigzag = (ulong)((value << 1) ^ (value >> 63));
+        while (zigzag >= 0x80)
+        {
+            stream.WriteByte((byte)(zigzag | 0x80));
+            zigzag >>= 7;
+        }
+        stream.WriteByte((byte)zigzag);
+    }
+
+    private static void WriteZigZagVarInt64(IndexOutput output, long value)
+    {
+        ulong zigzag = (ulong)((value << 1) ^ (value >> 63));
+        while (zigzag >= 0x80)
+        {
+            output.WriteByte((byte)(zigzag | 0x80));
+            zigzag >>= 7;
+        }
+        output.WriteByte((byte)zigzag);
     }
 }

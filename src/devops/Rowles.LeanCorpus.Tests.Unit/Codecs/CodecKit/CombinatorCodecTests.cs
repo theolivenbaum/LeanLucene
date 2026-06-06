@@ -45,7 +45,7 @@ public sealed class CombinatorCodecTests
         Assert.Equal(value, decoded);
     }
 
-    [Fact(DisplayName = "LengthPrefixedCodec trailing data with Fail throws TrailingDataException", Skip = "BytesOwned does not trigger scope trailing-data check")]
+    [Fact(DisplayName = "LengthPrefixedCodec trailing data with Fail throws TrailingDataException")]
     public void LengthPrefixed_TrailingData_Fail_Throws()
     {
         var codec = Codec.LengthPrefixed(Codec.VarUInt32, Codec.BytesOwned(1), TrailingDataPolicy.Reject);
@@ -327,7 +327,7 @@ public sealed class CombinatorCodecTests
         Assert.Equal(42, decoded);
     }
 
-    [Fact(DisplayName = "ChoiceCodec unknown discriminator throws UnknownDiscriminatorException", Skip = "Boxed int comparison in xUnit")]
+    [Fact(DisplayName = "ChoiceCodec unknown discriminator throws UnknownDiscriminatorException")]
     public void Choice_UnknownDiscriminator_Throws()
     {
         var codec = Codec.Choice<int, int>(

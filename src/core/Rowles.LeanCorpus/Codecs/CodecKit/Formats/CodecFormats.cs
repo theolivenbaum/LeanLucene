@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Rowles.LeanCorpus.Codecs.CodecKit.Codecs;
 
 namespace Rowles.LeanCorpus.Codecs.CodecKit.Formats;
@@ -29,10 +30,31 @@ internal static class CodecFormats
 
     private static ICodec<byte[]> Create(string ext, byte currentVersion)
     {
+        var cases = new List<VersionCaseDefinition<byte[]>>();
+
+        var format = CodecMigrationRegistry.Default.Get(ext);
+        if (format != null)
+        {
+            // Add newest first so the VersionEnvelope encodes the current version.
+            for (int i = format.Steps.Count - 1; i >= 0; i--)
+            {
+                var step = format.Steps[i];
+                cases.Add(Codec.VersionCase<byte[], byte[]>(
+                    (byte)step.Version, step.Label, step.Reader));
+            }
+        }
+        else
+        {
+            // Fallback: single-case when no registry entry exists.
+            cases.Add(Codec.VersionCase<byte[], byte[]>(
+                currentVersion, $"{ext}-v{currentVersion}",
+                Codec.BytesOwnedRemaining()));
+        }
+
         return Codec.VersionEnvelope<byte[], byte>(
             versionCodec: Codec.UInt8,
             bodyLengthCodec: Codec.VarInt64,
             unknown: (ver, body) => body,
-            cases: Codec.VersionCase<byte[], byte[]>(currentVersion, $"{ext}-v{currentVersion}", Codec.BytesOwnedRemaining()));
+            cases: cases.ToArray());
     }
 }

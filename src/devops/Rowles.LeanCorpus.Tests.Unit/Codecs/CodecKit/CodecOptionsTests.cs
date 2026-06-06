@@ -27,42 +27,42 @@ public sealed class CodecOptionsTests
         Assert.Same(CodecOptions.Default, CodecOptions.Default);
     }
 
-    [Fact(DisplayName = "MaxFrameBytes ≤ 0 throws ArgumentOutOfRangeException", Skip = "record init bypasses Validate()")]
+    [Fact(DisplayName = "MaxFrameBytes ≤ 0 throws ArgumentOutOfRangeException")]
     public void MaxFrameBytes_NonPositive_Throws()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new CodecOptions { MaxFrameBytes = 0 });
         Assert.Throws<ArgumentOutOfRangeException>(() => new CodecOptions { MaxFrameBytes = -1 });
     }
 
-    [Fact(DisplayName = "MaxSequenceElements ≤ 0 throws ArgumentOutOfRangeException", Skip = "record init bypasses Validate()")]
+    [Fact(DisplayName = "MaxSequenceElements ≤ 0 throws ArgumentOutOfRangeException")]
     public void MaxSequenceElements_NonPositive_Throws()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new CodecOptions { MaxSequenceElements = 0 });
         Assert.Throws<ArgumentOutOfRangeException>(() => new CodecOptions { MaxSequenceElements = -1 });
     }
 
-    [Fact(DisplayName = "MaxStringBytes ≤ 0 throws ArgumentOutOfRangeException", Skip = "record init bypasses Validate()")]
+    [Fact(DisplayName = "MaxStringBytes ≤ 0 throws ArgumentOutOfRangeException")]
     public void MaxStringBytes_NonPositive_Throws()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new CodecOptions { MaxStringBytes = 0 });
         Assert.Throws<ArgumentOutOfRangeException>(() => new CodecOptions { MaxStringBytes = -1 });
     }
 
-    [Fact(DisplayName = "MaxScratchBufferBytes ≤ 0 throws ArgumentOutOfRangeException", Skip = "record init bypasses Validate()")]
+    [Fact(DisplayName = "MaxScratchBufferBytes ≤ 0 throws ArgumentOutOfRangeException")]
     public void MaxScratchBufferBytes_NonPositive_Throws()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new CodecOptions { MaxScratchBufferBytes = 0 });
         Assert.Throws<ArgumentOutOfRangeException>(() => new CodecOptions { MaxScratchBufferBytes = -1 });
     }
 
-    [Fact(DisplayName = "MaxDecompressedBytes ≤ 0 throws ArgumentOutOfRangeException", Skip = "record init bypasses Validate()")]
+    [Fact(DisplayName = "MaxDecompressedBytes ≤ 0 throws ArgumentOutOfRangeException")]
     public void MaxDecompressedBytes_NonPositive_Throws()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new CodecOptions { MaxDecompressedBytes = 0 });
         Assert.Throws<ArgumentOutOfRangeException>(() => new CodecOptions { MaxDecompressedBytes = -1 });
     }
 
-    [Fact(DisplayName = "MaxNestingDepth ≤ 0 throws ArgumentOutOfRangeException", Skip = "record init bypasses Validate()")]
+    [Fact(DisplayName = "MaxNestingDepth ≤ 0 throws ArgumentOutOfRangeException")]
     public void MaxNestingDepth_NonPositive_Throws()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new CodecOptions { MaxNestingDepth = 0 });

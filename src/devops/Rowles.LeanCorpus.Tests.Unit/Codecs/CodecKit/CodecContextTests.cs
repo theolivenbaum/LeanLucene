@@ -74,8 +74,7 @@ public sealed class CodecContextTests
         Assert.Equal(new byte[] { payload[1] }, result);
     }
 
-    [Fact(DisplayName = "MaxNestingDepth exceeded throws DepthExceeded",
-        Skip = "PushDepth is not yet wired into codec pipeline")]
+    [Fact(DisplayName = "MaxNestingDepth exceeded throws DepthExceeded")]
     public void MaxNestingDepth_Exceeded_Throws()
     {
         var opts = new CodecOptions { MaxNestingDepth = 1 };
@@ -96,8 +95,7 @@ public sealed class CodecContextTests
         Assert.Equal("MaxNestingDepth", ex.LimitName);
     }
 
-    [Fact(DisplayName = "Trailing data with Reject policy throws TrailingDataException",
-        Skip = "BytesOwnedRemaining does not participate in scope-based trailing data checks")]
+    [Fact(DisplayName = "Trailing data with Reject policy throws TrailingDataException")]
     public void TrailingData_PolicyReject_Throws()
     {
         // LengthPrefixed with reject should throw if extra bytes follow

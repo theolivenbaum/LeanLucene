@@ -63,8 +63,7 @@ public sealed class CodecStackFuzzTests : IClassFixture<ChaosDirectoryFixture>
         Assert.Equal(payload, decoded);
     }
 
-    [Fact(DisplayName = "Exceeding MaxNestingDepth throws DepthExceeded",
-        Skip = "PushDepth is not yet wired into codec pipeline")]
+    [Fact(DisplayName = "Exceeding MaxNestingDepth throws DepthExceeded")]
     public void ExceedMaxNestingDepth_Throws()
     {
         var opts = new CodecOptions { MaxNestingDepth = 1 };

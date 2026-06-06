@@ -343,8 +343,7 @@ public sealed class CodecFileHeaderTests : IDisposable
             CodecFileHeader.ReadVersion(input, CodecFormats.Postings));
     }
 
-    [Fact(DisplayName = "Unknown version (forward compat) succeeds and returns raw body",
-        Skip = "VarInt64 body-length encoding consumes one too many bytes from the stream")]
+    [Fact(DisplayName = "Unknown version (forward compat) succeeds and returns raw body")]
     public void BinaryReader_UnknownVersion_Succeeds()
     {
         var path = TempFile("br_unknown_version.dat");
@@ -354,7 +353,7 @@ public sealed class CodecFileHeaderTests : IDisposable
         using (var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None))
         {
             fs.WriteByte(unknownVersion);
-            fs.WriteByte(2); // VarInt 2: body length (single byte)
+            WriteZigZagVarInt64(fs, body.Length);
             fs.Write(body);
         }
 
@@ -368,8 +367,7 @@ public sealed class CodecFileHeaderTests : IDisposable
         }
     }
 
-    [Fact(DisplayName = "Unknown version via IndexInput succeeds and returns raw body",
-        Skip = "VarInt64 body-length encoding consumes one too many bytes from the stream")]
+    [Fact(DisplayName = "Unknown version via IndexInput succeeds and returns raw body")]
     public void IndexInput_UnknownVersion_Succeeds()
     {
         var path = TempFile("ii_unknown_version.dat");
@@ -379,7 +377,7 @@ public sealed class CodecFileHeaderTests : IDisposable
         using (var output = new IndexOutput(path))
         {
             output.WriteByte(unknownVersion);
-            output.WriteByte(2); // VarInt 2: body length
+            WriteZigZagVarInt64(output, body.Length);
             output.WriteBytes(body);
             output.Flush();
         }
@@ -390,7 +388,6 @@ public sealed class CodecFileHeaderTests : IDisposable
         Assert.Equal(unknownVersion, result.Version);
         Assert.Equal(body, result.Body);
     }
-
     // ═══════════════════════════════════════════════════
     //  VarInt64 body-length edge cases
     // ═══════════════════════════════════════════════════
@@ -565,5 +562,29 @@ public sealed class CodecFileHeaderTests : IDisposable
             byte version = CodecFileHeader.ReadVersion(input, format);
             Assert.Equal(expectedVersion, version);
         }
+    }
+
+    /// <summary>Writes a ZigZag-encoded VarInt64 to a stream (matches Codec.VarInt64 wire format).</summary>
+    private static void WriteZigZagVarInt64(Stream stream, long value)
+    {
+        ulong zigzag = (ulong)((value << 1) ^ (value >> 63));
+        while (zigzag >= 0x80)
+        {
+            stream.WriteByte((byte)(zigzag | 0x80));
+            zigzag >>= 7;
+        }
+        stream.WriteByte((byte)zigzag);
+    }
+
+    /// <summary>Writes a ZigZag-encoded VarInt64 to an IndexOutput.</summary>
+    private static void WriteZigZagVarInt64(IndexOutput output, long value)
+    {
+        ulong zigzag = (ulong)((value << 1) ^ (value >> 63));
+        while (zigzag >= 0x80)
+        {
+            output.WriteByte((byte)(zigzag | 0x80));
+            zigzag >>= 7;
+        }
+        output.WriteByte((byte)zigzag);
     }
 }
