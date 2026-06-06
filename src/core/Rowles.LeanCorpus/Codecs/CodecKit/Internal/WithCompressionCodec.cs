@@ -1,5 +1,7 @@
 using System;
 using System.Buffers;
+using System.IO;
+using System.IO.Compression;
 using Rowles.LeanCorpus.Codecs.CodecKit.Enums;
 using Rowles.LeanCorpus.Codecs.CodecKit.Exceptions;
 using Rowles.LeanCorpus.Codecs.CodecKit.Codecs;
@@ -7,23 +9,20 @@ using Rowles.LeanCorpus.Codecs.CodecKit.Compression;
 namespace Rowles.LeanCorpus.Codecs.CodecKit.Internal;
 
 /// <summary>
-/// Wraps an inner codec with compression/decompression.
+/// Wraps an inner codec with Deflate compression/decompression.
 /// Wire format: [compressed-length][compressed-payload]
 /// </summary>
 internal sealed class WithCompressionCodec<T> : ICodec<T>
 {
-    private readonly CompressionAlgorithmId _algorithmId;
     private readonly CodecCompressionLevel _level;
     private readonly ICodec<long> _compressedLengthCodec;
     private readonly ICodec<T> _innerCodec;
 
     public WithCompressionCodec(
-        CompressionAlgorithmId algorithmId,
         CodecCompressionLevel level,
         ICodec<long> compressedLengthCodec,
         ICodec<T> innerCodec)
     {
-        _algorithmId = algorithmId ?? throw new ArgumentNullException(nameof(algorithmId));
         _compressedLengthCodec = compressedLengthCodec ?? throw new ArgumentNullException(nameof(compressedLengthCodec));
         _innerCodec = innerCodec ?? throw new ArgumentNullException(nameof(innerCodec));
         _level = level;
@@ -34,7 +33,7 @@ internal sealed class WithCompressionCodec<T> : ICodec<T>
         var checkpoint = context.Checkpoint(ref reader);
         try
         {
-            using var pathGuard = context.PushPath($"{{compressed:{_algorithmId.Name}}}");
+            using var pathGuard = context.PushPath("{compressed:deflate}");
 
             long compressedLength = _compressedLengthCodec.Decode(ref reader, context);
 
@@ -61,16 +60,13 @@ internal sealed class WithCompressionCodec<T> : ICodec<T>
             var compressedSequence = reader.Sequence.Slice(reader.Position, compLen);
             reader.Advance(compLen);
 
-            var provider = context.Registry.GetCompressionProvider(_algorithmId);
-
-            // Flatten the compressed sequence to a span for the provider
             byte[] decompressed;
             try
             {
                 if (compressedSequence.IsSingleSegment)
-                    decompressed = provider.Decompress(compressedSequence.FirstSpan);
+                    decompressed = Decompress(compressedSequence.FirstSpan);
                 else
-                    decompressed = provider.Decompress(compressedSequence.ToArray());
+                    decompressed = Decompress(compressedSequence.ToArray());
             }
             catch (Exception ex) when (ex is not CodecException)
             {
@@ -113,10 +109,9 @@ internal sealed class WithCompressionCodec<T> : ICodec<T>
             _innerCodec.Encode(value, scratch, context);
 
             var stagedBytes = scratch.Written;
-            var provider = context.Registry.GetCompressionProvider(_algorithmId);
             byte[] compressed = stagedBytes.IsSingleSegment
-                ? provider.Compress(stagedBytes.FirstSpan, _level)
-                : provider.Compress(stagedBytes.ToArray(), _level);
+                ? Compress(stagedBytes.FirstSpan)
+                : Compress(stagedBytes.ToArray());
 
             // Write compressed length
             _compressedLengthCodec.Encode(compressed.Length, writer, context);
@@ -129,6 +124,39 @@ internal sealed class WithCompressionCodec<T> : ICodec<T>
         finally
         {
             context.ReturnScratchBuffer(scratch);
+        }
+    }
+
+    private byte[] Compress(ReadOnlySpan<byte> data)
+    {
+        var cl = _level switch
+        {
+            CodecCompressionLevel.Fastest => CompressionLevel.Fastest,
+            CodecCompressionLevel.Optimal => CompressionLevel.Optimal,
+            CodecCompressionLevel.SmallestSize => CompressionLevel.SmallestSize,
+            _ => CompressionLevel.Optimal
+        };
+        using var output = new MemoryStream(Math.Max(data.Length / 2, 256));
+        using (var deflate = new DeflateStream(output, cl, leaveOpen: true))
+            deflate.Write(data);
+        return output.ToArray();
+    }
+
+    private static byte[] Decompress(ReadOnlySpan<byte> compressedData)
+    {
+        byte[] rented = ArrayPool<byte>.Shared.Rent(compressedData.Length);
+        try
+        {
+            compressedData.CopyTo(rented);
+            using var input = new MemoryStream(rented, 0, compressedData.Length, false);
+            using var output = new MemoryStream(compressedData.Length * 4);
+            using (var deflate = new DeflateStream(input, CompressionMode.Decompress))
+                deflate.CopyTo(output);
+            return output.ToArray();
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(rented);
         }
     }
 }

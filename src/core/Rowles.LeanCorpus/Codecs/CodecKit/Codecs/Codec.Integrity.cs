@@ -15,15 +15,15 @@ internal static partial class Codec
         => new WithChecksumCodec<T>(algorithmId, placement, codec);
 
     /// <summary>
-    /// Wraps a codec with compression/decompression.
+    /// Wraps a codec with Deflate compression/decompression.
     /// Wire format: [compressed-length][compressed-payload].
     /// </summary>
-    public static ICodec<T> WithCompression<T>(this ICodec<T> codec, CompressionAlgorithmId algorithmId,
+    public static ICodec<T> WithCompression<T>(this ICodec<T> codec,
         CodecCompressionLevel level = CodecCompressionLevel.Optimal, ICodec<uint>? compressedLengthCodec = null)
     {
         ICodec<long> lengthCodec = compressedLengthCodec != null
             ? new NumericToLongCodec<uint>(compressedLengthCodec, v => (long)v, v => checked((uint)v))
             : new NumericToLongCodec<uint>(VarUInt32, v => (long)v, v => checked((uint)v));
-        return new WithCompressionCodec<T>(algorithmId, level, lengthCodec, codec);
+        return new WithCompressionCodec<T>(level, lengthCodec, codec);
     }
 }
