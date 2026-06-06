@@ -135,6 +135,25 @@ public sealed class SegmentMerger
         return result;
     }
 
+    /// <summary>
+    /// Forces a full merge of all given segments into a single new segment,
+    /// bypassing tier-based merge policy. Used by <see cref="IndexWriter.Compact"/>.
+    /// </summary>
+    /// <param name="segments">All segments to merge into one.</param>
+    /// <param name="nextSegmentOrdinal">Ordinal counter for naming the output segment.</param>
+    /// <returns>The merged segment, or <c>null</c> if only one segment was provided and no merge occurred.</returns>
+    public SegmentInfo? MergeAll(List<SegmentInfo> segments, ref int nextSegmentOrdinal)
+    {
+        if (segments.Count == 0)
+            return null;
+
+        // If there is only one segment, nothing to merge
+        if (segments.Count == 1)
+            return segments[0];
+
+        return MergeSegments(segments, ref nextSegmentOrdinal);
+    }
+
     private SegmentInfo? MergeSegments(List<SegmentInfo> segments, ref int nextSegmentOrdinal)
     {
         var newSegId = $"seg_{nextSegmentOrdinal++}";

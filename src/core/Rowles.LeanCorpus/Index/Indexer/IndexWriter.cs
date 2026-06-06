@@ -574,6 +574,96 @@ public sealed partial class IndexWriter : IDisposable
         }
     }
 
+    /// <summary>
+    /// Force-merges all committed segments into a single segment, reclaiming disk space
+    /// from hard-deleted documents and consolidating soft-deleted documents past their
+    /// retention window. This is a synchronous, blocking operation — it holds the merge
+    /// I/O lock for the duration and should only be called during maintenance windows
+    /// or when write throughput is low.
+    /// </summary>
+    /// <returns>The number of segments that were merged, or 0 if no merge was performed.</returns>
+    /// <exception cref="ObjectDisposedException">Thrown if the writer has been disposed.</exception>
+    public int Compact()
+    {
+        EnterIndexingOperation();
+        try
+        {
+            return CompactWithLocks();
+        }
+        finally
+        {
+            ExitIndexingOperation();
+        }
+    }
+
+    private int CompactWithLocks()
+    {
+        // Lock ordering: _mergeIoLock before _writeLock.
+        lock (_mergeIoLock)
+        lock (_writeLock)
+        {
+            // Apply any pending deletions then flush buffered documents
+            if (_pendingDeletes.Count > 0)
+                ApplyPendingDeletions(_committedSegments);
+
+            if (_buffer.DocCount > 0)
+                FlushSegment();
+
+            if (_committedSegments.Count <= 1)
+                return 0;
+
+            int sourceCount = _committedSegments.Count;
+            var segmentsToMerge = _committedSegments.ToList();
+            var protectedSegments = GetSnapshotProtectedSegments();
+
+            // Remove protected segments from the merge set — they are held by
+            // active snapshots and must not be deleted.
+            var mergeable = segmentsToMerge
+                .Where(s => !protectedSegments.Contains(s.SegmentId))
+                .ToList();
+
+            if (mergeable.Count < 2)
+                return 0;
+
+            var merger = new SegmentMerger(_directory, _config.MergeThreshold, _config.PostingsSkipInterval);
+            var merged = merger.MergeAll(mergeable, ref _nextSegmentOrdinal);
+
+            if (merged is null)
+            {
+                // All documents were deleted — remove the merged segments entirely.
+                foreach (var seg in mergeable)
+                    _committedSegments.Remove(seg);
+            }
+            else
+            {
+                // Replace the merged segments with the single result.
+                foreach (var seg in mergeable)
+                    _committedSegments.Remove(seg);
+                _committedSegments.Add(merged);
+            }
+
+            // Clean up old segment files no longer referenced.
+            var activeSegments = new HashSet<string>(
+                _committedSegments.Select(static s => s.SegmentId), StringComparer.Ordinal);
+            foreach (var seg in segmentsToMerge)
+            {
+                if (!activeSegments.Contains(seg.SegmentId) &&
+                    !protectedSegments.Contains(seg.SegmentId))
+                {
+                    merger.CleanupSegmentFiles(seg);
+                }
+            }
+
+            _contentToken++;
+            _commitGeneration++;
+            WriteCommitFile(_commitGeneration);
+            WriteCommitStats(_commitGeneration);
+            _config.DeletionPolicy.OnCommit(_directory.DirectoryPath, _commitGeneration, GetSnapshotProtectedSegments());
+
+            return sourceCount;
+        }
+    }
+
     private void CommitWithLocks()
     {
         // Lock ordering: _mergeIoLock first (so a running merge can finish before we

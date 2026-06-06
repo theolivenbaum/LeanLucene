@@ -1,4 +1,4 @@
-﻿# Writer configuration
+# Writer configuration
 
 <xref:Rowles.LeanCorpus.Index.Indexer.IndexWriterConfig> exposes the knobs that affect
 buffering, merging, compression, and analysis.
@@ -9,7 +9,7 @@ buffering, merging, compression, and analysis.
 var config = new IndexWriterConfig
 {
     DefaultAnalyser = new StandardAnalyser(),
-    RamBufferSizeMB = 256.0,
+    RamBufferSizeMB = 512.0,
     MaxBufferedDocs = 10_000,
     MaxQueuedDocs   = 20_000,
     MergeThreshold  = 10,
@@ -23,7 +23,7 @@ var config = new IndexWriterConfig
 
 | Setting | Default |
 |---|---|
-| `RamBufferSizeMB` | `256.0` |
+| `RamBufferSizeMB` | `512.0` |
 | `MaxBufferedDocs` | `10_000` |
 | `MaxQueuedDocs` | `20_000` |
 | `DefaultAnalyser` | `StandardAnalyser` |

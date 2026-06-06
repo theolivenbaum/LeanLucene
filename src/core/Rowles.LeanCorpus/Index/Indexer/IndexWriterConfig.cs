@@ -11,7 +11,7 @@ namespace Rowles.LeanCorpus.Index.Indexer;
 public sealed class IndexWriterConfig
 {
     /// <summary>RAM buffer size in megabytes before an automatic flush.</summary>
-    public double RamBufferSizeMB { get; set; } = 256.0;
+    public double RamBufferSizeMB { get; set; } = 512.0;
 
     /// <summary>Maximum number of buffered documents before an automatic flush.</summary>
     public int MaxBufferedDocs { get; set; } = 10_000;
