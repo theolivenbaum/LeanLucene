@@ -1,12 +1,13 @@
 using System.Buffers;
 using Rowles.LeanCorpus.Codecs;
+using Rowles.LeanCorpus.Codecs.CodecKit;
+using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
 using Rowles.LeanCorpus.Codecs.Vectors;
 using Rowles.LeanCorpus.Codecs.Bkd;
 using Rowles.LeanCorpus.Codecs.TermVectors;
 using Rowles.LeanCorpus.Codecs.TermDictionary;
 using Rowles.LeanCorpus.Search;
 using Rowles.LeanCorpus.Store;
-
 namespace Rowles.LeanCorpus.Index.Indexer;
 
 /// <summary>
@@ -77,101 +78,123 @@ internal static class SegmentFlusher
         var termToAcc = new Dictionary<string, PostingAccumulator>(postingsCount, StringComparer.Ordinal);
         for (int i = 0; i < postingsCount; i++)
             termToAcc[buffer.GetTermString(i)] = buffer.PostingAccumulators[i];
-
-        using (var posOutput = new IndexOutput(basePath + ".pos"))
+        // Write .pos body to a temporary file, then wrap with CodecKit header
+        string tmpPosBody = basePath + ".pos.body.tmp";
+        try
         {
-            CodecConstants.WriteHeader(posOutput, CodecConstants.PostingsVersion);
-
-            using var blockWriter = new BlockPostingsWriter(posOutput);
-
-            foreach (var qt in buffer.SortedTermsBuffer)
+            using (var posOutput = new IndexOutput(tmpPosBody))
+            using (var blockWriter = new BlockPostingsWriter(posOutput))
             {
-                var acc = termToAcc[qt];
-                var ids = acc.DocIds;
-
-                bool hasFreqs = acc.HasFreqs;
-                bool hasPositions = acc.HasPositions;
-                bool hasPayloads = acc.HasPayloads;
-
-                long headerPos = posOutput.Position;
-                posOutput.WriteInt32(0);
-                posOutput.WriteInt64(0L);
-                posOutput.WriteBoolean(hasFreqs);
-                posOutput.WriteBoolean(hasPositions);
-                posOutput.WriteBoolean(hasPayloads);
-
-                blockWriter.StartTerm();
-                for (int i = 0; i < ids.Length; i++)
-                    blockWriter.AddPosting(ids[i], hasFreqs ? acc.GetFreq(i) : 1);
-                var meta = blockWriter.FinishTerm();
-
-                if (hasPositions)
+                foreach (var qt in buffer.SortedTermsBuffer)
                 {
+                    var acc = termToAcc[qt];
+                    var ids = acc.DocIds;
+
+                    bool hasFreqs = acc.HasFreqs;
+                    bool hasPositions = acc.HasPositions;
+                    bool hasPayloads = acc.HasPayloads;
+
+                    long headerPos = posOutput.Position;
+                    postingsOffsets[qt] = headerPos;
+                    posOutput.WriteInt32(0);
+                    posOutput.WriteInt64(0L);
+                    posOutput.WriteBoolean(hasFreqs);
+                    posOutput.WriteBoolean(hasPositions);
+                    posOutput.WriteBoolean(hasPayloads);
+
+                    blockWriter.StartTerm();
                     for (int i = 0; i < ids.Length; i++)
+                        blockWriter.AddPosting(ids[i], hasFreqs ? acc.GetFreq(i) : 1);
+                    var meta = blockWriter.FinishTerm();
+
+                    if (hasPositions)
                     {
-                        acc.GetEncodedPositionDeltas(i, out var deltaBytes, out int firstPos, out int freq);
-                        posOutput.WriteVarInt(freq);
-                        if (freq == 0) continue;
-
-                        posOutput.WriteVarInt(firstPos);
-                        int prevPos = firstPos;
-
-                        // Payload for position 0
-                        if (hasPayloads)
+                        for (int i = 0; i < ids.Length; i++)
                         {
-                            var payload0 = acc.GetPayload(i, 0);
-                            if (payload0 is { Length: > 0 })
-                            {
-                                posOutput.WriteVarInt(payload0.Length);
-                                posOutput.WriteBytes(payload0);
-                            }
-                            else
-                            {
-                                posOutput.WriteVarInt(0);
-                            }
-                        }
+                            acc.GetEncodedPositionDeltas(i, out var deltaBytes, out int firstPos, out int freq);
+                            posOutput.WriteVarInt(freq);
+                            if (freq == 0) continue;
 
-                        int offset = 0;
-                        for (int pi = 1; pi < freq; pi++)
-                        {
-                            offset += PostingAccumulator.ReadVarInt(deltaBytes.Slice(offset), out int delta);
-                            int abs = firstPos + delta;
-                            posOutput.WriteVarInt(abs - prevPos);
-                            prevPos = abs;
+                            posOutput.WriteVarInt(firstPos);
+                            int prevPos = firstPos;
 
+                            // Payload for position 0
                             if (hasPayloads)
                             {
-                                var payload = acc.GetPayload(i, pi);
-                                if (payload is { Length: > 0 })
+                                var payload0 = acc.GetPayload(i, 0);
+                                if (payload0 is { Length: > 0 })
                                 {
-                                    posOutput.WriteVarInt(payload.Length);
-                                    posOutput.WriteBytes(payload);
+                                    posOutput.WriteVarInt(payload0.Length);
+                                    posOutput.WriteBytes(payload0);
                                 }
                                 else
                                 {
                                     posOutput.WriteVarInt(0);
                                 }
                             }
+
+                            int offset = 0;
+                            for (int pi = 1; pi < freq; pi++)
+                            {
+                                offset += PostingAccumulator.ReadVarInt(deltaBytes.Slice(offset), out int delta);
+                                int abs = firstPos + delta;
+                                posOutput.WriteVarInt(abs - prevPos);
+                                prevPos = abs;
+
+                                if (hasPayloads)
+                                {
+                                    var payload = acc.GetPayload(i, pi);
+                                    if (payload is { Length: > 0 })
+                                    {
+                                        posOutput.WriteVarInt(payload.Length);
+                                        posOutput.WriteBytes(payload);
+                                    }
+                                    else
+                                    {
+                                        posOutput.WriteVarInt(0);
+                                    }
+                                }
+                            }
                         }
                     }
+
+                    headerPatches.Add((headerPos, meta.DocFreq, meta.SkipOffset));
                 }
-
-                headerPatches.Add((headerPos, meta.DocFreq, meta.SkipOffset));
-                postingsOffsets[qt] = headerPos;
             }
-        }
 
-        using (var patchStream = new FileStream(basePath + ".pos", FileMode.Open, FileAccess.ReadWrite, FileShare.None))
-        {
-            Span<byte> patch = stackalloc byte[12];
-            for (int i = 0; i < headerPatches.Count; i++)
+            byte[] body = System.IO.File.ReadAllBytes(tmpPosBody);
+            int envelopeOffset = 1 + VarIntSize(body.Length);
+
+            using (var posOutput = new IndexOutput(basePath + ".pos"))
             {
-                var (hpos, docFreq, skipOffset) = headerPatches[i];
-                patchStream.Seek(hpos, SeekOrigin.Begin);
-                System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(patch, docFreq);
-                System.Buffers.Binary.BinaryPrimitives.WriteInt64LittleEndian(patch[4..], skipOffset);
-                patchStream.Write(patch);
+                posOutput.WriteByte(CodecConstants.PostingsVersion);
+                posOutput.WriteVarInt(body.Length);
+                posOutput.WriteBytes(body);
             }
+
+            // Patch header placeholders — adjust positions for CodecKit envelope
+            using (var patchStream = new System.IO.FileStream(basePath + ".pos", System.IO.FileMode.Open, System.IO.FileAccess.ReadWrite, System.IO.FileShare.None))
+            {
+                Span<byte> patch = stackalloc byte[12];
+                for (int i = 0; i < headerPatches.Count; i++)
+                {
+                    var (hpos, docFreq, skipOffset) = headerPatches[i];
+                    patchStream.Seek(hpos + envelopeOffset, System.IO.SeekOrigin.Begin);
+                    System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(patch, docFreq);
+                    System.Buffers.Binary.BinaryPrimitives.WriteInt64LittleEndian(patch[4..], skipOffset + envelopeOffset);
+                    patchStream.Write(patch);
+                }
+            }
+
+            // Re-base postingsOffsets to final file positions
+            var rekeyedOffsets = new Dictionary<string, long>(postingsOffsets.Count, StringComparer.Ordinal);
+            foreach (var kv in postingsOffsets)
+                rekeyedOffsets[kv.Key] = kv.Value + envelopeOffset;
+            postingsOffsets = rekeyedOffsets;
+        }
+        finally
+        {
+            TryDeleteTemporaryFile(tmpPosBody);
         }
 
         TermDictionaryWriter.Write(basePath + ".dic", buffer.SortedTermsBuffer, postingsOffsets);
@@ -748,5 +771,17 @@ internal static class SegmentFlusher
                 centroid[j] /= count;
         }
         return centroid;
+    }
+
+    private static int VarIntSize(long value)
+    {
+        int size = 0;
+        do { size++; value >>= 7; } while (value != 0);
+        return size;
+    }
+
+    private static void TryDeleteTemporaryFile(string path)
+    {
+        try { System.IO.File.Delete(path); } catch { /* best-effort */ }
     }
 }

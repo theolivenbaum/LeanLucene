@@ -9,6 +9,8 @@ using Rowles.LeanCorpus.Codecs.Vectors;
 using Rowles.LeanCorpus.Codecs.TermVectors;
 using Rowles.LeanCorpus.Codecs.TermDictionary;
 using Rowles.LeanCorpus.Store;
+using Rowles.LeanCorpus.Codecs.CodecKit;
+using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
 using Rowles.LeanCorpus.Index.Indexer;
 
 namespace Rowles.LeanCorpus.Index.Segment;
@@ -639,50 +641,76 @@ public sealed class SegmentMerger
     {
         if (ctx.NumericDocValues.Count > 0)
         {
-            using var output = new Store.IndexOutput(basePath + ".dvn");
-            CodecConstants.WriteHeader(output, CodecConstants.NumericDocValuesVersion);
-            output.WriteInt32(ctx.NumericDocValues.Count);
-            string[] fieldKeys = System.Buffers.ArrayPool<string>.Shared.Rent(ctx.NumericDocValues.Count);
+            string tmpBody = basePath + ".dvn.body.tmp";
             try
             {
-                int kn = 0;
-                foreach (var key in ctx.NumericDocValues.Keys) fieldKeys[kn++] = key;
-                for (int i = 0; i < kn; i++)
+                using (var output = new Store.IndexOutput(tmpBody))
                 {
-                    var field = fieldKeys[i];
-                    ctx.NumericFields.TryGetValue(field, out var sparseMap);
-                    IReadOnlySet<int>? presenceSet = sparseMap is not null
-                        ? (IReadOnlySet<int>)sparseMap.Keys.ToHashSet()
-                        : null;
-                    NumericDocValuesWriter.WriteFieldBlock(output, field, ctx.NumericDocValues[field], ctx.TotalDocs, presenceSet);
-                    ctx.NumericDocValues.Remove(field);
+                    output.WriteInt32(ctx.NumericDocValues.Count);
+                    string[] fieldKeys = System.Buffers.ArrayPool<string>.Shared.Rent(ctx.NumericDocValues.Count);
+                    try
+                    {
+                        int kn = 0;
+                        foreach (var key in ctx.NumericDocValues.Keys) fieldKeys[kn++] = key;
+                        for (int i = 0; i < kn; i++)
+                        {
+                            var field = fieldKeys[i];
+                            ctx.NumericFields.TryGetValue(field, out var sparseMap);
+                            IReadOnlySet<int>? presenceSet = sparseMap is not null
+                                ? (IReadOnlySet<int>)sparseMap.Keys.ToHashSet()
+                                : null;
+                            NumericDocValuesWriter.WriteFieldBlock(output, field, ctx.NumericDocValues[field], ctx.TotalDocs, presenceSet);
+                            ctx.NumericDocValues.Remove(field);
+                        }
+                    }
+                    finally
+                    {
+                        System.Buffers.ArrayPool<string>.Shared.Return(fieldKeys, clearArray: true);
+                    }
                 }
+
+                byte[] body = File.ReadAllBytes(tmpBody);
+                using (var output = new Store.IndexOutput(basePath + ".dvn"))
+                    CodecFileHeader.Write(output, CodecFormats.NumericDocValues, body);
             }
             finally
             {
-                System.Buffers.ArrayPool<string>.Shared.Return(fieldKeys, clearArray: true);
+                TryDeleteTemporaryFile(tmpBody);
             }
         }
         if (ctx.SortedDocValues.Count > 0)
         {
-            using var output = new Store.IndexOutput(basePath + ".dvs");
-            CodecConstants.WriteHeader(output, CodecConstants.SortedDocValuesVersion);
-            output.WriteInt32(ctx.SortedDocValues.Count);
-            string[] fieldKeys = System.Buffers.ArrayPool<string>.Shared.Rent(ctx.SortedDocValues.Count);
+            string tmpBody = basePath + ".dvs.body.tmp";
             try
             {
-                int kn = 0;
-                foreach (var key in ctx.SortedDocValues.Keys) fieldKeys[kn++] = key;
-                for (int i = 0; i < kn; i++)
+                using (var output = new Store.IndexOutput(tmpBody))
                 {
-                    var field = fieldKeys[i];
-                    SortedDocValuesWriter.WriteFieldBlock(output, field, ctx.SortedDocValues[field], ctx.TotalDocs);
-                    ctx.SortedDocValues.Remove(field);
+                    output.WriteInt32(ctx.SortedDocValues.Count);
+                    string[] fieldKeys = System.Buffers.ArrayPool<string>.Shared.Rent(ctx.SortedDocValues.Count);
+                    try
+                    {
+                        int kn = 0;
+                        foreach (var key in ctx.SortedDocValues.Keys) fieldKeys[kn++] = key;
+                        for (int i = 0; i < kn; i++)
+                        {
+                            var field = fieldKeys[i];
+                            SortedDocValuesWriter.WriteFieldBlock(output, field, ctx.SortedDocValues[field], ctx.TotalDocs);
+                            ctx.SortedDocValues.Remove(field);
+                        }
+                    }
+                    finally
+                    {
+                        System.Buffers.ArrayPool<string>.Shared.Return(fieldKeys, clearArray: true);
+                    }
                 }
+
+                byte[] body = File.ReadAllBytes(tmpBody);
+                using (var output = new Store.IndexOutput(basePath + ".dvs"))
+                    CodecFileHeader.Write(output, CodecFormats.SortedDocValues, body);
             }
             finally
             {
-                System.Buffers.ArrayPool<string>.Shared.Return(fieldKeys, clearArray: true);
+                TryDeleteTemporaryFile(tmpBody);
             }
         }
         if (ctx.SortedSetDocValues.Count > 0)
@@ -924,6 +952,11 @@ public sealed class SegmentMerger
         }
         if (MathF.Abs(max - min) < 1e-8f) max = min + 1f;
         return (min, (max - min) / 255f);
+    }
+
+    private static void TryDeleteTemporaryFile(string path)
+    {
+        try { File.Delete(path); } catch { /* best-effort */ }
     }
 
     private static float[] ComputeBBQCentroidMerge(

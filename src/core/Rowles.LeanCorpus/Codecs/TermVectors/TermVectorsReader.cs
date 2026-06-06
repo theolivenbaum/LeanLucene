@@ -8,20 +8,18 @@ internal sealed class TermVectorsReader : IDisposable
 {
     private readonly Store.IndexInput _tvdInput;
     private readonly long[] _offsets;
-    private readonly byte _version;
 
-    private TermVectorsReader(Store.IndexInput tvdInput, long[] offsets, byte version)
+    private TermVectorsReader(Store.IndexInput tvdInput, long[] offsets)
     {
         _tvdInput = tvdInput;
         _offsets = offsets;
-        _version = version;
     }
 
     public static TermVectorsReader Open(string tvdPath, string tvxPath)
     {
         // Read offsets from .tvx index file
         using var tvxInput = new Store.IndexInput(tvxPath);
-        byte tvxVersion = CodecFileHeader.ReadVersion(tvxInput, CodecFormats.TermVectors);
+        CodecFileHeader.ReadVersion(tvxInput, CodecFormats.TermVectors);
 
         int docCount = tvxInput.ReadInt32();
         var offsets = new long[docCount];
@@ -30,12 +28,9 @@ internal sealed class TermVectorsReader : IDisposable
 
         // Open .tvd data file as mmap
         var tvdInput = new Store.IndexInput(tvdPath);
-        byte tvdVersion = CodecFileHeader.ReadVersion(tvdInput, CodecFormats.TermVectors);
+        CodecFileHeader.ReadVersion(tvdInput, CodecFormats.TermVectors);
 
-        if (tvdVersion != tvxVersion)
-            throw new InvalidDataException($"Mismatched term vector versions between '{tvdPath}' and '{tvxPath}'.");
-
-        return new TermVectorsReader(tvdInput, offsets, tvdVersion);
+        return new TermVectorsReader(tvdInput, offsets);
     }
 
     /// <summary>Returns all term vectors for a document across all stored fields.</summary>
@@ -62,19 +57,16 @@ internal sealed class TermVectorsReader : IDisposable
                 for (int p = 0; p < posCount; p++)
                     positions[p] = _tvdInput.ReadInt32(ref position);
                 byte[]?[]? payloads = null;
-                if (_version >= 2)
+                bool hasPayloads = _tvdInput.ReadBoolean(ref position);
+                if (hasPayloads)
                 {
-                    bool hasPayloads = _tvdInput.ReadBoolean(ref position);
-                    if (hasPayloads)
+                    payloads = new byte[]?[posCount];
+                    for (int p = 0; p < posCount; p++)
                     {
-                        payloads = new byte[]?[posCount];
-                        for (int p = 0; p < posCount; p++)
-                        {
-                            int payloadLength = _tvdInput.ReadInt32(ref position);
-                            payloads[p] = payloadLength > 0
-                                ? _tvdInput.ReadSpan(payloadLength, ref position).ToArray()
-                                : null;
-                        }
+                        int payloadLength = _tvdInput.ReadInt32(ref position);
+                        payloads[p] = payloadLength > 0
+                            ? _tvdInput.ReadSpan(payloadLength, ref position).ToArray()
+                            : null;
                     }
                 }
 

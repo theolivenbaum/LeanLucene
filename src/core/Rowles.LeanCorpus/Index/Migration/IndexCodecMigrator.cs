@@ -572,10 +572,10 @@ public static class IndexCodecMigrator
         using (var dictionary = TermDictionaryReader.Open(basePath + ".dic"))
         using (var input = new IndexInput(basePath + ".pos"))
         {
-            byte version = PostingsEnum.ValidateFileHeader(input);
+            _ = PostingsEnum.ValidateFileHeader(input);
             terms = dictionary
                 .EnumerateAllTerms()
-                .Select(term => (term.Term, ReadPostingRows(input, term.Offset, version)))
+                .Select(term => (term.Term, ReadPostingRows(input, term.Offset)))
                 .ToList();
         }
 
@@ -586,26 +586,27 @@ public static class IndexCodecMigrator
         var dicPath = basePath + ".dic";
         var temporaryPosPath = posPath + ".tmp";
         var temporaryDicPath = dicPath + ".tmp";
+        var temporaryBodyPath = posPath + ".body.tmp";
 
         try
         {
-            using (var output = new IndexOutput(temporaryPosPath))
+            // Write body to temp file (no CodecKit envelope yet)
+            using (var bodyOutput = new IndexOutput(temporaryBodyPath))
+            using (var blockWriter = new BlockPostingsWriter(bodyOutput))
             {
-                CodecConstants.WriteHeader(output, CodecConstants.PostingsVersion);
-                using var blockWriter = new BlockPostingsWriter(output);
-
                 foreach (var (term, postings) in terms)
                 {
                     bool hasFreqs = postings.Any(static posting => posting.Frequency != 1);
                     bool hasPositions = postings.Any(static posting => posting.Positions.Length > 0);
                     bool hasPayloads = postings.Any(static posting => posting.Payloads.Any(static payload => payload.Length > 0));
 
-                    long headerPos = output.Position;
-                    output.WriteInt32(0);
-                    output.WriteInt64(0L);
-                    output.WriteBoolean(hasFreqs);
-                    output.WriteBoolean(hasPositions);
-                    output.WriteBoolean(hasPayloads);
+                    long headerPos = bodyOutput.Position;
+                    postingsOffsets[term] = headerPos;
+                    bodyOutput.WriteInt32(0);
+                    bodyOutput.WriteInt64(0L);
+                    bodyOutput.WriteBoolean(hasFreqs);
+                    bodyOutput.WriteBoolean(hasPositions);
+                    bodyOutput.WriteBoolean(hasPayloads);
 
                     blockWriter.StartTerm();
                     foreach (var posting in postings)
@@ -613,26 +614,42 @@ public static class IndexCodecMigrator
                     var metadata = blockWriter.FinishTerm();
 
                     if (hasPositions)
-                        WritePositionRows(output, postings, hasPayloads);
+                        WritePositionRows(bodyOutput, postings, hasPayloads);
 
                     headerPatches.Add((headerPos, metadata.DocFreq, metadata.SkipOffset));
-                    postingsOffsets[term] = headerPos;
                 }
             }
 
-            using (var patchStream = new FileStream(temporaryPosPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            // Read body and write CodecKit envelope + body to final temp path
+            byte[] body = System.IO.File.ReadAllBytes(temporaryBodyPath);
+            int envelopeOffset = 1 + VarIntSize(body.Length);
+
+            using (var output = new IndexOutput(temporaryPosPath))
+            {
+                output.WriteByte(CodecConstants.PostingsVersion);
+                output.WriteVarInt(body.Length);
+                output.WriteBytes(body);
+            }
+
+            // Patch header placeholders with offset for CodecKit envelope
+            using (var patchStream = new System.IO.FileStream(temporaryPosPath, System.IO.FileMode.Open, System.IO.FileAccess.ReadWrite, System.IO.FileShare.None))
             {
                 Span<byte> patch = stackalloc byte[12];
                 foreach (var (headerPos, docFreq, skipOffset) in headerPatches)
                 {
-                    patchStream.Seek(headerPos, SeekOrigin.Begin);
+                    patchStream.Seek(headerPos + envelopeOffset, System.IO.SeekOrigin.Begin);
                     System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(patch, docFreq);
-                    System.Buffers.Binary.BinaryPrimitives.WriteInt64LittleEndian(patch[4..], skipOffset);
+                    System.Buffers.Binary.BinaryPrimitives.WriteInt64LittleEndian(patch[4..], skipOffset + envelopeOffset);
                     patchStream.Write(patch);
                 }
             }
 
-            TermDictionaryWriter.Write(temporaryDicPath, postingsOffsets.Keys.Order(StringComparer.Ordinal).ToList(), postingsOffsets);
+            // Re-base offsets for final file
+            var rekeyedOffsets = new Dictionary<string, long>(postingsOffsets.Count, StringComparer.Ordinal);
+            foreach (var kv in postingsOffsets)
+                rekeyedOffsets[kv.Key] = kv.Value + envelopeOffset;
+
+            TermDictionaryWriter.Write(temporaryDicPath, rekeyedOffsets.Keys.Order(StringComparer.Ordinal).ToList(), rekeyedOffsets);
             File.Move(temporaryPosPath, posPath, overwrite: true);
             File.Move(temporaryDicPath, dicPath, overwrite: true);
         }
@@ -641,6 +658,10 @@ public static class IndexCodecMigrator
             TryDeleteTemporaryFile(temporaryPosPath);
             TryDeleteTemporaryFile(temporaryDicPath);
             throw;
+        }
+        finally
+        {
+            TryDeleteTemporaryFile(temporaryBodyPath);
         }
     }
 
@@ -746,9 +767,9 @@ public static class IndexCodecMigrator
         }
     }
 
-    private static List<PostingRow> ReadPostingRows(IndexInput input, long offset, byte version)
+    private static List<PostingRow> ReadPostingRows(IndexInput input, long offset)
     {
-        using var postings = PostingsEnum.CreateWithPositions(input, offset, version);
+        using var postings = PostingsEnum.CreateWithPositions(input, offset);
         var rows = new List<PostingRow>(postings.DocFreq);
         while (postings.MoveNext())
         {
@@ -864,4 +885,11 @@ public static class IndexCodecMigrator
     }
 
     private sealed record PostingRow(int DocId, int Frequency, int[] Positions, byte[][] Payloads);
+
+    private static int VarIntSize(long value)
+    {
+        int size = 0;
+        do { size++; value >>= 7; } while (value != 0);
+        return size;
+    }
 }

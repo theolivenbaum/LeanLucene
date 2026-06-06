@@ -255,8 +255,8 @@ public sealed class IndexValidatorGapsTests : IDisposable
         using (var stream = File.OpenWrite(Path.Combine(dir, segId + ".fdt")))
         using (var writer = new BinaryWriter(stream))
         {
-            writer.Write(CodecConstants.Magic);
             writer.Write((byte)(CodecConstants.StoredFieldsVersion + 1));
+            writer.Write((byte)0); // VarInt64 bodyLen = 0
         }
 
         var mmap = new MMapDirectory(dir);
@@ -300,8 +300,8 @@ public sealed class IndexValidatorGapsTests : IDisposable
         using (var stream = File.OpenWrite(Path.Combine(dir, segId + ".fdx")))
         using (var writer = new BinaryWriter(stream))
         {
-            writer.Write(CodecConstants.Magic);
             writer.Write((byte)(CodecConstants.StoredFieldsVersion + 1));
+            writer.Write((byte)0); // VarInt64 bodyLen = 0
         }
 
         var mmap = new MMapDirectory(dir);
@@ -324,8 +324,8 @@ public sealed class IndexValidatorGapsTests : IDisposable
         using (var stream = File.OpenWrite(Path.Combine(dir, segId + ".fdx")))
         using (var writer = new BinaryWriter(stream))
         {
-            writer.Write(CodecConstants.Magic);
             writer.Write(CodecConstants.StoredFieldsVersion);
+            writer.Write((byte)5); // VarInt bodyLen
             writer.Write(128);  // blockSize
             writer.Write(99);   // docCount - wrong (segment has 1)
             writer.Write(0);    // blockCount
@@ -350,8 +350,8 @@ public sealed class IndexValidatorGapsTests : IDisposable
         using (var stream = File.OpenWrite(Path.Combine(dir, segId + ".fdx")))
         using (var writer = new BinaryWriter(stream))
         {
-            writer.Write(CodecConstants.Magic);
             writer.Write(CodecConstants.StoredFieldsVersion);
+            writer.Write((byte)5); // VarInt bodyLen
             writer.Write(128);  // blockSize
             writer.Write(1);    // docCount
             writer.Write(1);    // blockCount = 1 → write one offset

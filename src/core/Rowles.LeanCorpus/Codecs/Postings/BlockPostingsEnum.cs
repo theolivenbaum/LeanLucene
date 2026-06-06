@@ -1,4 +1,4 @@
-﻿using System.Buffers;
+using System.Buffers;
 using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
 using Rowles.LeanCorpus.Store;
@@ -115,6 +115,18 @@ public struct BlockPostingsEnum : IDisposable
         _exhausted = docFreq == 0;
         _nextBlockOffset = docStartOffset;
         _cursorPosition = docStartOffset;
+    }
+
+    /// <summary>Resets the cursor to before the first document, allowing the list to be re-iterated.</summary>
+    public void Reset()
+    {
+        _blockStart = 0;
+        _blockCount = 0;
+        _indexInBlock = -1;
+        _currentBlockIndex = -1;
+        _exhausted = _docFreq == 0;
+        _nextBlockOffset = _docStartOffset;
+        _cursorPosition = _docStartOffset;
     }
 
     /// <summary>

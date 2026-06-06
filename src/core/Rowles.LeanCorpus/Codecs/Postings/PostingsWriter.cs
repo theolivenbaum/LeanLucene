@@ -1,3 +1,6 @@
+using Rowles.LeanCorpus.Codecs.CodecKit;
+using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
+
 namespace Rowles.LeanCorpus.Codecs.Postings;
 
 /// <summary>
@@ -8,10 +11,8 @@ internal static class PostingsWriter
 {
     internal static void Write(string filePath, string term, int[] docIds)
     {
-        using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
-        using var writer = new BinaryWriter(fs, System.Text.Encoding.UTF8, leaveOpen: false);
-
-        CodecConstants.WriteHeader(writer, CodecConstants.PostingsVersion);
+        using var ms = new MemoryStream();
+        using var writer = new BinaryWriter(ms, System.Text.Encoding.UTF8, leaveOpen: false);
 
         writer.Write(term.Length);
         writer.Write(term.ToCharArray());
@@ -23,7 +24,13 @@ internal static class PostingsWriter
             WriteVarInt(writer, docIds[i] - prev);
             prev = docIds[i];
         }
-        fs.Flush(flushToDisk: true);
+
+        writer.Flush();
+        byte[] body = ms.ToArray();
+
+        using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
+        using var fileWriter = new BinaryWriter(fs, System.Text.Encoding.UTF8, leaveOpen: false);
+        CodecFileHeader.Write(fileWriter, CodecFormats.Postings, body);
     }
 
     /// <summary>Writes a non-negative integer using variable-length encoding (LEB128).</summary>

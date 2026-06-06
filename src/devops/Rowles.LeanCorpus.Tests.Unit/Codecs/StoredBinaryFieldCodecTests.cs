@@ -60,7 +60,7 @@ public sealed class StoredBinaryFieldCodecTests : IClassFixture<TestDirectoryFix
         using (var stream = new FileStream(path + ".fdt", FileMode.Open, FileAccess.ReadWrite, FileShare.None))
         using (var writer = new BinaryWriter(stream, System.Text.Encoding.UTF8, leaveOpen: false))
         {
-            stream.Position = CodecConstants.HeaderSize;
+            stream.Position = 2; // skip CodecKit header (version:byte + VarInt bodyLen)
             writer.Write(32);
         }
 

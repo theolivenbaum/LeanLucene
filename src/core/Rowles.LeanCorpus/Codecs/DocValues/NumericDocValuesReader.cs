@@ -37,19 +37,15 @@ internal static class NumericDocValuesReader
                 nameBytes[b] = input.ReadByte();
             string fieldName = System.Text.Encoding.UTF8.GetString(nameBytes);
 
-            // Presence block is only present in v2+ files.
+            // Presence block (current format)
             RoaringBitmap? fieldPresence = null;
-            if (version >= 2)
+            int presenceByteCount = input.ReadInt32();
+            if (presenceByteCount > 0)
             {
-                int presenceByteCount = input.ReadInt32();
-                if (presenceByteCount > 0)
-                {
-                    var bitmapBytes = input.ReadBytes(presenceByteCount);
-                    using var ms = new System.IO.MemoryStream(bitmapBytes);
-                    using var br = new System.IO.BinaryReader(ms);
-                    fieldPresence = RoaringBitmap.Deserialise(br);
-                }
-                // presenceByteCount == 0 means all docs present; fieldPresence stays null.
+                var bitmapBytes = input.ReadBytes(presenceByteCount);
+                using var ms = new System.IO.MemoryStream(bitmapBytes);
+                using var br = new System.IO.BinaryReader(ms);
+                fieldPresence = RoaringBitmap.Deserialise(br);
             }
             presence[fieldName] = fieldPresence;
 

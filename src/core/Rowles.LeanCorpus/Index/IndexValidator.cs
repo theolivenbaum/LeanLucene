@@ -287,21 +287,17 @@ public static class IndexValidator
                     false);
                 return;
             }
-
             reader.ReadInt32();
-            if (version >= 5)
+            byte policyByte = reader.ReadByte();
+            if (!CompressionCodecRegistry.TryGet(policyByte, out _))
             {
-                byte policyByte = reader.ReadByte();
-                if (!CompressionCodecRegistry.TryGet(policyByte, out _))
-                {
-                    result.AddIssue(
-                        IndexCheckSeverity.Error,
-                        IndexCheckIssueCodes.UnregisteredCompressionPolicy,
-                        $"Stored fields use unregistered compression policy byte {policyByte}.",
-                        fileName,
-                        segmentId,
-                        false);
-                }
+                result.AddIssue(
+                    IndexCheckSeverity.Error,
+                    IndexCheckIssueCodes.UnregisteredCompressionPolicy,
+                    $"Stored fields use unregistered compression policy byte {policyByte}.",
+                    fileName,
+                    segmentId,
+                    false);
             }
         }
         catch (Exception ex) when (ex is IOException or EndOfStreamException)

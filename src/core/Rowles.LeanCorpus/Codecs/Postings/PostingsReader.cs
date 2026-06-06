@@ -13,20 +13,19 @@ internal static class PostingsReader
         using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
         using var reader = new BinaryReader(fs, System.Text.Encoding.UTF8, leaveOpen: false);
 
+        // Skip CodecKit envelope
         CodecFileHeader.ReadVersion(reader, CodecFormats.Postings);
 
-        int termLen = reader.ReadInt32();
-        var chars = reader.ReadChars(termLen);
-        string storedTerm = new string(chars);
+        // Read v3 header
+        int docFreq = reader.ReadInt32();
+        reader.ReadInt64(); // skipOffset
+        reader.ReadBoolean(); // hasFreqs
+        reader.ReadBoolean(); // hasPositions
+        reader.ReadBoolean(); // hasPayloads
 
-        if (!string.Equals(storedTerm, term, StringComparison.Ordinal))
-            throw new InvalidOperationException($"Expected term '{term}' but found '{storedTerm}'.");
-
-        int count = reader.ReadInt32();
-        var docIds = new int[count];
-
+        var docIds = new int[docFreq];
         int prev = 0;
-        for (int i = 0; i < count; i++)
+        for (int i = 0; i < docFreq; i++)
         {
             int delta = ReadVarInt(reader);
             if (delta < 0)

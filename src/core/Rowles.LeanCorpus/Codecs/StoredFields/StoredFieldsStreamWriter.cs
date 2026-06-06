@@ -1,3 +1,6 @@
+using Rowles.LeanCorpus.Codecs.CodecKit;
+using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
+
 namespace Rowles.LeanCorpus.Codecs.StoredFields;
 
 /// <summary>
@@ -9,10 +12,11 @@ internal sealed class StoredFieldsStreamWriter : IDisposable
 {
     private const int DefaultBlockSize = 16;
 
+    private readonly string _fdtPath;
     private readonly string _fdxPath;
     private readonly int _blockSize;
     private readonly FieldCompressionPolicy _compression;
-    private readonly FileStream _fdtStream;
+    private readonly MemoryStream _fdtStream;
     private readonly BinaryWriter _fdtWriter;
     private readonly MemoryStream _rawStream;
     private readonly BinaryWriter _rawWriter;
@@ -26,21 +30,22 @@ internal sealed class StoredFieldsStreamWriter : IDisposable
     internal StoredFieldsStreamWriter(string fdtPath, string fdxPath,
         int blockSize = DefaultBlockSize, FieldCompressionPolicy compression = FieldCompressionPolicy.Deflate)
     {
+        _fdtPath = fdtPath;
         _fdxPath = fdxPath;
         _blockSize = blockSize;
         _compression = compression;
 
-        _fdtStream = new FileStream(fdtPath, FileMode.Create, FileAccess.Write, FileShare.None);
+        _fdtStream = new MemoryStream();
         _fdtWriter = new BinaryWriter(_fdtStream, System.Text.Encoding.UTF8, leaveOpen: false);
-
-        CodecConstants.WriteHeader(_fdtWriter, CodecConstants.StoredFieldsVersion);
-        _fdtWriter.Write(blockSize);
-        _fdtWriter.Write((byte)compression);
 
         _rawStream = new MemoryStream(4096);
         _rawWriter = new BinaryWriter(_rawStream, System.Text.Encoding.UTF8, leaveOpen: true);
         _blockOffsets = new List<long>();
         _intraOffsets = new List<int>(blockSize);
+
+        // Write body prefix: blockSize and compression byte (required by StoredFieldsReader)
+        _fdtWriter.Write(blockSize);
+        _fdtWriter.Write((byte)compression);
     }
 
     internal void AddDocument(IReadOnlyDictionary<string, IReadOnlyList<StoredFieldValue>> fields)
@@ -118,22 +123,38 @@ internal sealed class StoredFieldsStreamWriter : IDisposable
 
         FlushBlock();
 
-        _fdtStream.Flush(flushToDisk: true);
         _fdtWriter.Flush();
+        byte[] fdtBody = _fdtStream.ToArray();
         _rawWriter.Dispose();
         _rawStream.Dispose();
         _fdtWriter.Dispose();
         _fdtStream.Dispose();
 
-        using var fdxStream = new FileStream(_fdxPath, FileMode.Create, FileAccess.Write, FileShare.None);
-        using var fdxWriter = new BinaryWriter(fdxStream, System.Text.Encoding.UTF8, leaveOpen: false);
+        long headerSize;
+        using (var fdtFile = new FileStream(_fdtPath, FileMode.Create, FileAccess.Write, FileShare.None))
+        using (var fdtWriter = new BinaryWriter(fdtFile, System.Text.Encoding.UTF8, leaveOpen: false))
+        {
+            CodecFileHeader.Write(fdtWriter, CodecFormats.StoredFields, fdtBody);
+            fdtWriter.Flush();
+            headerSize = fdtFile.Position - fdtBody.Length;
+        }
 
-        CodecConstants.WriteHeader(fdxWriter, CodecConstants.StoredFieldsVersion);
-        fdxWriter.Write(_blockSize);
-        fdxWriter.Write(_docCount);
-        fdxWriter.Write(_blockOffsets.Count);
-        foreach (var offset in _blockOffsets)
-            fdxWriter.Write(offset);
-        fdxStream.Flush(flushToDisk: true);
+        // Re-base body-relative block offsets to file-absolute positions.
+        for (int i = 0; i < _blockOffsets.Count; i++)
+            _blockOffsets[i] += headerSize;
+
+        using (var fdxStream = new FileStream(_fdxPath, FileMode.Create, FileAccess.Write, FileShare.None))
+        using (var fdxWriter = new BinaryWriter(fdxStream, System.Text.Encoding.UTF8, leaveOpen: false))
+        {
+            using var fdxMs = new MemoryStream();
+            using var fdxBuf = new BinaryWriter(fdxMs, System.Text.Encoding.UTF8, leaveOpen: false);
+            fdxBuf.Write(_blockSize);
+            fdxBuf.Write(_docCount);
+            fdxBuf.Write(_blockOffsets.Count);
+            foreach (var offset in _blockOffsets)
+                fdxBuf.Write(offset);
+            fdxBuf.Flush();
+            CodecFileHeader.Write(fdxWriter, CodecFormats.StoredFields, fdxMs.ToArray());
+        }
     }
 }

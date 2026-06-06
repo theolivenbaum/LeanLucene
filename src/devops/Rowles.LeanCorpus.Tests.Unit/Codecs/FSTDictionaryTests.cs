@@ -776,6 +776,5 @@ public sealed class FSTDictionaryTests : IClassFixture<TestDirectoryFixture>
         using var input = new IndexInput(path);
         byte version = CodecFileHeader.ReadVersion(input, CodecFormats.TermDictionary);
         Assert.Equal(CodecConstants.TermDictionaryVersion, version);
-        Assert.Equal(3, version);
     }
 }

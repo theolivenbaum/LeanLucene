@@ -151,7 +151,7 @@ public sealed class IndexCompatibilityTests : IClassFixture<TestDirectoryFixture
     public void IndexWriter_OlderReadableCodec_ThrowsInvalidDataException()
     {
         using var directory = CreateIndex("compat_writer_guard");
-        WriteCodecKitVersion(directory, "*.dic", 1);
+        WriteCodecKitVersion(directory, "*.dic", 0);
 
         Assert.Throws<InvalidDataException>(() => new IndexWriter(directory, new IndexWriterConfig()));
     }

@@ -325,7 +325,8 @@ public sealed class IndexValidatorTests : IClassFixture<TestDirectoryFixture>
         using (var stream = File.Create(dssFile))
         using (var binaryWriter = new BinaryWriter(stream))
         {
-            CodecConstants.WriteHeader(binaryWriter, CodecConstants.SortedSetDocValuesVersion);
+            binaryWriter.Write(CodecConstants.SortedSetDocValuesVersion);
+            binaryWriter.Write((byte)0); // VarInt bodyLen = 0
             binaryWriter.Write(1);
             binaryWriter.Write((byte)3);
             binaryWriter.Write(System.Text.Encoding.UTF8.GetBytes("tag"));

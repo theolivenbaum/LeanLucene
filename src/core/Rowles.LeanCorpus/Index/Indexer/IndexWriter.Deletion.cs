@@ -115,7 +115,7 @@ public sealed partial class IndexWriter
         IndexInput input, long offset, byte postingsVersion, LiveDocs liveDocs,
         ref bool changed, bool softDelete = false, long softDeleteTimestamp = 0)
     {
-        using var pe = PostingsEnum.Create(input, offset, postingsVersion);
+        using var pe = PostingsEnum.Create(input, offset);
         while (pe.MoveNext())
         {
             int docId = pe.DocId;

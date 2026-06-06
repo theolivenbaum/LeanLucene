@@ -37,9 +37,9 @@ internal sealed class TermDictionaryReader : IDisposable
 
         var result = CodecFileHeader.Read(input, CodecFormats.TermDictionary);
         byte version = result.Version;
-        if (version != CodecConstants.TermDictionaryVersion)
+        if (version > CodecConstants.TermDictionaryVersion)
             throw new InvalidDataException(
-                $"Unsupported term dictionary format version {version}. This build expects v{CodecConstants.TermDictionaryVersion}. " +
+                $"Unsupported term dictionary format version {version}. This build supports up to v{CodecConstants.TermDictionaryVersion}. " +
                 "Run 'leancorpus-cli migrate' (or IndexCodecMigrator) to upgrade the segment.");
 
         var fst = FstReader.Open(result.Body);

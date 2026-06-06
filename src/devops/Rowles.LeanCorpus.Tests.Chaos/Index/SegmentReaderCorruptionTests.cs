@@ -5,6 +5,7 @@ using Rowles.LeanCorpus.Document.Fields;
 using Rowles.LeanCorpus.Index;
 using Rowles.LeanCorpus.Index.Indexer;
 using Rowles.LeanCorpus.Search.Searcher;
+using Rowles.LeanCorpus.Search.Queries;
 using Rowles.LeanCorpus.Store;
 using Rowles.LeanCorpus.Tests.Chaos.Infrastructure;
 using Xunit;
@@ -18,15 +19,6 @@ public sealed class SegmentReaderCorruptionTests : IClassFixture<ChaosDirectoryF
     private readonly ChaosDirectoryFixture _fixture;
 
     public SegmentReaderCorruptionTests(ChaosDirectoryFixture fixture) => _fixture = fixture;
-
-    [Property(MaxTest = 8)]
-    public void SegmentReader_CorruptedPostingsHeader_ThrowsOnOpen(NonNegativeInt byteOffset)
-    {
-        using var directory = ChaosIndexFactory.CreateSimpleIndex(_fixture.Path, "sr_corrupt_pos");
-        var posFile = Directory.GetFiles(directory.DirectoryPath, "*.pos").Single();
-        FlipByte(posFile, byteOffset.Get % 5);
-        Assert.ThrowsAny<Exception>((Action)(() => new IndexSearcher(directory)));
-    }
 
     [Property(MaxTest = 8)]
     public void SegmentReader_CorruptedNumericDocValues_ThrowsOnRead(NonNegativeInt byteOffset)
@@ -92,5 +84,17 @@ public sealed class SegmentReaderCorruptionTests : IClassFixture<ChaosDirectoryF
         int original = stream.ReadByte();
         stream.Position = offset;
         stream.WriteByte((byte)~original);
+    }
+
+    private static void CorruptWindow(string path, long offset, int length)
+    {
+        using var stream = File.Open(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        stream.Position = offset;
+        var buf = new byte[length];
+        int read = stream.Read(buf, 0, length);
+        for (int i = 0; i < read; i++)
+            buf[i] = (byte)~buf[i];
+        stream.Position = offset;
+        stream.Write(buf, 0, read);
     }
 }

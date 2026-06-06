@@ -38,22 +38,9 @@ internal static class FieldLengthReader
             int docCount = input.ReadInt32();
             var lengths = new int[docCount];
 
-            if (version >= 2)
-            {
-                // VarInt encoding
-                for (int d = 0; d < docCount; d++)
-                    lengths[d] = input.ReadVarInt();
-            }
-            else
-            {
-                // Legacy v1: fixed ushort (2 bytes little-endian)
-                for (int d = 0; d < docCount; d++)
-                {
-                    byte lo = input.ReadByte();
-                    byte hi = input.ReadByte();
-                    lengths[d] = lo | (hi << 8);
-                }
-            }
+            // Current format: VarInt encoding
+            for (int d = 0; d < docCount; d++)
+                lengths[d] = input.ReadVarInt();
 
             result[fieldName] = lengths;
         }

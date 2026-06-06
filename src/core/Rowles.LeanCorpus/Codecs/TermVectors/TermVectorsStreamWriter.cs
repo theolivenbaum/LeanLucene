@@ -1,3 +1,6 @@
+using Rowles.LeanCorpus.Codecs.CodecKit;
+using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
+
 namespace Rowles.LeanCorpus.Codecs.TermVectors;
 
 /// <summary>
@@ -7,18 +10,19 @@ namespace Rowles.LeanCorpus.Codecs.TermVectors;
 /// </summary>
 internal sealed class TermVectorsStreamWriter : IDisposable
 {
+    private readonly string _tvdPath;
     private readonly string _tvxPath;
-    private readonly FileStream _tvdStream;
+    private readonly MemoryStream _tvdStream;
     private readonly BinaryWriter _tvdWriter;
     private readonly List<long> _offsets;
     private bool _disposed;
 
     internal TermVectorsStreamWriter(string tvdPath, string tvxPath)
     {
+        _tvdPath = tvdPath;
         _tvxPath = tvxPath;
-        _tvdStream = new FileStream(tvdPath, FileMode.Create, FileAccess.Write, FileShare.None);
+        _tvdStream = new MemoryStream();
         _tvdWriter = new BinaryWriter(_tvdStream, System.Text.Encoding.UTF8, leaveOpen: false);
-        CodecConstants.WriteHeader(_tvdWriter, CodecConstants.TermVectorsVersion);
         _offsets = new List<long>();
     }
 
@@ -53,18 +57,35 @@ internal sealed class TermVectorsStreamWriter : IDisposable
         if (_disposed) return;
         _disposed = true;
 
-        _tvdStream.Flush(flushToDisk: true);
         _tvdWriter.Flush();
+        byte[] tvdBody = _tvdStream.ToArray();
         _tvdWriter.Dispose();
         _tvdStream.Dispose();
 
-        using var tvxFs = new FileStream(_tvxPath, FileMode.Create, FileAccess.Write, FileShare.None);
-        using var tvxWriter = new BinaryWriter(tvxFs, System.Text.Encoding.UTF8, leaveOpen: false);
-        CodecConstants.WriteHeader(tvxWriter, CodecConstants.TermVectorsVersion);
-        tvxWriter.Write(_offsets.Count);
-        foreach (var off in _offsets)
-            tvxWriter.Write(off);
-        tvxFs.Flush(flushToDisk: true);
+        long headerSize;
+        using (var tvdFs = new FileStream(_tvdPath, FileMode.Create, FileAccess.Write, FileShare.None))
+        using (var tvdFileWriter = new BinaryWriter(tvdFs, System.Text.Encoding.UTF8, leaveOpen: false))
+        {
+            CodecFileHeader.Write(tvdFileWriter, CodecFormats.TermVectors, tvdBody);
+            tvdFileWriter.Flush();
+            headerSize = tvdFs.Position - tvdBody.Length;
+        }
+
+        // Re-base body-relative offsets to file-absolute positions.
+        for (int i = 0; i < _offsets.Count; i++)
+            _offsets[i] += headerSize;
+
+        using (var tvxFs = new FileStream(_tvxPath, FileMode.Create, FileAccess.Write, FileShare.None))
+        using (var tvxWriter = new BinaryWriter(tvxFs, System.Text.Encoding.UTF8, leaveOpen: false))
+        {
+            using var tvxMs = new MemoryStream();
+            using var tvxBuf = new BinaryWriter(tvxMs, System.Text.Encoding.UTF8, leaveOpen: false);
+            tvxBuf.Write(_offsets.Count);
+            foreach (var off in _offsets)
+                tvxBuf.Write(off);
+            tvxBuf.Flush();
+            CodecFileHeader.Write(tvxWriter, CodecFormats.TermVectors, tvxMs.ToArray());
+        }
     }
 
     private void WritePayloads(TermVectorEntry entry)

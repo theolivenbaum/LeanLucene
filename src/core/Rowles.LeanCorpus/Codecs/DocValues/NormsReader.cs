@@ -34,44 +34,26 @@ internal static class NormsReader
 
             result.Norms[fieldName] = norms;
 
-            if (version >= 3)
+            // Current format: sparse boost data
+            int boostCount = input.ReadInt32();
+            if ((uint)boostCount > (uint)docCount)
+                throw new InvalidDataException($"Invalid norms file: boost count {boostCount} exceeds document count {docCount} for field '{fieldName}'.");
+
+            float[]? boosts = null;
+            for (int i = 0; i < boostCount; i++)
             {
-                int boostCount = input.ReadInt32();
-                if ((uint)boostCount > (uint)docCount)
-                    throw new InvalidDataException($"Invalid norms file: boost count {boostCount} exceeds document count {docCount} for field '{fieldName}'.");
+                int docId = input.ReadInt32();
+                float boost = input.ReadSingle();
 
-                float[]? boosts = null;
-                for (int i = 0; i < boostCount; i++)
-                {
-                    int docId = input.ReadInt32();
-                    float boost = input.ReadSingle();
+                if ((uint)docId >= (uint)docCount)
+                    throw new InvalidDataException($"Invalid norms file: boost doc ID {docId} is outside field '{fieldName}' document count {docCount}.");
 
-                    if ((uint)docId >= (uint)docCount)
-                        throw new InvalidDataException($"Invalid norms file: boost doc ID {docId} is outside field '{fieldName}' document count {docCount}.");
-
-                    boosts ??= CreateDefaultBoosts(docCount);
-                    boosts[docId] = boost;
-                }
-
-                if (boosts is not null)
-                    result.Boosts[fieldName] = boosts;
+                boosts ??= CreateDefaultBoosts(docCount);
+                boosts[docId] = boost;
             }
-            else if (version >= 2)
-            {
-                float[]? boosts = null;
-                for (int i = 0; i < docCount; i++)
-                {
-                    float boost = input.ReadSingle();
-                    if (boost == 1.0f)
-                        continue;
 
-                    boosts ??= CreateDefaultBoosts(docCount);
-                    boosts[i] = boost;
-                }
-
-                if (boosts is not null)
-                    result.Boosts[fieldName] = boosts;
-            }
+            if (boosts is not null)
+                result.Boosts[fieldName] = boosts;
         }
 
         return result;
