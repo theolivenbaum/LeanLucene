@@ -1,7 +1,7 @@
-using System.IO;
-using System.Text;
+using System.Buffers;
 using Rowles.LeanCorpus.Codecs.CodecKit;
 using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
+using Rowles.LeanCorpus.Store;
 
 namespace Rowles.LeanCorpus.Codecs.Hnsw;
 
@@ -16,41 +16,38 @@ internal static class HnswWriter
         if (!graph.IsReadOnly)
             throw new InvalidOperationException("HnswGraph must be frozen before writing.");
 
-        using var bodyMs = new MemoryStream();
-        using var bodyBw = new BinaryWriter(bodyMs, Encoding.UTF8, leaveOpen: true);
+        var bodyBuf = new ArrayBufferWriter<byte>(4096);
 
-        bodyBw.Write(dimension);
-        bodyBw.Write((byte)(normalised ? 1 : 0));
-        bodyBw.Write(graph.M);
-        bodyBw.Write(graph.M0);
-        bodyBw.Write(graph.EfConstruction);
-        bodyBw.Write(graph.Seed);
-        bodyBw.Write(graph.EntryPoint);
-        bodyBw.Write(graph.MaxLevel);
-        bodyBw.Write(graph.NodeCount);
+        bodyBuf.WriteInt32(dimension);
+        bodyBuf.WriteByte((byte)(normalised ? 1 : 0));
+        bodyBuf.WriteInt32(graph.M);
+        bodyBuf.WriteInt32(graph.M0);
+        bodyBuf.WriteInt32(graph.EfConstruction);
+        bodyBuf.WriteInt64(graph.Seed);
+        bodyBuf.WriteInt32(graph.EntryPoint);
+        bodyBuf.WriteInt32(graph.MaxLevel);
+        bodyBuf.WriteInt32(graph.NodeCount);
 
         int levelCount = graph.LevelCount;
-        bodyBw.Write(levelCount);
+        bodyBuf.WriteInt32(levelCount);
 
         for (int level = levelCount - 1; level >= 0; level--)
         {
             var nodes = graph.GetNodesAtLevel(level).ToArray();
-            bodyBw.Write(nodes.Length);
+            bodyBuf.WriteInt32(nodes.Length);
             foreach (var docId in nodes)
             {
                 var neighbours = graph.GetNeighbours(docId, level);
-                bodyBw.Write(docId);
-                bodyBw.Write(neighbours.Count);
+                bodyBuf.WriteInt32(docId);
+                bodyBuf.WriteInt32(neighbours.Count);
                 foreach (var n in neighbours)
-                    bodyBw.Write(n);
+                    bodyBuf.WriteInt32(n);
             }
         }
 
-        bodyBw.Flush();
-        byte[] body = bodyMs.ToArray();
+        byte[] body = bodyBuf.WrittenSpan.ToArray();
 
-        using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
-        using var writer = new BinaryWriter(fs, Encoding.UTF8, leaveOpen: false);
-        CodecFileHeader.Write(writer, CodecFormats.Hnsw, body);
+        using var output = new IndexOutput(filePath);
+        CodecFileHeader.Write(output, CodecFormats.Hnsw, body);
     }
 }

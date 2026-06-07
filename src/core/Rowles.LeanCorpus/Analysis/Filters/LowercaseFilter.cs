@@ -1,4 +1,4 @@
-﻿using System.Buffers;
+using System.Buffers;
 using Rowles.LeanCorpus.Analysis;
 
 namespace Rowles.LeanCorpus.Analysis.Filters;
@@ -50,18 +50,31 @@ public sealed class LowercaseFilter : ITokenFilter, ISpanTokenFilter
             return;
         }
 
-        char[] buf = ArrayPool<char>.Shared.Rent(text.Length);
+        const int StackThreshold = 128;
+        char[]? rentedArr = null;
         try
         {
-            text.CopyTo(buf);
-            for (int i = uppercaseIndex; i < text.Length; i++)
-                buf[i] = char.ToLowerInvariant(buf[i]);
-
-            sink.Add(buf.AsSpan(0, text.Length), startOffset, endOffset, type, positionIncrement, payload);
+            if (text.Length <= StackThreshold)
+            {
+                Span<char> buf = stackalloc char[text.Length];
+                text.CopyTo(buf);
+                for (int i = uppercaseIndex; i < text.Length; i++)
+                    buf[i] = char.ToLowerInvariant(buf[i]);
+                sink.Add(buf[..text.Length], startOffset, endOffset, type, positionIncrement, payload);
+            }
+            else
+            {
+                rentedArr = ArrayPool<char>.Shared.Rent(text.Length);
+                Span<char> buf = rentedArr;
+                text.CopyTo(buf);
+                for (int i = uppercaseIndex; i < text.Length; i++)
+                    buf[i] = char.ToLowerInvariant(buf[i]);
+                sink.Add(buf[..text.Length], startOffset, endOffset, type, positionIncrement, payload);
+            }
         }
         finally
         {
-            ArrayPool<char>.Shared.Return(buf);
+            if (rentedArr is not null) ArrayPool<char>.Shared.Return(rentedArr);
         }
     }
 

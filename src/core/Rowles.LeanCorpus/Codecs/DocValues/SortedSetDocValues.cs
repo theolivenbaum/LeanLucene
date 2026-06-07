@@ -1,5 +1,4 @@
-using System.IO;
-using System.Text;
+using System.Buffers;
 using Rowles.LeanCorpus.Codecs.CodecKit;
 using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
 using Rowles.LeanCorpus.Store;
@@ -17,27 +16,25 @@ internal static class SortedSetDocValuesWriter
         int docCount,
         bool durable = false)
     {
-        using var bodyMs = new MemoryStream();
-        using var bw = new BinaryWriter(bodyMs, Encoding.UTF8, leaveOpen: true);
-        bw.Write(fields.Count);
+        var bodyBuf = new ArrayBufferWriter<byte>(4096);
+        bodyBuf.WriteInt32(fields.Count);
 
         foreach (var (fieldName, values) in fields)
-            WriteFieldBlock(bw, fieldName, values, docCount);
+            WriteFieldBlock(bodyBuf, fieldName, values, docCount);
 
-        bw.Flush();
-        byte[] body = bodyMs.ToArray();
+        byte[] body = bodyBuf.WrittenSpan.ToArray();
         using var output = new IndexOutput(filePath, durable);
         CodecFileHeader.Write(output, CodecFormats.SortedSetDocValues, body);
     }
 
     internal static void WriteFieldBlock(
-        BinaryWriter bw,
+        IBufferWriter<byte> bw,
         string fieldName,
         IReadOnlyList<string>?[] values,
         int docCount)
     {
-        WriteFieldName(bw, fieldName);
-        bw.Write(docCount);
+        bw.WriteString(fieldName);
+        bw.WriteInt32(docCount);
 
         var ordSet = new SortedSet<string>(StringComparer.Ordinal);
         var perDoc = new string[docCount][];
@@ -70,14 +67,14 @@ internal static class SortedSetDocValuesWriter
         for (int i = 0; i < ordList.Length; i++)
             ordMap[ordList[i]] = i;
 
-        bw.Write(ordList.Length);
+        bw.WriteInt32(ordList.Length);
         foreach (var value in ordList)
-            WriteString(bw, value);
+            bw.WriteString(value);
 
         for (int i = 0; i < starts.Length; i++)
-            bw.Write(starts[i]);
+            bw.WriteInt32(starts[i]);
 
-        bw.Write(totalOrdinals);
+        bw.WriteInt32(totalOrdinals);
         foreach (var docValues in perDoc)
         {
             foreach (var value in docValues)
@@ -85,13 +82,4 @@ internal static class SortedSetDocValuesWriter
         }
     }
 
-    private static void WriteFieldName(BinaryWriter bw, string fieldName)
-        => WriteString(bw, fieldName);
-
-    private static void WriteString(BinaryWriter bw, string value)
-    {
-        var bytes = Encoding.UTF8.GetBytes(value);
-        bw.Write7BitEncodedInt(bytes.Length);
-        bw.Write(bytes);
-    }
 }

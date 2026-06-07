@@ -337,6 +337,7 @@ internal sealed class HnswGraph
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int LevelDegree(int level) => level == 0 ? M0 : M;
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private int GreedyDescent(ReadOnlySpan<float> query, int entry, int level)
     {
         int current = entry;

@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.IO;
 using System.Text;
 using Rowles.LeanCorpus.Codecs.CodecKit;
@@ -17,26 +18,20 @@ internal static class SortedDocValuesWriter
 {
     public static void Write(string filePath, IReadOnlyDictionary<string, string?[]> fields, int docCount, bool durable = false)
     {
-        using var bodyMs = new MemoryStream();
-        using var bw = new BinaryWriter(bodyMs, Encoding.UTF8, leaveOpen: true);
-
-        bw.Write(fields.Count);
+        var bodyBuf = new ArrayBufferWriter<byte>(4096);
+        bodyBuf.WriteInt32(fields.Count);
 
         foreach (var (fieldName, values) in fields)
-            WriteFieldBlock(bw, fieldName, values, docCount);
+            WriteFieldBlock(bodyBuf, fieldName, values, docCount);
 
-        bw.Flush();
-        byte[] body = bodyMs.ToArray();
-
+        byte[] body = bodyBuf.WrittenSpan.ToArray();
         using var output = new IndexOutput(filePath, durable);
         CodecFileHeader.Write(output, CodecFormats.SortedDocValues, body);
     }
 
-    private static void WriteFieldBlock(BinaryWriter bw, string fieldName, string?[] values, int docCount)
+    private static void WriteFieldBlock(IBufferWriter<byte> bw, string fieldName, string?[] values, int docCount)
     {
-        var nameBytes = Encoding.UTF8.GetBytes(fieldName);
-        bw.Write7BitEncodedInt(nameBytes.Length);
-        bw.Write(nameBytes);
+        bw.WriteString(fieldName);
 
         // Presence bitmap: tracks which docs have an explicit (non-null) value.
         int presentCount = 0;
@@ -53,15 +48,15 @@ internal static class SortedDocValuesWriter
             bitmap.Serialise(bitmapBw);
             bitmapBw.Flush();
             int bitmapLen = (int)bitmapMs.Length;
-            bw.Write(bitmapLen);
-            bw.Write(bitmapMs.GetBuffer(), 0, bitmapLen);
+            bw.WriteInt32(bitmapLen);
+            bw.WriteBytes(bitmapMs.GetBuffer(), 0, bitmapLen);
         }
         else
         {
-            bw.Write(0); // all docs present
+            bw.WriteInt32(0); // all docs present
         }
 
-        bw.Write(docCount);
+        bw.WriteInt32(docCount);
 
         var ordMap = new Dictionary<string, int>(StringComparer.Ordinal);
         var ordList = new List<string>();
@@ -79,16 +74,12 @@ internal static class SortedDocValuesWriter
         for (int i = 0; i < ordList.Count; i++)
             ordMap[ordList[i]] = i;
 
-        bw.Write(ordList.Count);
+        bw.WriteInt32(ordList.Count);
         foreach (var ord in ordList)
-        {
-            var bytes = Encoding.UTF8.GetBytes(ord);
-            bw.Write7BitEncodedInt(bytes.Length);
-            bw.Write(bytes);
-        }
+            bw.WriteString(ord);
 
         int bitsPerOrd = ordList.Count <= 1 ? 0 : 64 - System.Numerics.BitOperations.LeadingZeroCount((ulong)(ordList.Count - 1));
-        bw.Write((byte)bitsPerOrd);
+        bw.WriteByte((byte)bitsPerOrd);
 
         if (bitsPerOrd > 0)
         {
@@ -101,13 +92,13 @@ internal static class SortedDocValuesWriter
                 bitsInBuffer += bitsPerOrd;
                 while (bitsInBuffer >= 8)
                 {
-                    bw.Write((byte)(buffer & 0xFF));
+                    bw.WriteByte((byte)(buffer & 0xFF));
                     buffer >>= 8;
                     bitsInBuffer -= 8;
                 }
             }
             if (bitsInBuffer > 0)
-                bw.Write((byte)(buffer & 0xFF));
+                bw.WriteByte((byte)(buffer & 0xFF));
         }
     }
 

@@ -1,4 +1,4 @@
-﻿using System.Runtime.CompilerServices;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
@@ -22,7 +22,7 @@ public static class SimdIntrinsicsVectorOps
     public static bool IsSseSupported => Sse.IsSupported;
 
     /// <summary>Cosine similarity between two equal-length vectors, using explicit intrinsics.</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
     public static float CosineSimilarity(ReadOnlySpan<float> a, ReadOnlySpan<float> b)
     {
         if (a.Length != b.Length || a.Length == 0)
@@ -43,7 +43,7 @@ public static class SimdIntrinsicsVectorOps
     }
 
     /// <summary>Dot product using explicit intrinsics.</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
     public static float DotProduct(ReadOnlySpan<float> a, ReadOnlySpan<float> b)
     {
         if (a.Length != b.Length || a.Length == 0)

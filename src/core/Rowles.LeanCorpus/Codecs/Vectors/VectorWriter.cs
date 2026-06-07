@@ -1,7 +1,7 @@
-using System.IO;
-using System.Text;
+using System.Buffers;
 using Rowles.LeanCorpus.Codecs.CodecKit;
 using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
+using Rowles.LeanCorpus.Store;
 
 namespace Rowles.LeanCorpus.Codecs.Vectors;
 
@@ -19,11 +19,10 @@ internal static class VectorWriter
             if (vectors[i].Length > 0) { dimension = vectors[i].Length; break; }
         }
 
-        using var bodyMs = new MemoryStream();
-        using var bw = new BinaryWriter(bodyMs, Encoding.UTF8, leaveOpen: true);
-        bw.Write(vectors.Length);
-        bw.Write(dimension);
-        bw.Write((byte)0); // data-format: float32
+        var bodyBuf = new ArrayBufferWriter<byte>(4096);
+        bodyBuf.WriteInt32(vectors.Length);
+        bodyBuf.WriteInt32(dimension);
+        bodyBuf.WriteByte(0); // data-format: float32
 
         Span<float> zero = dimension <= 256 ? stackalloc float[dimension] : new float[dimension];
         zero.Clear();
@@ -32,15 +31,13 @@ internal static class VectorWriter
         {
             var span = vectors[i].Length == dimension ? vectors[i].Span : zero;
             for (int j = 0; j < dimension; j++)
-                bw.Write(span[j]);
+                bodyBuf.WriteSingle(span[j]);
         }
 
-        bw.Flush();
-        byte[] body = bodyMs.ToArray();
+        byte[] body = bodyBuf.WrittenSpan.ToArray();
 
-        using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
-        using var writer = new BinaryWriter(fs, Encoding.UTF8, leaveOpen: false);
-        CodecFileHeader.Write(writer, CodecFormats.Vectors, body);
+        using var output = new IndexOutput(filePath);
+        CodecFileHeader.Write(output, CodecFormats.Vectors, body);
     }
 
     /// <summary>
@@ -57,11 +54,10 @@ internal static class VectorWriter
         ArgumentOutOfRangeException.ThrowIfNegative(docCount);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(dimension);
 
-        using var bodyMs = new MemoryStream();
-        using var bw = new BinaryWriter(bodyMs, Encoding.UTF8, leaveOpen: true);
-        bw.Write(docCount);
-        bw.Write(dimension);
-        bw.Write((byte)quantisation); // data-format byte: 0 = float32, 1 = int8
+        var bodyBuf = new ArrayBufferWriter<byte>(4096);
+        bodyBuf.WriteInt32(docCount);
+        bodyBuf.WriteInt32(dimension);
+        bodyBuf.WriteByte((byte)quantisation); // data-format byte: 0 = float32, 1 = int8
 
         Span<float> zero = dimension <= 256 ? stackalloc float[dimension] : new float[dimension];
         zero.Clear();
@@ -83,11 +79,11 @@ internal static class VectorWriter
             if (MathF.Abs(max - min) < 1e-8f) max = min + 1f;
             float alpha = (max - min) / 255f;
 
-            bw.Write(min);
-            bw.Write(alpha);
+            bodyBuf.WriteSingle(min);
+            bodyBuf.WriteSingle(alpha);
 
             // Pack int8 bytes
-            byte[] buf = System.Buffers.ArrayPool<byte>.Shared.Rent(dimension);
+            byte[] buf = ArrayPool<byte>.Shared.Rent(dimension);
             try
             {
                 for (int i = 0; i < docCount; i++)
@@ -104,12 +100,12 @@ internal static class VectorWriter
                         float clamped = Math.Clamp((span[j] - min) / alpha + 0.5f, 0f, 255f);
                         buf[j] = (byte)clamped;
                     }
-                    bw.Write(buf, 0, dimension);
+                    bodyBuf.WriteBytes(buf, 0, dimension);
                 }
             }
             finally
             {
-                System.Buffers.ArrayPool<byte>.Shared.Return(buf, clearArray: false);
+                ArrayPool<byte>.Shared.Return(buf, clearArray: false);
             }
         }
         else
@@ -124,15 +120,13 @@ internal static class VectorWriter
                     span = v.Span;
                 }
                 for (int j = 0; j < dimension; j++)
-                    bw.Write(span[j]);
+                    bodyBuf.WriteSingle(span[j]);
             }
         }
 
-        bw.Flush();
-        byte[] body = bodyMs.ToArray();
+        byte[] body = bodyBuf.WrittenSpan.ToArray();
 
-        using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
-        using var writer = new BinaryWriter(fs, Encoding.UTF8, leaveOpen: false);
-        CodecFileHeader.Write(writer, CodecFormats.Vectors, body);
+        using var output = new IndexOutput(filePath);
+        CodecFileHeader.Write(output, CodecFormats.Vectors, body);
     }
 }

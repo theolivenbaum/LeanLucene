@@ -1,5 +1,6 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Text;
+using System.Threading;
 
 namespace Rowles.LeanCorpus.Search.Searcher;
 
@@ -44,10 +45,10 @@ public sealed class QueryCache
     }
 
     /// <summary>Total cache hits since creation.</summary>
-    public long Hits { get { lock (_lock) return _hits; } }
+    public long Hits => Interlocked.Read(ref _hits);
 
     /// <summary>Total cache misses since creation.</summary>
-    public long Misses { get { lock (_lock) return _misses; } }
+    public long Misses => Interlocked.Read(ref _misses);
 
     /// <summary>Current number of cached entries.</summary>
     public int Count
@@ -133,9 +134,9 @@ public sealed class QueryCache
             _map.Clear();
             _lru.Clear();
             _generation++;
-            _hits = 0;
-            _misses = 0;
         }
+        Interlocked.Exchange(ref _hits, 0);
+        Interlocked.Exchange(ref _misses, 0);
     }
 
     private readonly record struct CacheKey(string QueryFingerprint, int TopN);

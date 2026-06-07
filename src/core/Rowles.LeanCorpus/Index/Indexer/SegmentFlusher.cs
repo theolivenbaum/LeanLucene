@@ -717,18 +717,19 @@ internal static class SegmentFlusher
     {
         if (buffer.NumericIndex.Count == 0) return;
 
-        using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
-        using var writer = new BinaryWriter(fs, System.Text.Encoding.UTF8, leaveOpen: false);
+        using var output = new IndexOutput(filePath);
 
-        writer.Write(buffer.NumericIndex.Count);
+        output.WriteInt32(buffer.NumericIndex.Count);
         foreach (var (fieldName, docValues) in buffer.NumericIndex)
         {
-            writer.Write(fieldName);
-            writer.Write(docValues.Count);
+            var fieldBytes = System.Text.Encoding.UTF8.GetBytes(fieldName);
+            output.WriteVarInt(fieldBytes.Length);
+            output.WriteBytes(fieldBytes);
+            output.WriteInt32(docValues.Count);
             foreach (var (docId, value) in docValues)
             {
-                writer.Write(docId);
-                writer.Write(value);
+                output.WriteInt32(docId);
+                output.WriteInt64(System.BitConverter.DoubleToInt64Bits(value));
             }
         }
     }

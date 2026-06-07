@@ -9,6 +9,7 @@ internal static class XxHash32
     private const uint V4 = 1640531535u; // unchecked(0u - P1)
     private const int Strip = 16;
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public static uint Compute(ReadOnlySpan<byte> d)
     {
         uint h; int n = d.Length;

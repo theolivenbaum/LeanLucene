@@ -1,4 +1,6 @@
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
 using Rowles.LeanCorpus.Search.Simd;
 
 namespace Rowles.LeanCorpus.Codecs.Vectors;
@@ -20,7 +22,7 @@ internal static class Int8DistanceComputer
     /// Computes distance from raw int8 bytes without intermediate float array allocation.
     /// This is the primary fast path used during HNSW search.
     /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
     public static float Distance(
         ReadOnlySpan<float> query,
         ReadOnlySpan<byte> quantised,
@@ -29,14 +31,50 @@ internal static class Int8DistanceComputer
     {
         // deq[i] = min + alpha * qv[i]
         // dot = Σ query[i] * deq[i] = min * Σ query[i] + alpha * Σ (query[i] * qv[i])
-        float querySum = 0f;
-        float weightedSum = 0f;
         int dim = query.Length;
+        float querySum, weightedSum;
 
-        for (int i = 0; i < dim; i++)
+        if (Vector256.IsHardwareAccelerated && dim >= 8)
         {
-            querySum += query[i];
-            weightedSum += query[i] * quantised[i];
+            Vector256<float> qSumVec = Vector256<float>.Zero;
+            Vector256<float> wSumVec = Vector256<float>.Zero;
+            ref float queryRef = ref MemoryMarshal.GetReference(query);
+            ref byte quantRef = ref MemoryMarshal.GetReference(quantised);
+            int i = 0;
+
+            Span<float> qvTemp = stackalloc float[8];
+
+            for (; i + 8 <= dim; i += 8)
+            {
+                var qVec = Vector256.LoadUnsafe(ref Unsafe.Add(ref queryRef, i));
+
+                for (int k = 0; k < 8; k++)
+                    qvTemp[k] = Unsafe.Add(ref quantRef, i + k);
+
+                var qvFloat = Vector256.LoadUnsafe(ref qvTemp[0]);
+
+                qSumVec += qVec;
+                wSumVec += qVec * qvFloat;
+            }
+
+            querySum = Vector256.Sum(qSumVec);
+            weightedSum = Vector256.Sum(wSumVec);
+
+            for (; i < dim; i++)
+            {
+                querySum += Unsafe.Add(ref queryRef, i);
+                weightedSum += Unsafe.Add(ref queryRef, i) * Unsafe.Add(ref quantRef, i);
+            }
+        }
+        else
+        {
+            querySum = 0f;
+            weightedSum = 0f;
+            for (int i = 0; i < dim; i++)
+            {
+                querySum += query[i];
+                weightedSum += query[i] * quantised[i];
+            }
         }
 
         return -(min * querySum + alpha * weightedSum);

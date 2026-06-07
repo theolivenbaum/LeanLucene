@@ -1,7 +1,7 @@
-using System.IO;
-using System.Text;
+using System.Buffers;
 using Rowles.LeanCorpus.Codecs.CodecKit;
 using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
+using Rowles.LeanCorpus.Store;
 
 namespace Rowles.LeanCorpus.Codecs.Bkd;
 
@@ -17,45 +17,40 @@ internal static class BKDWriter
 
     internal static void Write(string filePath, Dictionary<string, List<(double Value, int DocId)>> fieldPoints, int maxLeafSize = DefaultMaxLeafSize)
     {
-        using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
-        using var writer = new BinaryWriter(fs, Encoding.UTF8, leaveOpen: false);
-
-        // Buffer entire body so CodecKit can wrap it in a version envelope.
-        using var bodyMs = new MemoryStream();
-        using var bw = new BinaryWriter(bodyMs, Encoding.UTF8, leaveOpen: true);
-        bw.Write(fieldPoints.Count);
+        var bodyBuf = new ArrayBufferWriter<byte>(4096);
+        bodyBuf.WriteInt32(fieldPoints.Count);
         foreach (var (field, points) in fieldPoints)
         {
-            bw.Write(field);
+            bodyBuf.WriteString(field);
             points.Sort((a, b) => a.Value.CompareTo(b.Value));
-            WriteNode(bw, points, 0, points.Count, maxLeafSize);
+            WriteNode(bodyBuf, points, 0, points.Count, maxLeafSize);
         }
-        bw.Flush();
-        byte[] body = bodyMs.ToArray();
+        byte[] body = bodyBuf.WrittenSpan.ToArray();
 
-        CodecFileHeader.Write(writer, CodecFormats.Bkd, body);
+        using var output = new IndexOutput(filePath);
+        CodecFileHeader.Write(output, CodecFormats.Bkd, body);
     }
 
-    private static void WriteNode(BinaryWriter writer, List<(double Value, int DocId)> points, int start, int end, int maxLeafSize)
+    private static void WriteNode(IBufferWriter<byte> writer, List<(double Value, int DocId)> points, int start, int end, int maxLeafSize)
     {
         int count = end - start;
         if (count <= maxLeafSize)
         {
             // Leaf node
-            writer.Write((byte)1); // leaf marker
-            writer.Write(count);
+            writer.WriteByte(1); // leaf marker
+            writer.WriteInt32(count);
             for (int i = start; i < end; i++)
             {
-                writer.Write(points[i].Value);
-                writer.Write(points[i].DocId);
+                writer.WriteInt64(BitConverter.DoubleToInt64Bits(points[i].Value));
+                writer.WriteInt32(points[i].DocId);
             }
         }
         else
         {
             // Internal node — split at median
             int mid = start + count / 2;
-            writer.Write((byte)0); // internal marker
-            writer.Write(points[mid].Value); // split value
+            writer.WriteByte(0); // internal marker
+            writer.WriteInt64(BitConverter.DoubleToInt64Bits(points[mid].Value)); // split value
             WriteNode(writer, points, start, mid, maxLeafSize);
             WriteNode(writer, points, mid, end, maxLeafSize);
         }

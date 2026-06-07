@@ -1,7 +1,5 @@
 using System.Buffers;
 using Rowles.LeanCorpus.Store;
-using System.IO;
-using System.Text;
 using Rowles.LeanCorpus.Codecs.CodecKit;
 using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
 
@@ -18,27 +16,25 @@ internal static class SortedNumericDocValuesWriter
         int docCount,
         bool durable = false)
     {
-        using var bodyMs = new MemoryStream();
-        using var bw = new BinaryWriter(bodyMs, Encoding.UTF8, leaveOpen: true);
-        bw.Write(fields.Count);
+        var bodyBuf = new ArrayBufferWriter<byte>(4096);
+        bodyBuf.WriteInt32(fields.Count);
 
         foreach (var (fieldName, values) in fields)
-            WriteFieldBlock(bw, fieldName, values, docCount);
+            WriteFieldBlock(bodyBuf, fieldName, values, docCount);
 
-        bw.Flush();
-        byte[] body = bodyMs.ToArray();
+        byte[] body = bodyBuf.WrittenSpan.ToArray();
         using var output = new IndexOutput(filePath, durable);
         CodecFileHeader.Write(output, CodecFormats.SortedNumericDocValues, body);
     }
 
     internal static void WriteFieldBlock(
-        BinaryWriter bw,
+        IBufferWriter<byte> bw,
         string fieldName,
         IReadOnlyList<double>?[] values,
         int docCount)
     {
-        WriteString(bw, fieldName);
-        bw.Write(docCount);
+        bw.WriteString(fieldName);
+        bw.WriteInt32(docCount);
 
         var starts = new int[docCount + 1];
         var flattened = new List<double>();
@@ -71,9 +67,9 @@ internal static class SortedNumericDocValuesWriter
         starts[docCount] = flattened.Count;
 
         for (int i = 0; i < starts.Length; i++)
-            bw.Write(starts[i]);
+            bw.WriteInt32(starts[i]);
 
-        bw.Write(flattened.Count);
+        bw.WriteInt32(flattened.Count);
         WritePackedDoubles(bw, flattened);
     }
 
@@ -88,12 +84,12 @@ internal static class SortedNumericDocValuesWriter
         return true;
     }
 
-    private static void WritePackedDoubles(BinaryWriter bw, IReadOnlyList<double> values)
+    private static void WritePackedDoubles(IBufferWriter<byte> bw, IReadOnlyList<double> values)
     {
         if (values.Count == 0)
         {
-            bw.Write(0L);
-            bw.Write((byte)0);
+            bw.WriteInt64(0L);
+            bw.WriteByte((byte)0);
             return;
         }
 
@@ -106,10 +102,10 @@ internal static class SortedNumericDocValuesWriter
             if (bits > max) max = bits;
         }
 
-        bw.Write(min);
+        bw.WriteInt64(min);
         ulong range = (ulong)max - (ulong)min;
         int bitsPerValue = range == 0 ? 0 : 64 - System.Numerics.BitOperations.LeadingZeroCount(range);
-        bw.Write((byte)bitsPerValue);
+        bw.WriteByte((byte)bitsPerValue);
 
         if (bitsPerValue == 0)
             return;
@@ -130,7 +126,7 @@ internal static class SortedNumericDocValuesWriter
                 remaining -= take;
                 if (accBits == 8)
                 {
-                    bw.Write(accum);
+                    bw.WriteByte(accum);
                     accum = 0;
                     accBits = 0;
                 }
@@ -138,13 +134,7 @@ internal static class SortedNumericDocValuesWriter
         }
 
         if (accBits > 0)
-            bw.Write(accum);
+            bw.WriteByte(accum);
     }
 
-    private static void WriteString(BinaryWriter bw, string value)
-    {
-        var bytes = System.Text.Encoding.UTF8.GetBytes(value);
-        bw.Write7BitEncodedInt(bytes.Length);
-        bw.Write(bytes);
-    }
 }

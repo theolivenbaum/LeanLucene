@@ -1,8 +1,8 @@
 using System.Buffers;
 using System.Runtime.InteropServices;
-using System.IO;
 using Rowles.LeanCorpus.Codecs.CodecKit;
 using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
+using Rowles.LeanCorpus.Store;
 
 namespace Rowles.LeanCorpus.Codecs.Vectors;
 
@@ -73,14 +73,13 @@ internal static class QuantisedVectorWriter
 
         float alpha = (max - min) / 255f;
 
-        using var bodyMs = new MemoryStream();
-        using var bw = new BinaryWriter(bodyMs, System.Text.Encoding.UTF8, leaveOpen: true);
+        var bodyBuf = new ArrayBufferWriter<byte>(4096);
 
-        bw.Write(docCount);
-        bw.Write(dimension);
-        bw.Write((byte)VectorQuantisation.Int8);
-        bw.Write(min);
-        bw.Write(alpha);
+        bodyBuf.WriteInt32(docCount);
+        bodyBuf.WriteInt32(dimension);
+        bodyBuf.WriteByte((byte)VectorQuantisation.Int8);
+        bodyBuf.WriteSingle(min);
+        bodyBuf.WriteSingle(alpha);
 
         // --- Pass 2: quantise and write corrections ---
         Span<float> zero = dimension <= 256 ? stackalloc float[dimension] : new float[dimension];
@@ -110,7 +109,7 @@ internal static class QuantisedVectorWriter
                     correction += alpha * qv * error;
                 }
 
-                bw.Write(correction);
+                bodyBuf.WriteSingle(correction);
             }
         }
         finally
@@ -134,7 +133,7 @@ internal static class QuantisedVectorWriter
                     float clamped = Math.Clamp((orig - min) / alpha + 0.5f, 0f, 255f);
                     writeBuf[j] = (byte)clamped;
                 }
-                bw.Write(writeBuf, 0, dimension);
+                bodyBuf.WriteBytes(writeBuf, 0, dimension);
             }
         }
         finally
@@ -142,12 +141,10 @@ internal static class QuantisedVectorWriter
             ArrayPool<byte>.Shared.Return(writeBuf, clearArray: false);
         }
 
-        bw.Flush();
-        byte[] body = bodyMs.ToArray();
+        byte[] body = bodyBuf.WrittenSpan.ToArray();
 
-        using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
-        using var writer = new BinaryWriter(fs, System.Text.Encoding.UTF8, leaveOpen: false);
-        CodecFileHeader.Write(writer, CodecFormats.QuantisedVectors, body);
+        using var output = new IndexOutput(filePath);
+        CodecFileHeader.Write(output, CodecFormats.QuantisedVectors, body);
     }
 
     /// <summary>
@@ -170,16 +167,15 @@ internal static class QuantisedVectorWriter
 
         int packedBytes = (dimension + 7) / 8;
 
-        using var bodyMs = new MemoryStream();
-        using var bw = new BinaryWriter(bodyMs, System.Text.Encoding.UTF8, leaveOpen: true);
+        var bodyBuf = new ArrayBufferWriter<byte>(4096);
 
-        bw.Write(docCount);
-        bw.Write(dimension);
-        bw.Write((byte)VectorQuantisation.BBQ);
+        bodyBuf.WriteInt32(docCount);
+        bodyBuf.WriteInt32(dimension);
+        bodyBuf.WriteByte((byte)VectorQuantisation.BBQ);
 
         // Write centroid
         for (int j = 0; j < dimension; j++)
-            bw.Write(centroid[j]);
+            bodyBuf.WriteSingle(centroid[j]);
 
         Span<float> zero = dimension <= 256 ? stackalloc float[dimension] : new float[dimension];
         zero.Clear();
@@ -217,9 +213,9 @@ internal static class QuantisedVectorWriter
                     corr3 += residual * residual;
                 }
 
-                bw.Write(corr1);
-                bw.Write(corr2);
-                bw.Write(corr3);
+                bodyBuf.WriteSingle(corr1);
+                bodyBuf.WriteSingle(corr2);
+                bodyBuf.WriteSingle(corr3);
             }
         }
         finally
@@ -248,7 +244,7 @@ internal static class QuantisedVectorWriter
                         writeBuf[byteIdx] |= (byte)(1 << bitIdx);
                     }
                 }
-                bw.Write(writeBuf, 0, packedBytes);
+                bodyBuf.WriteBytes(writeBuf, 0, packedBytes);
             }
         }
         finally
@@ -256,11 +252,9 @@ internal static class QuantisedVectorWriter
             ArrayPool<byte>.Shared.Return(writeBuf, clearArray: false);
         }
 
-        bw.Flush();
-        byte[] body = bodyMs.ToArray();
+        byte[] body = bodyBuf.WrittenSpan.ToArray();
 
-        using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
-        using var writer = new BinaryWriter(fs, System.Text.Encoding.UTF8, leaveOpen: false);
-        CodecFileHeader.Write(writer, CodecFormats.QuantisedVectors, body);
+        using var output = new IndexOutput(filePath);
+        CodecFileHeader.Write(output, CodecFormats.QuantisedVectors, body);
     }
 }

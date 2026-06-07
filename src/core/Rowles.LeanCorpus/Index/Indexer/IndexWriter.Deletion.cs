@@ -33,7 +33,7 @@ public sealed partial class IndexWriter
         var softDeleteQualifiedTerms = new List<string>(_pendingDeletes.Count);
         foreach (var (field, term, isSoftDelete) in _pendingDeletes)
         {
-            var qt = string.Concat(field, "\x00", term);
+            var qt = QualifiedTermHelpers.BuildQualifiedTermString(field, term);
             if (isSoftDelete)
                 softDeleteQualifiedTerms.Add(qt);
             else

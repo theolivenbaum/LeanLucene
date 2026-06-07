@@ -26,7 +26,7 @@ internal static class BBQDistanceComputer
     /// The query is binary-quantised against the centroid inline.
     /// Lower values are closer (negated match count).
     /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
     public static float Distance(
         ReadOnlySpan<float> query,
         ReadOnlySpan<float> centroid,
@@ -35,9 +35,36 @@ internal static class BBQDistanceComputer
     {
         int packedBytes = (dimension + 7) / 8;
         int matching = 0;
+        int j = 0;
 
-        // Binary quantise the query on the fly and compare against stored bits
-        for (int j = 0; j < dimension; j++)
+        // Process 64 dimensions at a time (8 bytes, 8 bits each)
+        ref byte storedRef = ref MemoryMarshal.GetReference(storedBits);
+        int fullChunks = packedBytes / 8;
+        for (int chunk = 0; chunk < fullChunks; chunk++)
+        {
+            // Build query bitmask: 64 bits from 64 float comparisons
+            ulong queryBits = 0;
+            for (int b = 0; b < 8; b++)
+            {
+                byte qb = 0;
+                for (int bit = 0; bit < 8; bit++, j++)
+                {
+                    if ((query[j] - centroid[j]) > 0f)
+                        qb |= (byte)(1 << bit);
+                }
+                queryBits |= (ulong)qb << (b * 8);
+            }
+
+            // Load 8 stored bytes as ulong
+            ulong storedUlong = Unsafe.ReadUnaligned<ulong>(ref Unsafe.AddByteOffset(ref storedRef, chunk * 8));
+
+            // XNOR: bits where query and stored agree
+            ulong matchBits = ~(queryBits ^ storedUlong);
+            matching += BitOperations.PopCount(matchBits);
+        }
+
+        // Tail: remaining < 64 dimensions, use original per-bit loop
+        for (; j < dimension; j++)
         {
             bool queryBit = (query[j] - centroid[j]) > 0f;
             int byteIdx = j / 8;

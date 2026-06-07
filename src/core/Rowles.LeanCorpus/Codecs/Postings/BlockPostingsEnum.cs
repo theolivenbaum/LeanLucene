@@ -224,7 +224,7 @@ public struct BlockPostingsEnum : IDisposable
     /// SIMD branchless advance: loads 4 doc IDs at a time, compares against target,
     /// uses ExtractMostSignificantBits + TrailingZeroCount to find first match.
     /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
     private int BranchlessAdvanceSimd(int target, int start, int count)
     {
         var targetVec = Vector128.Create(target);

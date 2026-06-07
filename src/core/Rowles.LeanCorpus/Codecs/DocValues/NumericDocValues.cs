@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.IO;
 using System.Text;
 using Rowles.LeanCorpus.Codecs.CodecKit;
@@ -22,21 +23,17 @@ internal static class NumericDocValuesWriter
         IReadOnlyDictionary<string, IReadOnlySet<int>>? presenceSets = null,
         bool durable = false)
     {
-        using var bodyMs = new MemoryStream();
-        using var bw = new BinaryWriter(bodyMs, Encoding.UTF8, leaveOpen: true);
-
-        bw.Write(fields.Count);
+        var bodyBuf = new ArrayBufferWriter<byte>(4096);
+        bodyBuf.WriteInt32(fields.Count);
 
         foreach (var (fieldName, values) in fields)
         {
             IReadOnlySet<int>? presenceSet = null;
             presenceSets?.TryGetValue(fieldName, out presenceSet);
-            WriteFieldBlock(bw, fieldName, values, docCount, presenceSet);
+            WriteFieldBlock(bodyBuf, fieldName, values, docCount, presenceSet);
         }
 
-        bw.Flush();
-        byte[] body = bodyMs.ToArray();
-
+        byte[] body = bodyBuf.WrittenSpan.ToArray();
         using var output = new IndexOutput(filePath, durable);
         CodecFileHeader.Write(output, CodecFormats.NumericDocValues, body);
     }
@@ -120,15 +117,13 @@ internal static class NumericDocValuesWriter
     }
 
     private static void WriteFieldBlock(
-        BinaryWriter bw,
+        IBufferWriter<byte> bw,
         string fieldName,
         double[] values,
         int docCount,
         IReadOnlySet<int>? presenceSet = null)
     {
-        var nameBytes = Encoding.UTF8.GetBytes(fieldName);
-        bw.Write7BitEncodedInt(nameBytes.Length);
-        bw.Write(nameBytes);
+        bw.WriteString(fieldName);
 
         // Presence bitmap: 0 = all docs present (dense); > 0 = byte count of serialised bitmap.
         if (presenceSet is not null && presenceSet.Count < docCount)
@@ -141,15 +136,15 @@ internal static class NumericDocValuesWriter
             bitmap.Serialise(bwt);
             bwt.Flush();
             int bitmapLen = (int)ms.Length;
-            bw.Write(bitmapLen);
-            bw.Write(ms.GetBuffer(), 0, bitmapLen);
+            bw.WriteInt32(bitmapLen);
+            bw.WriteBytes(ms.GetBuffer(), 0, bitmapLen);
         }
         else
         {
-            bw.Write(0); // all docs present
+            bw.WriteInt32(0); // all docs present
         }
 
-        bw.Write(docCount);
+        bw.WriteInt32(docCount);
 
         long min = long.MaxValue, max = long.MinValue;
         for (int i = 0; i < docCount; i++)
@@ -159,10 +154,10 @@ internal static class NumericDocValuesWriter
             if (v > max) max = v;
         }
 
-        bw.Write(min);
+        bw.WriteInt64(min);
         ulong range = (ulong)max - (ulong)min;
         int bitsPerValue = range == 0 ? 0 : 64 - System.Numerics.BitOperations.LeadingZeroCount(range);
-        bw.Write((byte)bitsPerValue);
+        bw.WriteByte((byte)bitsPerValue);
 
         if (bitsPerValue == 0) return;
 
@@ -182,13 +177,13 @@ internal static class NumericDocValuesWriter
                 remaining -= take;
                 if (accBits == 8)
                 {
-                    bw.Write(accum);
+                    bw.WriteByte(accum);
                     accum = 0;
                     accBits = 0;
                 }
             }
         }
         if (accBits > 0)
-            bw.Write(accum);
+            bw.WriteByte(accum);
     }
 }

@@ -10,6 +10,7 @@ internal static class XxHash64
     private const ulong V4 = 7046029288634856825ul;  // unchecked(0ul - P1)
     private const int Strip = 32;
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public static ulong Compute(ReadOnlySpan<byte> d)
     {
         ulong h; int n = d.Length;

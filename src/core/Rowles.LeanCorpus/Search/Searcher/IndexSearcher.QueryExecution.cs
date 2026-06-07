@@ -1,4 +1,4 @@
-﻿using System.Buffers;
+using System.Buffers;
 using System.Runtime.CompilerServices;
 namespace Rowles.LeanCorpus.Search.Searcher;
 
@@ -646,15 +646,66 @@ public sealed partial class IndexSearcher
                     float avgDocLength = _stats.GetAvgFieldLength(tq.Field);
                     var factors = _similarity.PrecomputeFactors(_totalDocCount, docFreq, avgDocLength);
                     reader.TryGetFieldLengths(tq.Field, out var fieldLengths);
+                    const int batchSize = 128;
+                    bool useBm25Batch = _similarity is Bm25Similarity;
+                    Span<int> docIds = stackalloc int[batchSize];
+                    Span<int> termFreqs = stackalloc int[batchSize];
+                    Span<int> docLengths = stackalloc int[batchSize];
+                    Span<float> batchScores = stackalloc float[batchSize];
+                    int batchCount = 0;
+
                     while (postings.MoveNext())
                     {
                         int docId = postings.DocId;
                         if (!reader.IsLive(docId)) continue;
-                        int docLength = fieldLengths is not null && (uint)docId < (uint)fieldLengths.Length
+
+                        docIds[batchCount] = docId;
+                        termFreqs[batchCount] = postings.Freq;
+                        docLengths[batchCount] = fieldLengths is not null && (uint)docId < (uint)fieldLengths.Length
                             ? fieldLengths[docId] : 1;
-                        float score = _similarity.ScorePrecomputed(factors.Factor1, factors.Factor2, postings.Freq, docLength);
-                        score = ApplyFieldBoost(reader, docId, tq.Field, score);
-                        results.Add(new ScoreDoc(docId, score));
+                        batchCount++;
+
+                        if (batchCount == batchSize)
+                        {
+                            if (useBm25Batch)
+                            {
+                                Bm25Scorer.ScorePrecomputedBatch(factors.Factor1, factors.Factor2,
+                                    termFreqs, docLengths, batchScores);
+                            }
+                            else
+                            {
+                                for (int j = 0; j < batchSize; j++)
+                                    batchScores[j] = _similarity.ScorePrecomputed(factors.Factor1, factors.Factor2, termFreqs[j], docLengths[j]);
+                            }
+
+                            for (int j = 0; j < batchSize; j++)
+                            {
+                                float score = ApplyFieldBoost(reader, docIds[j], tq.Field, batchScores[j]);
+                                results.Add(new ScoreDoc(docIds[j], score));
+                            }
+                            batchCount = 0;
+                        }
+                    }
+
+                    if (batchCount > 0)
+                    {
+                        if (useBm25Batch)
+                        {
+                            Bm25Scorer.ScorePrecomputedBatch(factors.Factor1, factors.Factor2,
+                                termFreqs.Slice(0, batchCount), docLengths.Slice(0, batchCount),
+                                batchScores.Slice(0, batchCount));
+                        }
+                        else
+                        {
+                            for (int j = 0; j < batchCount; j++)
+                                batchScores[j] = _similarity.ScorePrecomputed(factors.Factor1, factors.Factor2, termFreqs[j], docLengths[j]);
+                        }
+
+                        for (int j = 0; j < batchCount; j++)
+                        {
+                            float score = ApplyFieldBoost(reader, docIds[j], tq.Field, batchScores[j]);
+                            results.Add(new ScoreDoc(docIds[j], score));
+                        }
                     }
                     break;
                 }

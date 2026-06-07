@@ -1,5 +1,6 @@
 using System.Collections.Frozen;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using Rowles.LeanCorpus.Codecs.DocValues;
 using Rowles.LeanCorpus.Codecs.Hnsw;
 using Rowles.LeanCorpus.Codecs.StoredFields;
@@ -33,6 +34,8 @@ public sealed partial class SegmentReader : IDisposable
 
     private const int MaxTermOffsetCacheSize = 1024;
     private readonly TermOffsetCache _termOffsetCache = new(MaxTermOffsetCacheSize);
+
+    private static readonly QualifiedTermCache s_qualifiedTermCache = new();
 
     // Lazy-loaded Stage 2 features (thread-safe via LazyInitializer)
     private Dictionary<string, Dictionary<int, double>>? _numericIndex;
@@ -281,7 +284,12 @@ public sealed partial class SegmentReader : IDisposable
     /// </summary>
     private string GetQualifiedTerm(string field, string term)
     {
-        return string.Concat(field, "\x00", term);
+        int length = QualifiedTermHelpers.QualifiedTermLength(field, term);
+        Span<char> buffer = length <= 256
+            ? stackalloc char[length]
+            : new char[length];
+        ReadOnlySpan<char> qt = QualifiedTermHelpers.BuildQualifiedTerm(field, term, buffer);
+        return s_qualifiedTermCache.GetOrAdd(qt);
     }
 
     /// <summary>
@@ -371,30 +379,63 @@ public sealed partial class SegmentReader : IDisposable
 
     private sealed class TermOffsetCache
     {
-        private readonly int _capacity;
-        private readonly Dictionary<string, LinkedListNode<(string Key, (long Offset, bool Found) Value)>> _entries;
-        private readonly LinkedList<(string Key, (long Offset, bool Found) Value)> _lru = new();
-        private readonly Lock _lock = new();
-        private long _hits;
+        private const int ShardCount = 16;
+        private readonly TermOffsetShard[] _shards;
 
         internal TermOffsetCache(int capacity)
         {
-            _capacity = capacity;
-            _entries = new Dictionary<string, LinkedListNode<(string, (long, bool))>>(capacity, StringComparer.Ordinal);
+            int perShard = Math.Max(16, capacity / ShardCount);
+            _shards = new TermOffsetShard[ShardCount];
+            for (int i = 0; i < ShardCount; i++)
+                _shards[i] = new TermOffsetShard(perShard);
         }
+
+        private static int ShardIndex(string key) => (int)((uint)key.GetHashCode() % ShardCount);
 
         internal int Count
         {
             get
             {
-                lock (_lock)
-                {
-                    return _entries.Count;
-                }
+                int total = 0;
+                foreach (var shard in _shards)
+                    total += shard.Count;
+                return total;
             }
         }
 
-        internal long Hits => Volatile.Read(ref _hits);
+        internal long Hits
+        {
+            get
+            {
+                long total = 0;
+                foreach (var shard in _shards)
+                    total += Volatile.Read(ref shard._hits);
+                return total;
+            }
+        }
+
+        internal bool TryGet(string key, out (long Offset, bool Found) value)
+            => _shards[ShardIndex(key)].TryGet(key, out value);
+
+        internal void Set(string key, (long Offset, bool Found) value)
+            => _shards[ShardIndex(key)].Set(key, value);
+    }
+
+    private sealed class TermOffsetShard
+    {
+        internal readonly int _capacity;
+        private readonly Dictionary<string, LinkedListNode<(string Key, (long Offset, bool Found) Value)>> _entries;
+        private readonly LinkedList<(string Key, (long Offset, bool Found) Value)> _lru = new();
+        private readonly Lock _lock = new();
+        internal long _hits;
+
+        internal TermOffsetShard(int capacity)
+        {
+            _capacity = capacity;
+            _entries = new Dictionary<string, LinkedListNode<(string, (long, bool))>>(capacity, StringComparer.Ordinal);
+        }
+
+        internal int Count { get { lock (_lock) return _entries.Count; } }
 
         internal bool TryGet(string key, out (long Offset, bool Found) value)
         {
@@ -409,7 +450,6 @@ public sealed partial class SegmentReader : IDisposable
                     return true;
                 }
             }
-
             value = default;
             return false;
         }
@@ -430,13 +470,9 @@ public sealed partial class SegmentReader : IDisposable
                 _lru.AddFirst(node);
                 _entries[key] = node;
 
-                if (_entries.Count <= _capacity)
-                    return;
+                if (_entries.Count <= _capacity) return;
 
-                var last = _lru.Last;
-                if (last is null)
-                    return;
-
+                var last = _lru.Last!;
                 _lru.RemoveLast();
                 _entries.Remove(last.Value.Key);
             }

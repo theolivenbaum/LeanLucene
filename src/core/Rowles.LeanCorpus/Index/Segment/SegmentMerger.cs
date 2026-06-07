@@ -830,18 +830,19 @@ public sealed class SegmentMerger
 
     private static void WriteNumericIndex(string filePath, Dictionary<string, Dictionary<int, double>> numericIndex)
     {
-        using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
-        using var writer = new BinaryWriter(fs, System.Text.Encoding.UTF8, leaveOpen: false);
+        using var output = new IndexOutput(filePath);
 
-        writer.Write(numericIndex.Count);
+        output.WriteInt32(numericIndex.Count);
         foreach (var (fieldName, docValues) in numericIndex)
         {
-            writer.Write(fieldName);
-            writer.Write(docValues.Count);
+            var fieldBytes = System.Text.Encoding.UTF8.GetBytes(fieldName);
+            output.WriteVarInt(fieldBytes.Length);
+            output.WriteBytes(fieldBytes);
+            output.WriteInt32(docValues.Count);
             foreach (var (docId, value) in docValues)
             {
-                writer.Write(docId);
-                writer.Write(value);
+                output.WriteInt32(docId);
+                output.WriteInt64(System.BitConverter.DoubleToInt64Bits(value));
             }
         }
     }

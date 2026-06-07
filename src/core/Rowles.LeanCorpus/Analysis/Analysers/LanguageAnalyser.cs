@@ -1,4 +1,4 @@
-﻿using System.Buffers;
+using System.Buffers;
 namespace Rowles.LeanCorpus.Analysis.Analysers;
 
 /// <summary>
@@ -41,6 +41,7 @@ public sealed class LanguageAnalyser : IAnalyser
         var rawTokens = _tokeniser.Tokenise(input);
         var result = new List<Token>(rawTokens.Count);
 
+        const int StackThreshold = 128;
         char[]? rented = null;
         try
         {
@@ -50,22 +51,41 @@ public sealed class LanguageAnalyser : IAnalyser
                 var span = t.Text.AsSpan();
                 int len = span.Length;
 
-                if (rented is null || rented.Length < len)
+                if (len <= StackThreshold)
                 {
-                    if (rented is not null) ArrayPool<char>.Shared.Return(rented);
-                    rented = ArrayPool<char>.Shared.Rent(Math.Max(len, 64));
+#pragma warning disable CA2014 // stackalloc in loop bounded by token count; ≤128 chars per allocation
+                    Span<char> workBuf = stackalloc char[len];
+#pragma warning restore CA2014
+                    span.ToLowerInvariant(workBuf);
+                    string text = new string(workBuf);
+
+                    if (_stopWordFilter.IsStopWord(text))
+                        continue;
+
+                    if (_stemmer is not null && (_keywordMarker is null || !_keywordMarker.IsKeyword(text)))
+                        text = _stemmer.Stem(text);
+
+                    result.Add(new Token(text, t.StartOffset, t.EndOffset, t.Type, t.PositionIncrement, t.Payload));
                 }
+                else
+                {
+                    if (rented is null || rented.Length < len)
+                    {
+                        if (rented is not null) ArrayPool<char>.Shared.Return(rented);
+                        rented = ArrayPool<char>.Shared.Rent(Math.Max(len, 64));
+                    }
 
-                span.ToLowerInvariant(rented.AsSpan(0, len));
-                string text = new string(rented, 0, len);
+                    span.ToLowerInvariant(rented.AsSpan(0, len));
+                    string text = new string(rented, 0, len);
 
-                if (_stopWordFilter.IsStopWord(text))
-                    continue;
+                    if (_stopWordFilter.IsStopWord(text))
+                        continue;
 
-                if (_stemmer is not null && (_keywordMarker is null || !_keywordMarker.IsKeyword(text)))
-                    text = _stemmer.Stem(text);
+                    if (_stemmer is not null && (_keywordMarker is null || !_keywordMarker.IsKeyword(text)))
+                        text = _stemmer.Stem(text);
 
-                result.Add(new Token(text, t.StartOffset, t.EndOffset, t.Type, t.PositionIncrement, t.Payload));
+                    result.Add(new Token(text, t.StartOffset, t.EndOffset, t.Type, t.PositionIncrement, t.Payload));
+                }
             }
         }
         finally
