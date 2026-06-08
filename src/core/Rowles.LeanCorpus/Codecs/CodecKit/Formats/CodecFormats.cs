@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Rowles.LeanCorpus.Codecs.CodecKit.Codecs;
+using Rowles.LeanCorpus.Codecs.CodecKit;
 
 namespace Rowles.LeanCorpus.Codecs.CodecKit.Formats;
 
@@ -11,6 +12,23 @@ namespace Rowles.LeanCorpus.Codecs.CodecKit.Formats;
 /// </summary>
 internal static class CodecFormats
 {
+    static CodecFormats()
+    {
+        var reg = CodecMigrationRegistry.Default;
+
+        // Term vectors — v1 has no offsets; v2 adds hasOffsets + conditional offset arrays.
+        reg.Register(new CodecFormat("tvx", [
+            new CodecVersionStep(1, "tvx-v1", Codec.BytesOwnedRemaining()),
+            new CodecVersionStep(2, "tvx-v2", Codec.BytesOwnedRemaining())
+        ]));
+
+        // All other formats are at v1.
+        foreach (var ext in new[] { "nrm","fln","ndv","sdv","bdv","ssdv","sndv","fdt","pos","tim","hnsw","vec","qvec","bkd","rbm" })
+            reg.Register(new CodecFormat(ext, [
+                new CodecVersionStep(1, $"{ext}-v1", Codec.BytesOwnedRemaining())
+            ]));
+    }
+
     internal static readonly ICodec<byte[]> Norms = Create("nrm", CodecConstants.NormsVersion);
     internal static readonly ICodec<byte[]> FieldLengths = Create("fln", CodecConstants.FieldLengthVersion);
     internal static readonly ICodec<byte[]> NumericDocValues = Create("ndv", CodecConstants.NumericDocValuesVersion);

@@ -14,7 +14,7 @@ internal static class CodecConstants
     public const byte QuantisedVectorVersion = 1;
     public const byte HnswVersion = 1;
     public const byte StoredFieldsVersion = 1;
-    public const byte TermVectorsVersion = 1;
+    public const byte TermVectorsVersion = 2;
     public const byte NumericDocValuesVersion = 1;
     public const byte SortedDocValuesVersion = 1;
     public const byte SortedSetDocValuesVersion = 1;

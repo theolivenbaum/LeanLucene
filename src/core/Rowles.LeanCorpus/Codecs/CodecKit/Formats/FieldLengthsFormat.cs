@@ -27,7 +27,7 @@ internal static class FieldLengthsFormat
         .Build<string, int, int[]>((name, docCount, lengths) => new FieldEntry { Name = name, Lengths = lengths });
 
     // File-level codec: fieldCount (Int32LE), then fields repeated
-    internal static readonly ICodec<Data> V2 = Codec.Record<Data>()
+    internal static readonly ICodec<Data> V1 = Codec.Record<Data>()
         .Field("fieldCount", d => d.Fields.Count, Codec.Int32LE)
         .Field("fields",     d => d.Fields,       FieldCodec.RepeatFrom("fieldCount"))
         .Build<int, IReadOnlyList<FieldEntry>>((fieldCount, fields) => new Data { Fields = fields });

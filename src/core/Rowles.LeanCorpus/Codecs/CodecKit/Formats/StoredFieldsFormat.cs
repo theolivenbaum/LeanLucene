@@ -16,7 +16,7 @@ internal static class StoredFieldsFormat
         public byte[] Blocks { get; init; } = [];
     }
 
-    internal static readonly ICodec<Data> V6 = Codec.Record<Data>()
+    internal static readonly ICodec<Data> V1 = Codec.Record<Data>()
         .Field("blockSize",   d => d.BlockSize,   Codec.Int32LE)
         .Field("compression", d => d.Compression, Codec.UInt8)
         .Field("blocksLen",   d => d.Blocks.Length, Codec.Int32LE)

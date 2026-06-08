@@ -8,11 +8,13 @@ internal sealed class TermVectorsReader : IDisposable
 {
     private readonly Store.IndexInput _tvdInput;
     private readonly long[] _offsets;
+    private readonly byte _version;
 
-    private TermVectorsReader(Store.IndexInput tvdInput, long[] offsets)
+    private TermVectorsReader(Store.IndexInput tvdInput, long[] offsets, byte version)
     {
         _tvdInput = tvdInput;
         _offsets = offsets;
+        _version = version;
     }
 
     public static TermVectorsReader Open(string tvdPath, string tvxPath)
@@ -28,9 +30,9 @@ internal sealed class TermVectorsReader : IDisposable
 
         // Open .tvd data file as mmap
         var tvdInput = new Store.IndexInput(tvdPath);
-        CodecFileHeader.ReadVersion(tvdInput, CodecFormats.TermVectors);
+        byte version = CodecFileHeader.ReadVersion(tvdInput, CodecFormats.TermVectors);
 
-        return new TermVectorsReader(tvdInput, offsets);
+        return new TermVectorsReader(tvdInput, offsets, version);
     }
 
     /// <summary>Returns all term vectors for a document across all stored fields.</summary>
@@ -69,21 +71,27 @@ internal sealed class TermVectorsReader : IDisposable
                             : null;
                     }
                 }
-
-                bool hasOffsets = _tvdInput.ReadBoolean(ref position);
-                int[]? startOffsets = null;
-                int[]? endOffsets = null;
-                if (hasOffsets)
+                if (_version >= 2)
                 {
-                    startOffsets = new int[posCount];
-                    for (int p = 0; p < posCount; p++)
-                        startOffsets[p] = _tvdInput.ReadInt32(ref position);
-                    endOffsets = new int[posCount];
-                    for (int p = 0; p < posCount; p++)
-                        endOffsets[p] = _tvdInput.ReadInt32(ref position);
-                }
+                    bool hasOffsets = _tvdInput.ReadBoolean(ref position);
+                    int[]? startOffsets = null;
+                    int[]? endOffsets = null;
+                    if (hasOffsets)
+                    {
+                        startOffsets = new int[posCount];
+                        for (int p = 0; p < posCount; p++)
+                            startOffsets[p] = _tvdInput.ReadInt32(ref position);
+                        endOffsets = new int[posCount];
+                        for (int p = 0; p < posCount; p++)
+                            endOffsets[p] = _tvdInput.ReadInt32(ref position);
+                    }
 
-                entries.Add(new TermVectorEntry(term, freq, positions, payloads, startOffsets, endOffsets));
+                    entries.Add(new TermVectorEntry(term, freq, positions, payloads, startOffsets, endOffsets));
+                }
+                else
+                {
+                    entries.Add(new TermVectorEntry(term, freq, positions, payloads));
+                }
             }
             result[fieldName] = entries;
         }

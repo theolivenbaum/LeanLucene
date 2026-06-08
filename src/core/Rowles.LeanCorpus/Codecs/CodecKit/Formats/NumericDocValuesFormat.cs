@@ -30,7 +30,7 @@ internal static class NumericDocValuesFormat
             new Field { Name = name, Values = values, Presence = presenceBitCount == 0 ? null : presence });
 
     // File-level codec: fieldCount (Int32LE), then fields repeated
-    internal static readonly ICodec<Data> V2 = Codec.Record<Data>()
+    internal static readonly ICodec<Data> V1 = Codec.Record<Data>()
         .Field("fieldCount", d => d.Fields.Count, Codec.Int32LE)
         .Field("fields",     d => d.Fields,       FieldCodec.RepeatFrom("fieldCount"))
         .Build<int, IReadOnlyList<Field>>((fieldCount, fields) => new Data { Fields = fields });

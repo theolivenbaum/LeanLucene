@@ -6,11 +6,17 @@ using Rowles.LeanCorpus.Store;
 namespace Rowles.LeanCorpus.Codecs.TermVectors;
 
 /// <summary>
-/// Writes per-document term vectors to .tvd (data) and .tvx (offset index) files.
+/// Writes per-document term vectors to .tvd (data) and .tvx (offset index) files (v2 format).
 /// Format: .tvx: [docCount:int32] [long[] offsets into .tvd]
 ///         .tvd per doc: [fieldCount:int32] per field: [fieldName:string] [termCount:int32]
-///              per term: [term:string] [freq:int32] [posCount:int32] [positions:int32[]] [hasPayloads:bool] [payloads]
+///              per term: [term:string] [freq:int32] [posCount:int32] [positions:int32[]]
+///                        [hasPayloads:bool] [payloads] [hasOffsets:bool] [startOffsets:int32[]] [endOffsets:int32[]]
 /// </summary>
+/// <remarks>
+/// <para>Version history:</para>
+/// <para>v1 — per-term layout ended after payloads. No offset data.</para>
+/// <para>v2 — adds [hasOffsets:bool] with conditional [startOffsets:int32[]] [endOffsets:int32[]] for highlighters.</para>
+/// </remarks>
 internal static class TermVectorsWriter
 {
     public static void Write(string tvdPath, string tvxPath,

@@ -3,7 +3,7 @@ using Rowles.LeanCorpus.Codecs.CodecKit.Codecs;
 namespace Rowles.LeanCorpus.Codecs.CodecKit.Formats;
 
 /// <summary>
-/// Postings (.pos) wire format (v3 block postings).
+/// Postings (.pos) wire format (v1 block postings).
 /// Per-term layout: [docFreq:Int32LE][skipOffset:Int64LE][hasFreqs:Boolean][hasPositions:Boolean][hasPayloads:Boolean]
 /// then blocks of packed doc-deltas and frequencies, followed by position data and skip index.
 /// </summary>
@@ -19,7 +19,7 @@ internal static class PostingsFormat
         public byte[] Body { get; init; } = [];
     }
 
-    internal static readonly ICodec<Data> V3 = Codec.Record<Data>()
+    internal static readonly ICodec<Data> V1 = Codec.Record<Data>()
         .Field("docFreq",      d => d.DocFreq,      Codec.Int32LE)
         .Field("skipOffset",   d => d.SkipOffset,   Codec.Int64LE)
         .Field("hasFreqs",     d => d.HasFreqs,     Codec.Bool)

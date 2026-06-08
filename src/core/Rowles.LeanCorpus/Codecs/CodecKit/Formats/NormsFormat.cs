@@ -3,7 +3,7 @@ using Rowles.LeanCorpus.Codecs.CodecKit.Codecs;
 namespace Rowles.LeanCorpus.Codecs.CodecKit.Formats;
 
 /// <summary>
-/// Norms (.nrm) wire format.
+/// Norms (.nrm) wire format (v1).
 /// Layout: [fieldCount:Int32LE] per field:
 ///   [nameLen:VarInt][nameBytes][docCount:Int32LE]
 ///   [norms:UInt8*docCount]
@@ -34,7 +34,7 @@ internal static class NormsFormat
             new Field { Name = name, Norms = norms, Boosts = boostCount == 0 ? null : boosts });
 
     // File-level codec: fieldCount (Int32LE), then fields repeated
-    internal static readonly ICodec<Data> V3 = Codec.Record<Data>()
+    internal static readonly ICodec<Data> V1 = Codec.Record<Data>()
         .Field("fieldCount", d => d.Fields.Count, Codec.Int32LE)
         .Field("fields",     d => d.Fields,       FieldCodec.RepeatFrom("fieldCount"))
         .Build<int, IReadOnlyList<Field>>((fieldCount, fields) => new Data { Fields = fields });
