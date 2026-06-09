@@ -67,6 +67,7 @@ public sealed partial class IndexWriter : IDisposable
         _directory = directory;
         _config = config;
         _spanPostingSink = new SpanPostingTokenSink(_buffer, _config);
+        _buffer.StoreTermVectors = config.StoreTermVectors;
 
         // If using default StandardAnalyser and config has custom stop words or cache size, rebuild it
         if (config.DefaultAnalyser is StandardAnalyser &&

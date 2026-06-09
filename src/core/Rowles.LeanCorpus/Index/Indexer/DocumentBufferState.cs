@@ -11,8 +11,13 @@ namespace Rowles.LeanCorpus.Index.Indexer;
 /// across IndexWriter into a single class, enabling the segment flusher
 /// to operate as a pure function of buffer state  ->  files on disk.
 /// </summary>
+
+
 internal sealed class DocumentBufferState
 {
+    /// <summary>When <c>true</c>, character offsets from the analyser are accumulated for term vector storage. When <c>false</c> (default), offsets are discarded to avoid the ~5× allocation overhead of jagged offset arrays.</summary>
+    internal bool StoreTermVectors { get; set; }
+
     // ─── Postings: open-addressing hash table + parallel accumulator array ───
     public readonly BytesRefHash TermHash = new(8192);
     public readonly List<PostingAccumulator> PostingAccumulators = new(8192);
@@ -188,10 +193,20 @@ internal sealed class DocumentBufferState
             ArrayPool<byte>.Shared.Return(rented, clearArray: false);
 
         long before = acc.EstimatedBytes;
-        if (storePayloads && (acc.HasPayloads || payload is { Length: > 0 }))
-            acc.AddWithPayload(docId, position, payload, startOffset, endOffset);
+        if (StoreTermVectors)
+        {
+            if (storePayloads && (acc.HasPayloads || payload is { Length: > 0 }))
+                acc.AddWithPayload(docId, position, payload, startOffset, endOffset);
+            else
+                acc.Add(docId, position, startOffset, endOffset);
+        }
         else
-            acc.Add(docId, position, startOffset, endOffset);
+        {
+            if (storePayloads && (acc.HasPayloads || payload is { Length: > 0 }))
+                acc.AddWithPayload(docId, position, payload);
+            else
+                acc.Add(docId, position);
+        }
         PostingsRamBytes += acc.EstimatedBytes - before;
     }
 
