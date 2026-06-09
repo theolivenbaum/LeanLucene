@@ -10,9 +10,9 @@ namespace Rowles.LeanCorpus.Codecs.DocValues;
 
 /// <summary>
 /// Writes per-document numeric values in a compact column-stride format (.dvn).
-/// Layout per field (v2): [fieldName] [presenceByteCount: int32] [presenceBitmap: bytes if count > 0]
+/// Layout per field: [fieldName] [presenceByteCount: int32] [presenceBitmap: bytes if count > 0]
 /// [docCount: int32] [minValue: int64] [bitsPerValue: byte] [packed values...].
-/// Version 1 (legacy): no presence block. Version 2+: presence block with 0 meaning all docs present.
+/// A zero presence byte count means all documents are present.
 /// </summary>
 internal static class NumericDocValuesWriter
 {

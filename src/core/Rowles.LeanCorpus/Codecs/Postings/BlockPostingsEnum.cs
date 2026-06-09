@@ -6,7 +6,7 @@ using Rowles.LeanCorpus.Store;
 namespace Rowles.LeanCorpus.Codecs.Postings;
 
 /// <summary>
-/// Block-at-a-time postings iterator (v3 format). Reads packed blocks of 128 doc IDs
+/// Block-at-a-time postings iterator. Reads packed blocks of 128 doc IDs
 /// written by <see cref="BlockPostingsWriter"/>. Only the current block is decoded,
 /// keeping memory at a constant ~1 KB (2 × 128 ints) regardless of postings list length.
 /// </summary>

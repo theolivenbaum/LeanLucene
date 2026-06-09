@@ -8,10 +8,10 @@ using Rowles.LeanCorpus.Store;
 
 namespace Rowles.LeanCorpus.Codecs.TermDictionary;
 /// <summary>
-/// Reads a v3 .dic file: a real FST (Daciuk minimal acyclic transducer) emitting postings
+/// Reads a .dic file: a real FST (Daciuk minimal acyclic transducer) emitting postings
 /// offsets as outputs. All query primitives are thin wrappers around <see cref="FstReader"/>:
 /// exact lookups are O(key length) arc walks; prefix/wildcard/fuzzy queries are native
-/// FST × automaton intersections. v1 and v2 dictionaries are not accepted in the live read
+/// FST × automaton intersections. Legacy dictionaries are not accepted in the live read
 /// path; the migrator must upgrade them first.
 /// </summary>
 internal sealed class TermDictionaryReader : IDisposable
@@ -30,7 +30,7 @@ internal sealed class TermDictionaryReader : IDisposable
         _fst = fst;
     }
 
-    /// <summary>Opens a v3 dictionary; throws with a clear "run migrate" hint for older versions.</summary>
+    /// <summary>Opens a dictionary; throws with a clear "run migrate" hint for older versions.</summary>
     public static TermDictionaryReader Open(string filePath)
     {
         using var input = new IndexInput(filePath);

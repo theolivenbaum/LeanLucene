@@ -16,7 +16,7 @@ internal static class PostingsReader
         // Skip CodecKit envelope
         CodecFileHeader.ReadVersion(reader, CodecFormats.Postings);
 
-        // Read v3 header
+        // Read header
         int docFreq = reader.ReadInt32();
         reader.ReadInt64(); // skipOffset
         reader.ReadBoolean(); // hasFreqs

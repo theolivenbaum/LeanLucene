@@ -10,7 +10,7 @@ namespace Rowles.LeanCorpus.Codecs.DocValues;
 
 /// <summary>
 /// Writes per-document string values in a column-stride format (.dvs).
-/// Layout (v2): [fieldName] [presenceByteCount: int32] [presenceBitmap: bytes if count > 0]
+/// Layout: [fieldName] [presenceByteCount: int32] [presenceBitmap: bytes if count > 0]
 /// [docCount: int32] [ordCount: int32] [ord table: length-prefixed strings] [ords: packed ints].
 /// Deduplicates values via an ordinal table. Null entries in the values array indicate absent docs.
 /// </summary>

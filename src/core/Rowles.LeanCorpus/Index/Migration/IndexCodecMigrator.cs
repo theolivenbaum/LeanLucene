@@ -511,8 +511,6 @@ public static class IndexCodecMigrator
 
     private static void RewriteTermDictionary(string path)
     {
-        // Peek at the version byte so we can dispatch to the right legacy reader.
-        // The live TermDictionaryReader.Open refuses anything older than v3.
         byte version;
         using var probe = new IndexInput(path);
         try
@@ -525,41 +523,11 @@ public static class IndexCodecMigrator
                 $"Invalid term dictionary file '{path}': {ex.Message}", ex);
         }
 
-        if (version == CodecConstants.TermDictionaryVersion) return; // already v3
+        if (version == CodecConstants.TermDictionaryVersion) return;
 
-        List<(string Term, long Offset)> entries;
-        using (var input = new IndexInput(path))
-        {
-            // Re-skip the header bytes; legacy readers expect to read straight past them.
-            input.ReadInt32();
-            input.ReadByte();
-
-            if (version == 1)
-            {
-                var v1 = Codecs.TermDictionary.Legacy.TermDictionaryV1Reader.Open(input);
-                entries = v1.EnumerateAllTerms();
-            }
-            else if (version == 2)
-            {
-                var v2 = Codecs.TermDictionary.Legacy.TermDictionaryV2Reader.Open(input);
-                entries = v2.EnumerateAllTerms();
-            }
-            else
-            {
-                throw new InvalidDataException(
-                    $"Unsupported term dictionary version {version}; cannot migrate to v{CodecConstants.TermDictionaryVersion}.");
-            }
-        }
-
-        var sortedTerms = new List<string>(entries.Count);
-        var offsets = new Dictionary<string, long>(entries.Count, StringComparer.Ordinal);
-        foreach (var (term, offset) in entries)
-        {
-            sortedTerms.Add(term);
-            offsets[term] = offset;
-        }
-
-        WriteSingleFileAtomically(path, temporaryPath => TermDictionaryWriter.Write(temporaryPath, sortedTerms, offsets));
+        throw new InvalidDataException(
+            $"Unsupported term dictionary version {version}. Only version {CodecConstants.TermDictionaryVersion} is supported. " +
+            "Re-index the data with the current version of LeanCorpus.");
     }
 
     private static void RewritePostings(string targetDirectory, IndexCodecMigrationAction action)

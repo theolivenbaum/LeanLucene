@@ -27,7 +27,7 @@ public unsafe struct PostingsEnum : IDisposable
     private int[]? _positionData;
     private int[]? _positionStarts;
 
-    // Lazy block-at-a-time mode (v3): delegates to BlockPostingsEnum
+    // Lazy block-at-a-time mode: delegates to BlockPostingsEnum
     // instead of pre-decoding all doc IDs/frequencies into ArrayPool arrays.
     private BlockPostingsEnum _blockEnum;
     private readonly bool _lazyMode;
@@ -42,7 +42,7 @@ public unsafe struct PostingsEnum : IDisposable
     // Prevents the IndexInput from being disposed/GC'd while this PostingsEnum holds a raw pointer
     private readonly IndexInput? _sourceInput;
 
-    // v2 payload support
+    // Payload support
     private readonly bool _hasPayloads;
     private long[]? _payloadByteOffsets;
     private int[]? _payloadLengths;

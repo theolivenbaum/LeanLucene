@@ -7,7 +7,7 @@ namespace Rowles.LeanCorpus.Codecs.DocValues;
 
 /// <summary>
 /// Reads per-document numeric values from a column-stride .dvn file.
-/// Returns the dense value arrays alongside per-field presence bitmaps (v2 files only).
+/// Returns the dense value arrays alongside per-field presence bitmaps.
 /// A null presence entry means all documents carry a value for that field.
 /// </summary>
 internal static class NumericDocValuesReader

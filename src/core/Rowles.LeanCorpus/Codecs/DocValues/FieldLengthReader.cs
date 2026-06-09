@@ -8,7 +8,7 @@ namespace Rowles.LeanCorpus.Codecs.DocValues;
 /// <summary>
 /// Reads exact per-field per-doc token counts from a <c>.fln</c> file.
 /// Returns <c>Dictionary&lt;string, int[]&gt;</c> keyed by field name.
-/// Supports both VarInt (v2) and fixed ushort (v1) formats.
+/// Uses VarInt encoding.
 /// Falls back gracefully when the file does not exist (caller should use quantised norms).
 /// </summary>
 internal static class FieldLengthReader

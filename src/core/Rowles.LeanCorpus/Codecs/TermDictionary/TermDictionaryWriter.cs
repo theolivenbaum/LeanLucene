@@ -47,8 +47,8 @@ internal static class TermDictionaryWriter
     }
 
     /// <summary>
-    /// Streams pre-sorted (UTF-8 bytes ascending) term/offset pairs into a new v3 dictionary file.
-    /// Used by the migrator to upgrade legacy v1/v2 dictionaries without materialising every
+    /// Streams pre-sorted (UTF-8 bytes ascending) term/offset pairs into a new dictionary file.
+    /// Used by the migrator to upgrade legacy dictionaries without materialising every
     /// term string.
     /// </summary>
     internal static void WriteSorted(string filePath, IEnumerable<(byte[] KeyUtf8, long Output)> sortedPairs, bool durable = false)
