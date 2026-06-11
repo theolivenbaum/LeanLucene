@@ -44,9 +44,9 @@ public class GutenbergAnalysisBenchmarks
         int total = 0;
         foreach (var (_, text) in _books)
         {
-            var matSink = new MaterialisingTokenSink();
-            _standard.Analyse(text.AsSpan(), matSink);
-            total += matSink.Tokens.Count;
+            var sink = new CountingTokenSink();
+            _standard.Analyse(text.AsSpan(), sink);
+            total += sink.Count;
         }
         return total;
     }
@@ -61,9 +61,9 @@ public class GutenbergAnalysisBenchmarks
         int total = 0;
         foreach (var (_, text) in _books)
         {
-            var matSink = new MaterialisingTokenSink();
-            _english.Analyse(text.AsSpan(), matSink);
-            total += matSink.Tokens.Count;
+            var sink = new CountingTokenSink();
+            _english.Analyse(text.AsSpan(), sink);
+            total += sink.Count;
         }
         return total;
     }

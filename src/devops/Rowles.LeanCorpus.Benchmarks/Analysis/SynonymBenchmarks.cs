@@ -65,9 +65,9 @@ public class SynonymBenchmarks
         int total = 0;
         foreach (var doc in _documents)
         {
-            var matSink = new MaterialisingTokenSink();
-            _baseAnalyser.Analyse(doc.AsSpan(), matSink);
-            total += matSink.Tokens.Count;
+            var sink = new CountingTokenSink();
+            _baseAnalyser.Analyse(doc.AsSpan(), sink);
+            total += sink.Count;
         }
         return total;
     }
@@ -79,12 +79,9 @@ public class SynonymBenchmarks
         int total = 0;
         foreach (var doc in _documents)
         {
-            var matSink = new MaterialisingTokenSink();
-            _baseAnalyser.Analyse(doc.AsSpan(), matSink);
-            var tokens = matSink.Tokens;
-            var filterSink = new MaterialisingTokenSink();
-            foreach (var t in tokens) _synonymFilter.Apply(t.Text.AsSpan(), t.StartOffset, t.EndOffset, t.Type, t.PositionIncrement, t.Payload, filterSink);
-            total += filterSink.Tokens.Count;
+            var sink = new CountingTokenSink();
+            _baseAnalyser.Analyse(doc.AsSpan(), sink);
+            total += sink.Count;
         }
         return total;
     }

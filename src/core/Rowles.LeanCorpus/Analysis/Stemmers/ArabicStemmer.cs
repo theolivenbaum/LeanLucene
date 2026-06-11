@@ -7,7 +7,7 @@ namespace Rowles.LeanCorpus.Analysis.Stemmers;
 /// Expects lowercased, fully vowelised or unvowelised Unicode Arabic input.
 /// Hamza normalisation (أ إ آ → ا) should be applied upstream.
 /// </summary>
-public sealed class ArabicStemmer : IStemmer, ISpanStemmer
+public sealed class ArabicStemmer : ISpanStemmer
 {
     /// <inheritdoc/>
     public string Stem(string word)

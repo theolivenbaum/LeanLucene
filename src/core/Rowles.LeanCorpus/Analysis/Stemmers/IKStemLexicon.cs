@@ -7,4 +7,7 @@ public interface IKStemLexicon
 {
     /// <summary>Returns <see langword="true"/> when <paramref name="word"/> is a known base form.</summary>
     bool Contains(string word);
+
+    /// <summary>Returns <see langword="true"/> when <paramref name="word"/> is a known base form.</summary>
+    bool Contains(ReadOnlySpan<char> word);
 }

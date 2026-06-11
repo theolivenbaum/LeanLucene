@@ -8,7 +8,7 @@ namespace Rowles.LeanCorpus.Analysis.Analysers;
 /// </summary>
 /// <remarks>
 /// Instances are safe to share across threads provided the supplied
-    /// <see cref="ISpanTokeniser"/> and <see cref="IStemmer"/> are also thread-safe.
+    /// <see cref="ISpanTokeniser"/> and <see cref="ISpanStemmer"/> are also thread-safe.
 /// Per-call scratch buffers are rented from <see cref="ArrayPool{T}"/> and
 /// returned before the method exits.
 /// </remarks>
@@ -16,7 +16,7 @@ public sealed class LanguageAnalyser : IAnalyser
 {
     private readonly ISpanTokeniser _tokeniser;
     private readonly StopWordFilter _stopWordFilter;
-    private readonly IStemmer? _stemmer;
+    private readonly ISpanStemmer? _stemmer;
     private readonly KeywordMarkerFilter? _keywordMarker;
 
     /// <summary>
@@ -27,7 +27,7 @@ public sealed class LanguageAnalyser : IAnalyser
     /// <param name="stemmer">Optional stemmer to reduce tokens to their root form, or <see langword="null"/> to skip stemming.</param>
     /// <param name="keywordMarker">Optional keyword marker used to skip stemming for selected token text.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="tokeniser"/> is <see langword="null"/>.</exception>
-    public LanguageAnalyser(ISpanTokeniser tokeniser, IEnumerable<string>? stopWords, IStemmer? stemmer, KeywordMarkerFilter? keywordMarker = null)
+    public LanguageAnalyser(ISpanTokeniser tokeniser, IEnumerable<string>? stopWords, ISpanStemmer? stemmer, KeywordMarkerFilter? keywordMarker = null)
     {
         _tokeniser = tokeniser ?? throw new ArgumentNullException(nameof(tokeniser));
         _stopWordFilter = new StopWordFilter(stopWords);
@@ -66,7 +66,10 @@ public sealed class LanguageAnalyser : IAnalyser
                         continue;
 
                     if (_stemmer is not null && (_keywordMarker is null || !_keywordMarker.IsKeyword(text)))
-                        text = _stemmer.Stem(text);
+                    {
+                        int stemmedLen = _stemmer.Stem(text.AsSpan(), workBuf);
+                        text = new string(workBuf[..stemmedLen]);
+                    }
 
                     sink.Add(text.AsSpan(), t.StartOffset, t.EndOffset, t.Type, t.PositionIncrement, t.Payload);
                 }
@@ -85,7 +88,10 @@ public sealed class LanguageAnalyser : IAnalyser
                         continue;
 
                     if (_stemmer is not null && (_keywordMarker is null || !_keywordMarker.IsKeyword(text)))
-                        text = _stemmer.Stem(text);
+                    {
+                        int stemmedLen = _stemmer.Stem(text.AsSpan(), rented.AsSpan(0, len));
+                        text = new string(rented, 0, stemmedLen);
+                    }
 
                     sink.Add(text.AsSpan(), t.StartOffset, t.EndOffset, t.Type, t.PositionIncrement, t.Payload);
                 }

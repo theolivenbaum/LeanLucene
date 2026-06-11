@@ -24,6 +24,15 @@ public sealed class KStemLexicon : IKStemLexicon
         return _words.Contains(word.ToLowerInvariant());
     }
 
+    /// <inheritdoc/>
+    public bool Contains(ReadOnlySpan<char> word)
+    {
+        Span<char> lowered = stackalloc char[word.Length];
+        word.ToLowerInvariant(lowered);
+        var lookup = _words.GetAlternateLookup<ReadOnlySpan<char>>();
+        return lookup.Contains(lowered);
+    }
+
     /// <summary>
     /// Builds a lexicon from base-form words. Empty lines and duplicate entries are ignored.
     /// </summary>

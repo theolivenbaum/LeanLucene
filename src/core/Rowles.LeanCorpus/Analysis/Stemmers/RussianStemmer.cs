@@ -5,7 +5,7 @@ namespace Rowles.LeanCorpus.Analysis.Stemmers;
 /// written in Cyrillic. Based on the Dovgal/Snowball Russian algorithm.
 /// Expects lowercased input (е and ё are NOT equated — normalise upstream).
 /// </summary>
-public sealed class RussianStemmer : IStemmer, ISpanStemmer
+public sealed class RussianStemmer : ISpanStemmer
 {
     /// <inheritdoc/>
     public string Stem(string word)

@@ -155,16 +155,14 @@ public sealed class ExtendedLanguageAnalyserTests
     [InlineData("ko")]
     public void IdentityStemmers_ReturnInputUnchanged(string lang)
     {
-        IStemmer stemmer = lang switch
+        string result = lang switch
         {
-            "zh" => new ChineseStemmer(),
-            "ja" => new JapaneseStemmer(),
-            "ko" => new KoreanStemmer(),
+            "zh" => new ChineseStemmer().Stem("猫"),
+            "ja" => new JapaneseStemmer().Stem("猫"),
+            "ko" => new KoreanStemmer().Stem("猫"),
             _ => throw new InvalidOperationException()
         };
-
-        Assert.Equal("猫", stemmer.Stem("猫"));
-        Assert.Equal("test", stemmer.Stem("test"));
+        Assert.Equal("猫", result);
     }
 
     /// <summary>

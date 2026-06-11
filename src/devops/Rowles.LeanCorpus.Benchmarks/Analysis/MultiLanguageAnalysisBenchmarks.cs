@@ -39,9 +39,9 @@ public class MultiLanguageAnalysisBenchmarks
         // Repeat the sample to amortise per-call overhead.
         for (int i = 0; i < 100; i++)
         {
-            var matSink = new MaterialisingTokenSink();
-            _analyser.Analyse(_sample.AsSpan(), matSink);
-            total += matSink.Tokens.Count;
+            var sink = new CountingTokenSink();
+            _analyser.Analyse(_sample.AsSpan(), sink);
+            total += sink.Count;
         }
         return total;
     }

@@ -4,7 +4,7 @@ namespace Rowles.LeanCorpus.Analysis.Stemmers;
 /// Italian Snowball-inspired stemmer. Handles common Italian inflectional and
 /// derivational suffixes. Expects lowercased, UTF-8 normalized input.
 /// </summary>
-public sealed class ItalianStemmer : IStemmer, ISpanStemmer
+public sealed class ItalianStemmer : ISpanStemmer
 {
     /// <inheritdoc/>
     public string Stem(string word)

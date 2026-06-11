@@ -6,7 +6,7 @@ namespace Rowles.LeanCorpus.Analysis.Stemmers;
 /// (ä→a, ö→o, ü→u) and ß→ss as a preliminary step, mirroring Snowball's
 /// approach for German.
 /// </summary>
-public sealed class GermanStemmer : IStemmer, ISpanStemmer
+public sealed class GermanStemmer : ISpanStemmer
 {
     /// <inheritdoc/>
     public string Stem(string word)

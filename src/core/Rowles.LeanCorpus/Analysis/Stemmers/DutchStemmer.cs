@@ -5,7 +5,7 @@ namespace Rowles.LeanCorpus.Analysis.Stemmers;
 /// derivational suffixes. Expects lowercased input. Dutch vowel sequences (ij, oe,
 /// eu, ui) are not decomposed here; apply normalisation upstream if needed.
 /// </summary>
-public sealed class DutchStemmer : IStemmer, ISpanStemmer
+public sealed class DutchStemmer : ISpanStemmer
 {
     /// <inheritdoc/>
     public string Stem(string word)

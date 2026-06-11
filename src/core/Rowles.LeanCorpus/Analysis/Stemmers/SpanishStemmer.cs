@@ -5,7 +5,7 @@ namespace Rowles.LeanCorpus.Analysis.Stemmers;
 /// derivational suffixes. Expects lowercased, UTF-8 normalized input;
 /// accented vowels (á, é, í, ó, ú) are treated as distinct characters.
 /// </summary>
-public sealed class SpanishStemmer : IStemmer, ISpanStemmer
+public sealed class SpanishStemmer : ISpanStemmer
 {
     /// <inheritdoc/>
     public string Stem(string word)

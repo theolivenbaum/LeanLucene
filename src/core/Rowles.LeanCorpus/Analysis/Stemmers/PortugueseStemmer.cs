@@ -5,7 +5,7 @@ namespace Rowles.LeanCorpus.Analysis.Stemmers;
 /// and derivational suffixes. Covers both European (pt-PT) and Brazilian (pt-BR)
 /// variants. Expects lowercased, UTF-8 normalized input.
 /// </summary>
-public sealed class PortugueseStemmer : IStemmer, ISpanStemmer
+public sealed class PortugueseStemmer : ISpanStemmer
 {
     /// <inheritdoc/>
     public string Stem(string word)

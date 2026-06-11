@@ -46,9 +46,9 @@ public class StemmerParityBenchmarks
         int total = 0;
         foreach (var doc in _documents)
         {
-            var matSink = new MaterialisingTokenSink();
-            _leanAnalyser.Analyse(doc.AsSpan(), matSink);
-            total += matSink.Tokens.Count;
+            var sink = new CountingTokenSink();
+            _leanAnalyser.Analyse(doc.AsSpan(), sink);
+            total += sink.Count;
         }
         return total;
     }

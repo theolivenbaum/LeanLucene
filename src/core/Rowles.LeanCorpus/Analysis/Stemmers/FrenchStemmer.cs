@@ -3,7 +3,7 @@ namespace Rowles.LeanCorpus.Analysis.Stemmers;
 /// <summary>
 /// French Snowball-inspired stemmer. Handles common French suffixes.
 /// </summary>
-public sealed class FrenchStemmer : IStemmer, ISpanStemmer
+public sealed class FrenchStemmer : ISpanStemmer
 {
     /// <inheritdoc/>
     public string Stem(string word)

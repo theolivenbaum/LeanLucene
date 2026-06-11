@@ -5,7 +5,7 @@ namespace Rowles.LeanCorpus.Analysis.Stemmers;
 /// <summary>
 /// Lexicon-validated English stemmer inspired by Krovetz stemming.
 /// </summary>
-public sealed class KStemmer : IStemmer
+public sealed class KStemmer : ISpanStemmer
 {
     private sealed record MorphRule(
         string Suffix,
@@ -249,69 +249,138 @@ public sealed class KStemmer : IStemmer
     }
 
     /// <inheritdoc/>
+    public int Stem(ReadOnlySpan<char> word, Span<char> output)
+    {
+        if (word.Length <= 2)
+        {
+            word.CopyTo(output);
+            return word.Length;
+        }
+
+        // Lowercase into output.
+        int len = word.Length;
+        for (int i = 0; i < len; i++)
+            output[i] = char.ToLowerInvariant(word[i]);
+
+        var lowered = output[..len];
+
+        // Check exceptions.
+        var exLookup = Exceptions.GetAlternateLookup<ReadOnlySpan<char>>();
+        if (exLookup.TryGetValue(lowered, out var replacement))
+        {
+            replacement.AsSpan().CopyTo(output);
+            return replacement.Length;
+        }
+
+        // Check protected words and lexicon.
+        var pwLookup = ProtectedWords.GetAlternateLookup<ReadOnlySpan<char>>();
+        if (pwLookup.Contains(lowered) || _lexicon.Contains(lowered))
+            return len;
+
+        // Apply inflectional rules, then derivational.
+        if (TryRulesSpan(output, len, InflectionalRules, out int inflectedLen))
+            len = inflectedLen;
+
+        if (TryRulesSpan(output, len, DerivationalRules, out int derivedLen))
+            len = derivedLen;
+
+        return len;
+    }
+
+    /// <summary>
+    /// Convenience overload returning a stemmed string.
+    /// </summary>
     public string Stem(string word)
     {
         ArgumentNullException.ThrowIfNull(word);
-
-        string lower = word.ToLowerInvariant();
-        if (lower.Length <= 2)
-            return lower;
-
-        if (Exceptions.TryGetValue(lower, out var exception))
-            return exception;
-
-        if (ProtectedWords.Contains(lower) || _lexicon.Contains(lower))
-            return lower;
-
-        string inflectionBase = TryRules(lower, InflectionalRules) ?? lower;
-        return TryRules(inflectionBase, DerivationalRules) ?? inflectionBase;
+        Span<char> buf = stackalloc char[word.Length];
+        int len = Stem(word.AsSpan(), buf);
+        return new string(buf[..len]);
     }
 
-    private string? TryRules(string word, IReadOnlyList<MorphRule> rules)
+    private bool TryRulesSpan(Span<char> output, int len, IReadOnlyList<MorphRule> rules, out int resultLen)
     {
+        var word = output[..len];
+
         for (int i = 0; i < rules.Count; i++)
         {
             var rule = rules[i];
-            if (!word.EndsWith(rule.Suffix, StringComparison.Ordinal))
+            if (!word.EndsWith(rule.Suffix))
                 continue;
 
-            int rootLength = word.Length - rule.Suffix.Length;
+            int rootLength = len - rule.Suffix.Length;
             if (rootLength < rule.MinRootLength)
                 continue;
 
-            string root = word[..rootLength];
-            string candidate = rule.Replacement.Length == 0
-                ? root
-                : string.Concat(root, rule.Replacement);
+            var root = word[..rootLength];
 
-            if (rule.StemCondition is not null && !rule.StemCondition(candidate))
-                continue;
+            // Build candidate in a stackalloc buffer.
+#pragma warning disable CA2014 // stackalloc in loop — bounded by word length (<128 typically)
+            Span<char> candBuf = stackalloc char[len];
+#pragma warning restore CA2014
+            root.CopyTo(candBuf);
+            int candLen = rootLength;
+
+            if (rule.Replacement.Length > 0)
+            {
+                rule.Replacement.AsSpan().CopyTo(candBuf[candLen..]);
+                candLen += rule.Replacement.Length;
+            }
+
+            var candidate = candBuf[..candLen];
+
+            // StemCondition requires a string (rare path — only a few rules have conditions).
+            if (rule.StemCondition is not null)
+            {
+                string candStr = candidate.ToString();
+                if (!rule.StemCondition(candStr))
+                    continue;
+            }
 
             if (_lexicon.Contains(candidate))
-                return candidate;
+            {
+                candidate.CopyTo(output);
+                resultLen = candLen;
+                return true;
+            }
 
-            string undoubled = UndoubleTrailingConsonant(candidate);
-            if (!ReferenceEquals(undoubled, candidate) && _lexicon.Contains(undoubled))
-                return undoubled;
+            // Try undoubled.
+            int undLen = UndoubleTrailingConsonantSpan(candBuf, candLen);
+            if (undLen != candLen && _lexicon.Contains(candBuf[..undLen]))
+            {
+                candBuf[..undLen].CopyTo(output);
+                resultLen = undLen;
+                return true;
+            }
 
-            string withE = candidate + 'e';
-            if (_lexicon.Contains(withE))
-                return withE;
+            // Try with 'e' appended.
+            if (candLen < candBuf.Length)
+            {
+                candBuf[candLen] = 'e';
+                int withELen = candLen + 1;
+                if (_lexicon.Contains(candBuf[..withELen]))
+                {
+                    candBuf[..withELen].CopyTo(output);
+                    resultLen = withELen;
+                    return true;
+                }
+            }
         }
 
-        return null;
+        resultLen = 0;
+        return false;
     }
 
-    private static string UndoubleTrailingConsonant(string value)
+    private static int UndoubleTrailingConsonantSpan(Span<char> value, int len)
     {
-        if (value.Length < 2)
-            return value;
+        if (len < 2)
+            return len;
 
-        char last = value[^1];
-        if (last == value[^2] && !IsVowel(last) && last is not ('l' or 's' or 'z'))
-            return value[..^1];
+        char last = value[len - 1];
+        if (last == value[len - 2] && !IsVowel(last) && last is not ('l' or 's' or 'z'))
+            return len - 1;
 
-        return value;
+        return len;
     }
 
     private static bool ContainsVowel(string value)

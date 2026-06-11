@@ -95,10 +95,10 @@ public class TokenFilterBenchmarks
     [MethodImpl(MethodImplOptions.NoInlining)]
     public int LeanCorpus_Apply()
     {
-        var sink = new MaterialisingTokenSink();
+        var sink = new CountingTokenSink();
         foreach (var token in _source)
             _filter.Apply(token.Text.AsSpan(), token.StartOffset, token.EndOffset, token.Type, token.PositionIncrement, token.Payload, sink);
-        return sink.Tokens.Count;
+        return sink.Count;
     }
 
     // --- Lucene.NET streaming benchmark ---

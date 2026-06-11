@@ -29,7 +29,6 @@ public class MoreLikeThisBenchmarks
     public int DocumentCount { get; set; }
 
     /// <summary>Maximum query terms extracted from the source document.</summary>
-    [Params(10, 25, 50)]
     public int MaxQueryTerms { get; set; } = 25;
 
     // LeanCorpus state
