@@ -64,30 +64,29 @@ internal static class SegmentFlusher
         };
         segInfo.WriteTo(basePath + ".seg");
 
-        // Sort qualified terms for the dictionary — build from term hash table
-        buffer.SortedTermsBuffer.Clear();
+        // Sort qualified terms for the dictionary — build sorted (term, originalId) pairs
+        // to avoid a separate term→accumulator dictionary lookup during iteration.
         int postingsCount = buffer.PostingsCount;
+        var sortedTerms = new (string Term, int OriginalId)[postingsCount];
         for (int i = 0; i < postingsCount; i++)
-            buffer.SortedTermsBuffer.Add(buffer.GetTermString(i));
-        buffer.SortedTermsBuffer.Sort(StringComparer.Ordinal);
-        var postingsOffsets = new Dictionary<string, long>(buffer.SortedTermsBuffer.Count);
+            sortedTerms[i] = (buffer.GetTermString(i), i);
+        Array.Sort(sortedTerms, static (a, b) => string.CompareOrdinal(a.Term, b.Term));
 
-        var headerPatches = new List<(long HeaderPos, int DocFreq, long SkipOffset)>(buffer.SortedTermsBuffer.Count);
+        var postingsOffsets = new Dictionary<string, long>(postingsCount, StringComparer.Ordinal);
+        var headerInfos = new (long HeaderPos, int DocFreq, long SkipOffset)[postingsCount];
+        int termIdx = 0;
 
-        // Build term-accumulator lookup dictionary for sorted iteration
-        var termToAcc = new Dictionary<string, PostingAccumulator>(postingsCount, StringComparer.Ordinal);
-        for (int i = 0; i < postingsCount; i++)
-            termToAcc[buffer.GetTermString(i)] = buffer.PostingAccumulators[i];
-        // Write .pos body to a temporary file, then wrap with CodecKit header
+        // Write .pos body to a temporary file, then copy into final .pos with envelope.
+        // Uses FileStream.CopyTo instead of ReadAllBytes to avoid heap-allocating the entire body.
         string tmpPosBody = basePath + ".pos.body.tmp";
         try
         {
             using (var posOutput = new IndexOutput(tmpPosBody))
             using (var blockWriter = new BlockPostingsWriter(posOutput))
             {
-                foreach (var qt in buffer.SortedTermsBuffer)
+                foreach (var (qt, origId) in sortedTerms)
                 {
-                    var acc = termToAcc[qt];
+                    var acc = buffer.PostingAccumulators[origId];
                     var ids = acc.DocIds;
 
                     bool hasFreqs = acc.HasFreqs;
@@ -118,7 +117,6 @@ internal static class SegmentFlusher
                             posOutput.WriteVarInt(firstPos);
                             int prevPos = firstPos;
 
-                            // Payload for position 0
                             if (hasPayloads)
                             {
                                 var payload0 = acc.GetPayload(i, 0);
@@ -133,10 +131,11 @@ internal static class SegmentFlusher
                                 }
                             }
 
-                            int offset = 0;
+                            int deltaOffset = 0;
                             for (int pi = 1; pi < freq; pi++)
                             {
-                                offset += PostingAccumulator.ReadVarInt(deltaBytes.Slice(offset), out int delta);
+                                deltaOffset += PostingAccumulator.ReadVarInt(
+                                    deltaBytes.Slice(deltaOffset), out int delta);
                                 int abs = firstPos + delta;
                                 posOutput.WriteVarInt(abs - prevPos);
                                 prevPos = abs;
@@ -158,29 +157,39 @@ internal static class SegmentFlusher
                         }
                     }
 
-
-
-                    headerPatches.Add((headerPos, meta.DocFreq, meta.SkipOffset));
+                    headerInfos[termIdx++] = (headerPos, meta.DocFreq, meta.SkipOffset);
                 }
             }
 
-            byte[] body = System.IO.File.ReadAllBytes(tmpPosBody);
-            int envelopeOffset = 1 + VarIntSize(body.Length);
+            // Get body length from temp file size.
+            long bodyLength = new System.IO.FileInfo(tmpPosBody).Length;
+            int envelopeOffset = 1 + VarIntSize(bodyLength);
 
-            using (var posOutput = new IndexOutput(basePath + ".pos"))
+            // Write final .pos: envelope + body streamed from temp file (no ReadAllBytes).
+            string posPath = basePath + ".pos";
+            using (var posStream = new System.IO.FileStream(posPath, System.IO.FileMode.Create,
+                System.IO.FileAccess.Write, System.IO.FileShare.None, bufferSize: 65536, System.IO.FileOptions.SequentialScan))
             {
-                posOutput.WriteByte(CodecConstants.PostingsVersion);
-                posOutput.WriteVarInt(body.Length);
-                posOutput.WriteBytes(body);
+                posStream.WriteByte(CodecConstants.PostingsVersion);
+                byte[] lenBuf = new byte[5];
+                int lenBytes = WriteVarIntToBuffer(lenBuf, (int)bodyLength);
+                posStream.Write(lenBuf, 0, lenBytes);
+
+                using (var tmpStream = new System.IO.FileStream(tmpPosBody, System.IO.FileMode.Open,
+                    System.IO.FileAccess.Read, System.IO.FileShare.Read, bufferSize: 65536, System.IO.FileOptions.SequentialScan))
+                {
+                    tmpStream.CopyTo(posStream);
+                }
             }
 
-            // Patch header placeholders — adjust positions for CodecKit envelope
-            using (var patchStream = new System.IO.FileStream(basePath + ".pos", System.IO.FileMode.Open, System.IO.FileAccess.ReadWrite, System.IO.FileShare.None))
+            // Patch header placeholders.
+            Span<byte> patch = stackalloc byte[12];
+            using (var patchStream = new System.IO.FileStream(posPath, System.IO.FileMode.Open,
+                System.IO.FileAccess.ReadWrite, System.IO.FileShare.None))
             {
-                Span<byte> patch = stackalloc byte[12];
-                for (int i = 0; i < headerPatches.Count; i++)
+                for (int i = 0; i < postingsCount; i++)
                 {
-                    var (hpos, docFreq, skipOffset) = headerPatches[i];
+                    var (hpos, docFreq, skipOffset) = headerInfos[i];
                     patchStream.Seek(hpos + envelopeOffset, System.IO.SeekOrigin.Begin);
                     System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(patch, docFreq);
                     System.Buffers.Binary.BinaryPrimitives.WriteInt64LittleEndian(patch[4..], skipOffset + envelopeOffset);
@@ -188,11 +197,15 @@ internal static class SegmentFlusher
                 }
             }
 
-            // Re-base postingsOffsets to final file positions
+            // Re-base postingsOffsets to final file positions.
             var rekeyedOffsets = new Dictionary<string, long>(postingsOffsets.Count, StringComparer.Ordinal);
             foreach (var kv in postingsOffsets)
                 rekeyedOffsets[kv.Key] = kv.Value + envelopeOffset;
             postingsOffsets = rekeyedOffsets;
+
+            buffer.SortedTermsBuffer.Clear();
+            foreach (var (term, _) in sortedTerms)
+                buffer.SortedTermsBuffer.Add(term);
         }
         finally
         {
@@ -782,6 +795,15 @@ internal static class SegmentFlusher
         int size = 0;
         do { size++; value >>= 7; } while (value != 0);
         return size;
+    }
+
+    private static int WriteVarIntToBuffer(byte[] buffer, int value)
+    {
+        uint v = (uint)value;
+        int i = 0;
+        while (v >= 0x80) { buffer[i++] = (byte)(v | 0x80); v >>= 7; }
+        buffer[i++] = (byte)v;
+        return i;
     }
 
     private static void TryDeleteTemporaryFile(string path)

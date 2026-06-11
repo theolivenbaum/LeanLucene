@@ -80,7 +80,6 @@ public sealed class ThaiTokeniser : ISpanTokeniser
     /// <inheritdoc/>
     public void Tokenise(ReadOnlySpan<char> input, ISpanTokenSink sink)
     {
-        var tokens = new List<Token>();
         int i = 0;
 
         while (i < input.Length)
@@ -91,26 +90,17 @@ public sealed class ThaiTokeniser : ISpanTokeniser
                 while (runEnd < input.Length && UnicodeTokenisation.IsThai(input[runEnd]))
                     runEnd++;
 
-                TokeniseThaiRun(input, i, runEnd, tokens);
+                TokeniseThaiRun(input, i, runEnd, sink);
                 i = runEnd;
                 continue;
             }
 
-            UnicodeTokenisation.TokeniseNonThaiSpan(input, tokens, ref i);
+            UnicodeTokenisation.TokeniseNonThaiSpan(input, sink, ref i);
         }
-
-        foreach (var token in tokens)
-            sink.Add(
-                token.Text.AsSpan(),
-                token.StartOffset,
-                token.EndOffset,
-                token.Type,
-                token.PositionIncrement,
-                token.Payload);
     }
 
 
-    private void TokeniseThaiRun(ReadOnlySpan<char> input, int start, int end, List<Token> tokens)
+    private void TokeniseThaiRun(ReadOnlySpan<char> input, int start, int end, ISpanTokenSink sink)
     {
         int i = start;
         while (i < end)
@@ -118,13 +108,13 @@ public sealed class ThaiTokeniser : ISpanTokeniser
             int matchLength = TryFindLongestLexiconMatch(input, i, end);
             if (matchLength > 0)
             {
-                tokens.Add(new Token(input.Slice(i, matchLength).ToString(), i, i + matchLength, ThaiType));
+                sink.Add(input.Slice(i, matchLength), i, i + matchLength, ThaiType);
                 i += matchLength;
                 continue;
             }
 
             int clusterEnd = ReadThaiCluster(input, i, end);
-            tokens.Add(new Token(input[i..clusterEnd].ToString(), i, clusterEnd, ThaiType));
+            sink.Add(input[i..clusterEnd], i, clusterEnd, ThaiType);
             i = clusterEnd;
         }
     }

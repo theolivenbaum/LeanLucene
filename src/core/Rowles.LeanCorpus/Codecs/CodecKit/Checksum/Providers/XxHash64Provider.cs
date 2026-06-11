@@ -10,9 +10,7 @@ internal sealed class XxHash64Provider : IChecksumProvider
     {
         if (data.IsSingleSegment)
             return XxHash64.ToBytes(data.FirstSpan);
-        var buf = new byte[(int)data.Length];
-        data.CopyTo(buf);
-        return XxHash64.ToBytes(buf);
+        return XxHash64.ToBytes(CopyToTemp(data));
     }
 
     public bool Verify(ReadOnlySequence<byte> data, ReadOnlySpan<byte> expected)
@@ -24,10 +22,35 @@ internal sealed class XxHash64Provider : IChecksumProvider
         return hash == exp;
     }
 
+    private static byte[] CopyToTemp(ReadOnlySequence<byte> data)
+    {
+        var len = (int)data.Length;
+        if (len <= 4096)
+        {
+            Span<byte> buf = stackalloc byte[len];
+            data.CopyTo(buf);
+            return buf.ToArray();
+        }
+        byte[] rented = ArrayPool<byte>.Shared.Rent(len);
+        data.CopyTo(rented);
+        var result = rented.AsSpan(0, len).ToArray();
+        ArrayPool<byte>.Shared.Return(rented);
+        return result;
+    }
+
     private ulong ComputeThenHash(ReadOnlySequence<byte> data)
     {
-        var buf = new byte[(int)data.Length];
-        data.CopyTo(buf);
-        return XxHash64.Compute(buf);
+        var len = (int)data.Length;
+        if (len <= 4096)
+        {
+            Span<byte> buf = stackalloc byte[len];
+            data.CopyTo(buf);
+            return XxHash64.Compute(buf);
+        }
+        byte[] rented = ArrayPool<byte>.Shared.Rent(len);
+        data.CopyTo(rented);
+        ulong hash = XxHash64.Compute(rented.AsSpan(0, len));
+        ArrayPool<byte>.Shared.Return(rented);
+        return hash;
     }
 }

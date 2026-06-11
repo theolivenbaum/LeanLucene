@@ -106,8 +106,12 @@ internal sealed class HunspellStemmerAdapter : IStemmer
 /// <summary>
 /// Adapter that exposes Porter stemming through <see cref="IStemmer"/>.
 /// </summary>
-public sealed class PorterStemmer : IStemmer
+public sealed class PorterStemmer : IStemmer, ISpanStemmer
 {
     /// <inheritdoc/>
     public string Stem(string word) => PorterStemmerFilter.Stem(word);
+
+    /// <inheritdoc/>
+    public int Stem(ReadOnlySpan<char> word, Span<char> output) =>
+        PorterStemmerFilter.Stem(word, output);
 }

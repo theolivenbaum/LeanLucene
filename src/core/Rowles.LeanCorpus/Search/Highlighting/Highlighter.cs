@@ -1,5 +1,7 @@
+using System.Runtime.CompilerServices;
 using Rowles.LeanCorpus.Codecs.TermVectors;
 using Rowles.LeanCorpus.Analysis.Analysers;
+
 namespace Rowles.LeanCorpus.Search.Highlighting;
 
 /// <summary>
@@ -10,6 +12,38 @@ public sealed class Highlighter : IHighlighter
     private readonly string _preTag;
     private readonly string _postTag;
     private readonly IAnalyser _analyser;
+
+    /// <summary>Lightweight offset-only token used by the highlighter to avoid string allocations per token.</summary>
+    private readonly struct HighlightToken
+    {
+        public readonly int StartOffset;
+        public readonly int EndOffset;
+
+        public HighlightToken(int startOffset, int endOffset)
+        {
+            StartOffset = startOffset;
+            EndOffset = endOffset;
+        }
+    }
+
+    /// <summary>
+    /// An <see cref="Rowles.LeanCorpus.Analysis.ISpanTokenSink"/> that captures only character offsets,
+    /// avoiding per-token string allocations. The original text must be kept alive by the caller
+    /// for later slicing.
+    /// </summary>
+    private sealed class OffsetCapturingSink : Rowles.LeanCorpus.Analysis.ISpanTokenSink
+    {
+        public readonly List<HighlightToken> Tokens = [];
+
+        public void Add(ReadOnlySpan<char> text, int startOffset, int endOffset,
+            string type = Rowles.LeanCorpus.Analysis.Token.DefaultType,
+            int positionIncrement = 1, byte[]? payload = null)
+        {
+            Tokens.Add(new HighlightToken(startOffset, endOffset));
+        }
+
+        public void Clear() => Tokens.Clear();
+    }
 
     /// <summary>Initialises a new <see cref="Highlighter"/> with the given tags and analyser.</summary>
     /// <param name="preTag">Opening highlight tag, e.g. "&lt;b&gt;" or "&lt;em&gt;".</param>
@@ -35,11 +69,17 @@ public sealed class Highlighter : IHighlighter
         if (string.IsNullOrEmpty(text) || queryTerms.Count == 0)
             return Truncate(text, maxSnippetLength);
 
-        var sink = new MaterialisingTokenSink();
+        var sink = new OffsetCapturingSink();
         _analyser.Analyse(text.AsSpan(), sink);
         var tokens = sink.Tokens;
         if (tokens.Count == 0)
             return Truncate(text, maxSnippetLength);
+
+        // Use AlternateLookup for zero-alloc span-based term matching when possible.
+        var lookup = (queryTerms as HashSet<string>)?.GetAlternateLookup<ReadOnlySpan<char>>();
+        bool spanMatch(int start, int end) => lookup.HasValue
+            ? lookup.Value.Contains(text.AsSpan(start, end - start))
+            : queryTerms.Contains(text[start..end]);
 
         int bestStart = 0;
         int bestEnd = Math.Min(text.Length, maxSnippetLength);
@@ -48,7 +88,8 @@ public sealed class Highlighter : IHighlighter
 
         for (int i = 0; i < tokens.Count; i++)
         {
-            if (queryTerms.Contains(tokens[i].Text))
+            var token = tokens[i];
+            if (spanMatch(token.StartOffset, token.EndOffset))
                 matchingTokenIndexes.Add(i);
         }
 
@@ -89,7 +130,7 @@ public sealed class Highlighter : IHighlighter
                 continue;
             if (t.StartOffset >= bestEnd)
                 break;
-            if (!queryTerms.Contains(t.Text))
+            if (!spanMatch(t.StartOffset, t.EndOffset))
                 continue;
 
             if (t.StartOffset < bestStart || t.EndOffset > bestEnd || t.StartOffset < lastEnd)

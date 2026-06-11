@@ -46,12 +46,13 @@ public class AnalysisBenchmarks
     [MethodImpl(MethodImplOptions.NoInlining)]
     public int LeanCorpus_Analyse()
     {
+        var sink = new CountingTokenSink();
         int totalTokens = 0;
         for (int i = 0; i < _documents.Length; i++)
         {
-            var matSink = new MaterialisingTokenSink();
-            _leanAnalyser.Analyse(_documents[i].AsSpan(), matSink);
-            totalTokens += matSink.Tokens.Count;
+            sink.Reset();
+            _leanAnalyser.Analyse(_documents[i].AsSpan(), sink);
+            totalTokens += sink.Count;
         }
         return totalTokens;
     }

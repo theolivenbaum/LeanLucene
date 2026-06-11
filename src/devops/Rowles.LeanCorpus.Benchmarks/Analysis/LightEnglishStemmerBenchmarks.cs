@@ -70,7 +70,6 @@ public class LightEnglishStemmerBenchmarks
                 foreach (var t in batch) filter.Apply(t.Text.AsSpan(), t.StartOffset, t.EndOffset, t.Type, t.PositionIncrement, t.Payload, matSink);
                 count += matSink.Tokens.Count;
                 batch.Clear();
-                batch.AddRange(matSink.Tokens);
             }
         }
 

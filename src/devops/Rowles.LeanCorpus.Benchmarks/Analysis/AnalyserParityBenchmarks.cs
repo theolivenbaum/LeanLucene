@@ -79,14 +79,13 @@ public class AnalyserParityBenchmarks
 
     private static int AnalyseLean(Rowles.LeanCorpus.Analysis.Analysers.IAnalyser analyser)
     {
-        int total = 0;
+        var sink = new CountingTokenSink();
         for (int i = 0; i < 100; i++)
         {
-            var matSink = new MaterialisingTokenSink();
-            analyser.Analyse(Sample.AsSpan(), matSink);
-            total += matSink.Tokens.Count;
+            sink.Reset();
+            analyser.Analyse(Sample.AsSpan(), sink);
         }
-        return total;
+        return sink.Count;
     }
 
     private static int AnalyseLucene(Analyzer analyser)

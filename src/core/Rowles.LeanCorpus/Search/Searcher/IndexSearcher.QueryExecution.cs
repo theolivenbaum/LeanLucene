@@ -380,58 +380,65 @@ public sealed partial class IndexSearcher
             else
             {
                 // Should-only: streaming OR merge across all Should PostingsEnums.
-                // Uses stackalloc to track current docId per enum — no heap allocation.
-                Span<int> currentDocs = stackalloc int[shouldCount];
-                for (int i = 0; i < shouldCount; i++)
-                    currentDocs[i] = shouldEnums![i].MoveNext() ? shouldEnums[i].DocId : int.MaxValue;
-
-                while (true)
+                // Linear scan for N <= 16 (branch-predictor-friendly), heap for larger N.
+                const int HeapThreshold = 16;
+                var localShouldEnums = shouldEnums!;
+                if (shouldCount <= HeapThreshold)
                 {
-                    // Find minimum docId across all enums
-                    int minDoc = int.MaxValue;
+                    Span<int> currentDocs = stackalloc int[shouldCount];
                     for (int i = 0; i < shouldCount; i++)
-                    {
-                        if (currentDocs[i] < minDoc)
-                            minDoc = currentDocs[i];
-                    }
-                    if (minDoc == int.MaxValue) break;
+                        currentDocs[i] = localShouldEnums[i].MoveNext() ? localShouldEnums[i].DocId : int.MaxValue;
 
-                    if (hasDeletions && !reader.IsLive(minDoc))
+                    while (true)
                     {
+                        int minDoc = int.MaxValue;
+                        for (int i = 0; i < shouldCount; i++)
+                        {
+                            if (currentDocs[i] < minDoc)
+                                minDoc = currentDocs[i];
+                        }
+                        if (minDoc == int.MaxValue) break;
+
+                        if (hasDeletions && !reader.IsLive(minDoc))
+                        {
+                            for (int i = 0; i < shouldCount; i++)
+                            {
+                                if (currentDocs[i] == minDoc)
+                                    currentDocs[i] = localShouldEnums[i].MoveNext() ? localShouldEnums[i].DocId : int.MaxValue;
+                            }
+                            continue;
+                        }
+
+                        float score = 0f;
                         for (int i = 0; i < shouldCount; i++)
                         {
                             if (currentDocs[i] == minDoc)
-                                currentDocs[i] = shouldEnums![i].MoveNext() ? shouldEnums[i].DocId : int.MaxValue;
+                            {
+                                int docLength = shouldFieldLens![i] is { } fl && (uint)minDoc < (uint)fl.Length ? fl[minDoc] : 1;
+                                score += ApplyFieldBoost(shouldFieldBoosts![i], minDoc, ScoreTerm(
+                                    shouldFactors![i].Idf, shouldFactors[i].K1BOverAvgDL, shouldFactors[i].CollectionProb,
+                                    localShouldEnums[i].Freq, docLength));
+                                currentDocs[i] = localShouldEnums[i].MoveNext() ? localShouldEnums[i].DocId : int.MaxValue;
+                            }
                         }
-                        continue;
-                    }
 
-                    // Sum scores for all enums positioned at minDoc (using per-field lengths)
-                    float score = 0f;
-                    for (int i = 0; i < shouldCount; i++)
-                    {
-                        if (currentDocs[i] == minDoc)
+                        bool excluded = false;
+                        for (int i = 0; i < mustNotCount; i++)
                         {
-                            int docLength = shouldFieldLens![i] is { } sfl && (uint)minDoc < (uint)sfl.Length ? sfl[minDoc] : 1;
-                            score += ApplyFieldBoost(shouldFieldBoosts![i], minDoc, ScoreTerm(
-                                shouldFactors![i].Idf, shouldFactors[i].K1BOverAvgDL, shouldFactors[i].CollectionProb,
-                                shouldEnums![i].Freq, docLength));
-                            currentDocs[i] = shouldEnums[i].MoveNext() ? shouldEnums[i].DocId : int.MaxValue;
+                            if (mustNotEnums![i].Advance(minDoc) && mustNotEnums[i].DocId == minDoc)
+                            {
+                                excluded = true;
+                                break;
+                            }
                         }
+                        if (!excluded)
+                            collector.Collect(docBase + minDoc, score);
                     }
-
-                    // Check MustNot exclusion (Advance is forward-only; minDoc is monotonic)
-                    bool excluded = false;
-                    for (int i = 0; i < mustNotCount; i++)
-                    {
-                        if (mustNotEnums![i].Advance(minDoc) && mustNotEnums[i].DocId == minDoc)
-                        {
-                            excluded = true;
-                            break;
-                        }
-                    }
-                    if (!excluded)
-                        collector.Collect(docBase + minDoc, score);
+                }
+                else
+                {
+                    ExecuteShouldOnlyHeap(localShouldEnums, shouldFieldLens!, shouldFieldBoosts!, shouldFactors!,
+                        mustNotEnums, reader, ref collector, docBase, hasDeletions, shouldCount, mustNotCount);
                 }
             }
         }
@@ -835,5 +842,149 @@ public sealed partial class IndexSearcher
                 }
         }
         return results;
+    }
+
+    // --- Should-only heap merge for large clause counts (MoreLikeThis, etc.) ---
+
+    private void ExecuteShouldOnlyHeap(
+        PostingsEnum[] se, int[]?[] sfl, float[]?[] sfb,
+        (float Idf, float K1BOverAvgDL, float CollectionProb)[] shouldFactors,
+        PostingsEnum[]? mustNotEnums,
+        SegmentReader reader, ref TopNCollector collector,
+        int docBase, bool hasDeletions, int shouldCount, int mustNotCount)
+    {
+        Span<int> heapDocs = stackalloc int[shouldCount];
+        Span<int> heapIdx = stackalloc int[shouldCount];
+        int heapSize = 0;
+
+        // Build initial heap
+        for (int i = 0; i < shouldCount; i++)
+        {
+            if (se[i].MoveNext())
+            {
+                heapDocs[heapSize] = se[i].DocId;
+                heapIdx[heapSize] = i;
+                heapSize++;
+                SiftUp(heapDocs, heapIdx, heapSize - 1);
+            }
+        }
+
+        while (heapSize > 0)
+        {
+            int minDoc = heapDocs[0];
+
+            if (!hasDeletions || reader.IsLive(minDoc))
+            {
+                // Sum scores for all enums at minDoc — scan the full array (shouldCount is small enough)
+                float score = 0f;
+                bool advanced = false;
+                for (int i = 0; i < shouldCount; i++)
+                {
+                    if (se[i].DocId == minDoc)
+                    {
+                        int docLength = sfl[i] is { } fl && (uint)minDoc < (uint)fl.Length ? fl[minDoc] : 1;
+                        score += ApplyFieldBoost(sfb[i], minDoc, ScoreTerm(
+                            shouldFactors[i].Idf, shouldFactors[i].K1BOverAvgDL, shouldFactors[i].CollectionProb,
+                            se[i].Freq, docLength));
+                        // Advance this enum out of the current doc
+                        if (se[i].MoveNext())
+                            advanced = true;
+                    }
+                }
+
+                // Check MustNot
+                bool excluded = false;
+                for (int i = 0; i < mustNotCount; i++)
+                {
+                    if (mustNotEnums![i].Advance(minDoc) && mustNotEnums[i].DocId == minDoc)
+                    {
+                        excluded = true;
+                        break;
+                    }
+                }
+                if (!excluded)
+                    collector.Collect(docBase + minDoc, score);
+
+                // If any enum advanced, we must be at a new doc — rebuild heap
+                if (advanced)
+                {
+                    heapSize = 0;
+                    for (int i = 0; i < shouldCount; i++)
+                    {
+                        if (!se[i].IsExhausted)
+                        {
+                            heapDocs[heapSize] = se[i].DocId;
+                            heapIdx[heapSize] = i;
+                            heapSize++;
+                        }
+                    }
+                    // Heapify: sift down from the middle
+                    for (int i = (heapSize >> 1) - 1; i >= 0; i--)
+                        SiftDown(heapDocs, heapIdx, i, heapSize);
+                }
+                else
+                {
+                    break; // all enums exhausted
+                }
+            }
+            else
+            {
+                // Deleted doc — advance all enums at minDoc and rebuild
+                for (int i = 0; i < shouldCount; i++)
+                {
+                    if (se[i].DocId == minDoc)
+                        se[i].MoveNext();
+                }
+                heapSize = 0;
+                for (int i = 0; i < shouldCount; i++)
+                {
+                    if (!se[i].IsExhausted)
+                    {
+                        heapDocs[heapSize] = se[i].DocId;
+                        heapIdx[heapSize] = i;
+                        heapSize++;
+                    }
+                }
+                for (int i = (heapSize >> 1) - 1; i >= 0; i--)
+                    SiftDown(heapDocs, heapIdx, i, heapSize);
+            }
+        }
+    }
+
+    // --- Binary min-heap helpers ---
+
+    private static void SiftUp(Span<int> heapDocs, Span<int> heapIdx, int idx)
+    {
+        int doc = heapDocs[idx];
+        int enumIdx = heapIdx[idx];
+        while (idx > 0)
+        {
+            int parent = (idx - 1) >> 1;
+            if (heapDocs[parent] <= doc) break;
+            heapDocs[idx] = heapDocs[parent];
+            heapIdx[idx] = heapIdx[parent];
+            idx = parent;
+        }
+        heapDocs[idx] = doc;
+        heapIdx[idx] = enumIdx;
+    }
+
+    private static void SiftDown(Span<int> heapDocs, Span<int> heapIdx, int idx, int heapSize)
+    {
+        int doc = heapDocs[idx];
+        int enumIdx = heapIdx[idx];
+        while (true)
+        {
+            int child = (idx << 1) + 1;
+            if (child >= heapSize) break;
+            if (child + 1 < heapSize && heapDocs[child + 1] < heapDocs[child])
+                child++;
+            if (doc <= heapDocs[child]) break;
+            heapDocs[idx] = heapDocs[child];
+            heapIdx[idx] = heapIdx[child];
+            idx = child;
+        }
+        heapDocs[idx] = doc;
+        heapIdx[idx] = enumIdx;
     }
 }

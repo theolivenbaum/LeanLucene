@@ -1,3 +1,4 @@
+using System.Buffers;
 using Rowles.LeanCorpus.Analysis.Stemmers;
 
 namespace Rowles.LeanCorpus.Analysis.Filters;
@@ -28,8 +29,39 @@ public sealed class StemTokenFilter : ISpanTokenFilter
         byte[]? payload,
         ISpanTokenSink sink)
     {
-        var stemmed = _stemmer.Stem(new string(text));
-        sink.Add(stemmed.AsSpan(), startOffset, endOffset, type, positionIncrement, payload);
+        ArgumentNullException.ThrowIfNull(sink);
+
+        if (_stemmer is ISpanStemmer spanStemmer)
+        {
+            const int StackThreshold = 128;
+            char[]? rented = null;
+            try
+            {
+                Span<char> buf = text.Length <= StackThreshold
+                    ? stackalloc char[text.Length]
+                    : (rented = ArrayPool<char>.Shared.Rent(text.Length)).AsSpan(0, text.Length);
+
+                int len = spanStemmer.Stem(text, buf);
+
+                if (len == text.Length && buf[..len].SequenceEqual(text))
+                {
+                    sink.Add(text, startOffset, endOffset, type, positionIncrement, payload);
+                }
+                else
+                {
+                    sink.Add(buf[..len], startOffset, endOffset, type, positionIncrement, payload);
+                }
+            }
+            finally
+            {
+                if (rented is not null) ArrayPool<char>.Shared.Return(rented);
+            }
+        }
+        else
+        {
+            var stemmed = _stemmer.Stem(new string(text));
+            sink.Add(stemmed.AsSpan(), startOffset, endOffset, type, positionIncrement, payload);
+        }
     }
 
 }

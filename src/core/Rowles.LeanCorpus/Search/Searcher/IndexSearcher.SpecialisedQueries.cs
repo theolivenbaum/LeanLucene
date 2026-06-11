@@ -326,7 +326,14 @@ public sealed partial class IndexSearcher
             return;
         }
 
-        var fieldPrefix = $"{query.Field}\x00";
+        // Extract leading literal prefix before the first wildcard to narrow FST subtree.
+        // Only use prefix narrowing when the prefix is at least 2 characters — for 1-char
+        // prefixes the FST subtree is too broad and the filtering overhead dominates.
+        var leadingPrefix = GetLeadingLiteralPrefix(query.Pattern);
+        bool usePrefixNarrowing = leadingPrefix.Length >= 2;
+        var fieldPrefix = usePrefixNarrowing
+            ? $"{query.Field}\x00{leadingPrefix}"
+            : $"{query.Field}\x00";
         float boost = query.Boost;
         float avgDocLength = _stats.GetAvgFieldLength(query.Field);
         int docBase = reader.DocBase;
@@ -341,7 +348,22 @@ public sealed partial class IndexSearcher
         {
             if (globalDFs.Count == 0)
             {
-                var matchingOffsets = reader.GetTermOffsetsMatching(fieldPrefix, query.Pattern.AsSpan());
+                List<long> matchingOffsets;
+                if (!usePrefixNarrowing)
+                {
+                    matchingOffsets = reader.GetTermOffsetsMatching(fieldPrefix, query.Pattern.AsSpan());
+                }
+                else
+                {
+                    var candidates = reader.GetTermsWithPrefix(fieldPrefix);
+                    matchingOffsets = [];
+                    int fieldLen = query.Field.Length + 1;
+                    foreach (var (term, offset) in candidates)
+                    {
+                        if (WildcardQuery.Matches(term.AsSpan(fieldLen), query.Pattern.AsSpan()))
+                            matchingOffsets.Add(offset);
+                    }
+                }
                 if (matchingOffsets.Count == 0) return;
 
                 foreach (var postingsOffset in matchingOffsets)
@@ -356,7 +378,22 @@ public sealed partial class IndexSearcher
                 return;
             }
 
-            var matchingTerms = reader.GetTermsMatching(fieldPrefix, query.Pattern.AsSpan());
+            List<(string Term, long Offset)> matchingTerms;
+            if (!usePrefixNarrowing)
+            {
+                matchingTerms = reader.GetTermsMatching(fieldPrefix, query.Pattern.AsSpan());
+            }
+            else
+            {
+                var candidates = reader.GetTermsWithPrefix(fieldPrefix);
+                matchingTerms = [];
+                int fieldLen = query.Field.Length + 1;
+                foreach (var (term, offset) in candidates)
+                {
+                    if (WildcardQuery.Matches(term.AsSpan(fieldLen), query.Pattern.AsSpan()))
+                        matchingTerms.Add((term, offset));
+                }
+            }
             if (matchingTerms.Count == 0) return;
 
             foreach (var (qualifiedTerm, postingsOffset) in matchingTerms)
@@ -439,6 +476,19 @@ public sealed partial class IndexSearcher
 
         prefix = pattern[..^1];
         return true;
+    }
+
+    /// <summary>
+    /// Extracts the leading literal prefix of a wildcard pattern up to (but not including)
+    /// the first <c>*</c> or <c>?</c> wildcard. Returns an empty string if the pattern
+    /// starts with a wildcard. Used to narrow FST subtree walks.
+    /// </summary>
+    private static string GetLeadingLiteralPrefix(string pattern)
+    {
+        int end = 0;
+        while (end < pattern.Length && pattern[end] is not '*' and not '?')
+            end++;
+        return end == 0 ? string.Empty : pattern[..end];
     }
 
     /// <summary>
