@@ -264,10 +264,9 @@ public sealed class KStemmer : ISpanStemmer
             return word.Length;
         }
 
-        // Lowercase into output, then delegate to the shared core.
+        // Lowercase into output via SIMD, then delegate to the shared core.
         int len = word.Length;
-        for (int i = 0; i < len; i++)
-            output[i] = char.ToLowerInvariant(word[i]);
+        AsciiCharInspector.AsciiToLower(word, output);
 
         return StemCore(output, len);
     }

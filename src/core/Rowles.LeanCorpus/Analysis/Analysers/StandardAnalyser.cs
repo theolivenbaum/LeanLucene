@@ -46,7 +46,7 @@ public sealed class StandardAnalyser : IAnalyser
             if (len > _lowerBuf.Length)
                 _lowerBuf = new char[Math.Max(_lowerBuf.Length * 2, len)];
 
-            span.ToLowerInvariant(_lowerBuf.AsSpan(0, len));
+            AsciiCharInspector.AsciiToLower(span, _lowerBuf.AsSpan(0, len));
             var lowerSpan = _lowerBuf.AsSpan(0, len);
 
             sink.Add(lowerSpan, start, end);

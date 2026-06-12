@@ -20,8 +20,7 @@ public sealed class LowercaseFilter : ISpanTokenFilter
     /// <param name="buffer">The character buffer to transform.</param>
     public void Apply(Span<char> buffer)
     {
-        for (int i = 0; i < buffer.Length; i++)
-            buffer[i] = char.ToLowerInvariant(buffer[i]);
+        AsciiCharInspector.AsciiToLowerInPlace(buffer);
     }
 
     /// <inheritdoc/>

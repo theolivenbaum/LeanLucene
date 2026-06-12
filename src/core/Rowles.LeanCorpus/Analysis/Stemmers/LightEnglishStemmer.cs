@@ -40,10 +40,9 @@ public sealed class LightEnglishStemmer : ISpanStemmer
             return word.Length;
         }
 
-        // Lowercase into output.
+        // Lowercase into output via SIMD.
         int len = word.Length;
-        for (int i = 0; i < len; i++)
-            output[i] = char.ToLowerInvariant(word[i]);
+        AsciiCharInspector.AsciiToLower(word, output);
 
         var lowered = output[..len];
 
