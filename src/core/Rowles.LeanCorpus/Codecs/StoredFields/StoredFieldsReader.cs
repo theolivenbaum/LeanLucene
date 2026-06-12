@@ -160,6 +160,11 @@ internal sealed class StoredFieldsReader : IDisposable
 
     internal Dictionary<string, List<StoredFieldValue>> ReadDocumentValues(int docId)
     {
+        return ReadDocumentValues(docId, null);
+    }
+
+    internal Dictionary<string, List<StoredFieldValue>> ReadDocumentValues(int docId, ISet<string>? fieldsToLoad)
+    {
         var br = PositionDocumentReader(docId);
 
         int fieldCount = br.ReadInt32();
@@ -171,6 +176,26 @@ internal sealed class StoredFieldsReader : IDisposable
             string name = System.Text.Encoding.UTF8.GetString(br.ReadBytes(nameLen));
 
             int valueCount = br.ReadInt32();
+
+            if (fieldsToLoad is not null && !fieldsToLoad.Contains(name))
+            {
+                for (int v = 0; v < valueCount; v++)
+                {
+                    if (_version >= 6)
+                    {
+                        br.ReadByte(); // kind
+                        int valueLength = br.ReadInt32();
+                        br.BaseStream.Seek(valueLength, SeekOrigin.Current);
+                    }
+                    else
+                    {
+                        int valueLength = br.ReadInt32();
+                        br.BaseStream.Seek(valueLength, SeekOrigin.Current);
+                    }
+                }
+                continue;
+            }
+
             var values = new List<StoredFieldValue>(valueCount);
             for (int v = 0; v < valueCount; v++)
             {

@@ -78,7 +78,7 @@ public sealed partial class IndexSearcher
                 break;
             }
         }
-        var stored = GetStoredFields(globalId);
+        var stored = GetStoredFields(globalId, new HashSet<string> { fieldName });
         if (stored.TryGetValue(fieldName, out var sv) && sv.Count > 0
             && double.TryParse(sv[0], System.Globalization.CultureInfo.InvariantCulture, out var parsed))
             return parsed;
@@ -101,7 +101,7 @@ public sealed partial class IndexSearcher
                 break;
             }
         }
-        var stored = GetStoredFields(globalId);
+        var stored = GetStoredFields(globalId, new HashSet<string> { fieldName });
         if (stored.TryGetValue(fieldName, out var sv) && sv.Count > 0)
             return sv[0];
         return string.Empty;

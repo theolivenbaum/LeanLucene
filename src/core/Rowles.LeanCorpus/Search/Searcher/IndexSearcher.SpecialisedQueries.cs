@@ -243,7 +243,7 @@ public sealed partial class IndexSearcher
                 continue;
             }
 
-            var stored = reader.GetStoredFields(docId);
+            var stored = reader.GetStoredFields(docId, new HashSet<string> { query.Field });
             if (stored.TryGetValue(query.Field, out var values) && values.Count > 0 && double.TryParse(values[0], out var val))
             {
                 if (val >= query.Min && val <= query.Max)

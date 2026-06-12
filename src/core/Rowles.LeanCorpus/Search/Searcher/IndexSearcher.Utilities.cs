@@ -8,11 +8,20 @@ public sealed partial class IndexSearcher
     /// <summary>Retrieves stored fields for a global document ID.</summary>
     public IReadOnlyDictionary<string, IReadOnlyList<string>> GetStoredFields(int globalDocId)
     {
+        return GetStoredFields(globalDocId, null);
+    }
+
+    /// <summary>
+    /// Retrieves stored fields for a global document ID, optionally filtering to the given set of field names.
+    /// When <paramref name="fieldsToLoad"/> is null, all fields are returned.
+    /// </summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<string>> GetStoredFields(int globalDocId, ISet<string>? fieldsToLoad)
+    {
         for (int i = 0; i < _readers.Count; i++)
         {
             int nextBase = i + 1 < _docBases.Length ? _docBases[i + 1] : _totalDocCount;
             if (globalDocId >= _docBases[i] && globalDocId < nextBase)
-                return _readers[i].GetStoredFields(globalDocId - _docBases[i]);
+                return _readers[i].GetStoredFields(globalDocId - _docBases[i], fieldsToLoad);
         }
         return new Dictionary<string, IReadOnlyList<string>>();
     }
@@ -20,11 +29,20 @@ public sealed partial class IndexSearcher
     /// <summary>Retrieves stored binary fields for a global document ID.</summary>
     public IReadOnlyDictionary<string, IReadOnlyList<byte[]>> GetStoredBinaryFields(int globalDocId)
     {
+        return GetStoredBinaryFields(globalDocId, null);
+    }
+
+    /// <summary>
+    /// Retrieves stored binary fields for a global document ID, optionally filtering to the given set of field names.
+    /// When <paramref name="fieldsToLoad"/> is null, all fields are returned.
+    /// </summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<byte[]>> GetStoredBinaryFields(int globalDocId, ISet<string>? fieldsToLoad)
+    {
         for (int i = 0; i < _readers.Count; i++)
         {
             int nextBase = i + 1 < _docBases.Length ? _docBases[i + 1] : _totalDocCount;
             if (globalDocId >= _docBases[i] && globalDocId < nextBase)
-                return _readers[i].GetStoredBinaryFields(globalDocId - _docBases[i]);
+                return _readers[i].GetStoredBinaryFields(globalDocId - _docBases[i], fieldsToLoad);
         }
 
         return new Dictionary<string, IReadOnlyList<byte[]>>();
@@ -255,7 +273,7 @@ public sealed partial class IndexSearcher
                 }
                 else
                 {
-                    var stored = reader.GetStoredFields(localDocId);
+                    var stored = reader.GetStoredFields(localDocId, new HashSet<string> { facetField });
                     if (stored.TryGetValue(facetField, out var values))
                     {
                         foreach (var v in values)
