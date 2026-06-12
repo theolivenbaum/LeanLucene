@@ -220,6 +220,9 @@ internal static class Program
             return 1;
         }
 
+        // Release shared index resources now that all suites have finished.
+        SharedStandardIndex.Cleanup();
+
         // Build and write consolidated report + index.json
         var report = BenchmarkRunReportBuilder.Build(
             runId,

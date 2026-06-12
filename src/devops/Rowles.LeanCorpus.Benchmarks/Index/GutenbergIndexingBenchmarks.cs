@@ -25,7 +25,7 @@ namespace Rowles.LeanCorpus.Benchmarks;
 [HtmlExporter]
 [JsonExporterAttribute.Full]
 [MarkdownExporterAttribute.GitHub]
-[SimpleJob]
+[SimpleJob(warmupCount: 2, iterationCount: 5)]
 public class GutenbergIndexingBenchmarks
 {
     private BookParagraph[] _paragraphs = [];

@@ -18,7 +18,7 @@ namespace Rowles.LeanCorpus.Benchmarks;
 [MarkdownExporterAttribute.GitHub]
 [RPlotExporter]
 [KeepBenchmarkFiles]
-[SimpleJob]
+[SimpleJob(warmupCount: 2, iterationCount: 5)]
 public class AsyncIndexingBenchmarks
 {
     public static IEnumerable<int> DocCounts => BenchmarkData.GetDocCounts(BenchmarkData.DefaultDocCount);

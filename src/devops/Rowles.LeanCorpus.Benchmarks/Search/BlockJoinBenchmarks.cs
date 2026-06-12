@@ -28,7 +28,7 @@ namespace Rowles.LeanCorpus.Benchmarks;
 [MarkdownExporterAttribute.GitHub]
 [RPlotExporter]
 [KeepBenchmarkFiles]
-[SimpleJob]
+[SimpleJob(warmupCount: 1, iterationCount: 3)]
 [InvocationCount(1)]
 public class BlockJoinIndexBenchmarks
 {

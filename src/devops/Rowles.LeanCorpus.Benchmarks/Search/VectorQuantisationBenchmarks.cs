@@ -39,49 +39,72 @@ public class VectorQuantisationBenchmarks
     private const string FieldName = "emb";
     private const int TopK = 10;
 
-    private string _indexPath = string.Empty;
-    private LeanIndexSearcher _searcher = default!;
+    // Index state — guarded by (DocCount, Dimension, Quantisation) key
+    private static readonly Lock s_gate = new();
+    private static (int docCount, int dim, VectorQuantisation q) s_lastKey;
+    private static bool s_built;
+    private static string s_indexPath = string.Empty;
+    private static LeanIndexSearcher s_searcher = default!;
     private float[] _query = [];
 
     [GlobalSetup]
     public void Setup()
     {
-        _indexPath = Path.Combine(Path.GetTempPath(), "lc_vq_bench_" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(_indexPath);
-
-        var rnd = new Random(7);
-        var vectors = new float[DocCount][];
-        for (int i = 0; i < DocCount; i++)
+        var key = (DocCount, Dimension, Quantisation);
+        if (!s_built || s_lastKey != key)
         {
-            var v = new float[Dimension];
-            for (int d = 0; d < Dimension; d++)
-                v[d] = (float)(rnd.NextDouble() * 2 - 1);
-            vectors[i] = v;
+            lock (s_gate)
+            {
+                if (!s_built || s_lastKey != key)
+                {
+                    s_indexPath = Path.Combine(Path.GetTempPath(),
+                        "lc_vq_bench_" + Guid.NewGuid().ToString("N"));
+                    Directory.CreateDirectory(s_indexPath);
+
+                    var rnd = new Random(7);
+                    var vectors = new float[DocCount][];
+                    for (int i = 0; i < DocCount; i++)
+                    {
+                        var v = new float[Dimension];
+                        for (int d = 0; d < Dimension; d++)
+                            v[d] = (float)(rnd.NextDouble() * 2 - 1);
+                        vectors[i] = v;
+                    }
+
+                    var cfg = new LeanIndexWriterConfig
+                    {
+                        BuildHnswOnFlush = true,
+                        NormaliseVectors = true,
+                        VectorQuantisation = Quantisation,
+                        HnswBuildConfig = new HnswBuildConfig
+                            { M = 16, M0 = 32, EfConstruction = 100 },
+                        HnswSeed = 1L,
+                    };
+
+                    using var writer = new LeanIndexWriter(
+                        new MMapDirectory(s_indexPath), cfg);
+                    for (int i = 0; i < vectors.Length; i++)
+                    {
+                        var doc = new LeanDocument();
+                        doc.Add(new VectorField(FieldName,
+                            new ReadOnlyMemory<float>(vectors[i])));
+                        writer.AddDocument(doc);
+                    }
+                    writer.Commit();
+
+                    s_searcher = new LeanIndexSearcher(
+                        new MMapDirectory(s_indexPath));
+
+                    s_lastKey = key;
+                    s_built = true;
+                }
+            }
         }
-
-        var cfg = new LeanIndexWriterConfig
-        {
-            BuildHnswOnFlush = true,
-            NormaliseVectors = true,
-            VectorQuantisation = Quantisation,
-            HnswBuildConfig = new HnswBuildConfig { M = 16, M0 = 32, EfConstruction = 100 },
-            HnswSeed = 1L,
-        };
-
-        using var writer = new LeanIndexWriter(new MMapDirectory(_indexPath), cfg);
-        for (int i = 0; i < vectors.Length; i++)
-        {
-            var doc = new LeanDocument();
-            doc.Add(new VectorField(FieldName, new ReadOnlyMemory<float>(vectors[i])));
-            writer.AddDocument(doc);
-        }
-        writer.Commit();
-
-        _searcher = new LeanIndexSearcher(new MMapDirectory(_indexPath));
 
         _query = new float[Dimension];
+        var qrnd = new Random(7);
         for (int d = 0; d < Dimension; d++)
-            _query[d] = (float)(rnd.NextDouble() * 2 - 1);
+            _query[d] = (float)(qrnd.NextDouble() * 2 - 1);
     }
 
     [Benchmark(Baseline = true, Description = "HNSW search")]
@@ -89,13 +112,12 @@ public class VectorQuantisationBenchmarks
     public int Search()
     {
         var q = new VectorQuery(FieldName, _query, topK: TopK);
-        return _searcher.Search(q, TopK).TotalHits;
+        return s_searcher.Search(q, TopK).TotalHits;
     }
 
     [GlobalCleanup]
     public void Cleanup()
     {
-        _searcher.Dispose();
-        try { Directory.Delete(_indexPath, true); } catch { }
+        // Static resources persist for class lifetime.
     }
 }

@@ -1,10 +1,5 @@
 using BenchmarkDotNet.Attributes;
-using IODirectory = System.IO.Directory;
-using LeanDocument = Rowles.LeanCorpus.Document.LeanDocument;
 using LeanIndexSearcher = Rowles.LeanCorpus.Search.Searcher.IndexSearcher;
-using LeanMMapDirectory = Rowles.LeanCorpus.Store.MMapDirectory;
-using LeanStringField = Rowles.LeanCorpus.Document.Fields.StringField;
-using LeanTextField = Rowles.LeanCorpus.Document.Fields.TextField;
 
 namespace Rowles.LeanCorpus.Benchmarks;
 
@@ -31,8 +26,6 @@ public class TermInSetQueryBenchmarks
     [Params(5, 20, 100)]
     public int SetSize { get; set; } = 20;
 
-    private string _leanIndexPath = string.Empty;
-    private LeanMMapDirectory? _leanDirectory;
     private LeanIndexSearcher? _leanSearcher;
     private string[] _terms = [];
 
@@ -57,17 +50,15 @@ public class TermInSetQueryBenchmarks
     [GlobalSetup]
     public void Setup()
     {
-        var documents = BenchmarkData.BuildDocuments(DocumentCount);
+        SharedStandardIndex.EnsureInitialised(DocumentCount);
+        _leanSearcher = SharedStandardIndex.LeanSearcher;
         _terms = Vocabulary.Take(SetSize).ToArray();
-        BuildLeanIndex(documents);
     }
 
     [GlobalCleanup]
     public void Cleanup()
     {
-        _leanSearcher?.Dispose();
-        if (!string.IsNullOrWhiteSpace(_leanIndexPath) && IODirectory.Exists(_leanIndexPath))
-            IODirectory.Delete(_leanIndexPath, recursive: true);
+        // Lean resources owned by SharedStandardIndex; do not dispose.
     }
 
     [Benchmark(Baseline = true)]
@@ -85,22 +76,4 @@ public class TermInSetQueryBenchmarks
         return _leanSearcher!.Search(builder.Build(), TopN).TotalHits;
     }
 
-    private void BuildLeanIndex(string[] documents)
-    {
-        _leanIndexPath = Path.Combine(Path.GetTempPath(), $"leancorpus-bench-terminset-{Guid.NewGuid():N}");
-        IODirectory.CreateDirectory(_leanIndexPath);
-        _leanDirectory = new LeanMMapDirectory(_leanIndexPath);
-        using var writer = new Rowles.LeanCorpus.Index.Indexer.IndexWriter(
-            _leanDirectory,
-            new Rowles.LeanCorpus.Index.Indexer.IndexWriterConfig { MaxBufferedDocs = 10_000, RamBufferSizeMB = 256 });
-        for (int i = 0; i < documents.Length; i++)
-        {
-            var doc = new LeanDocument();
-            doc.Add(new LeanStringField("id", i.ToString(System.Globalization.CultureInfo.InvariantCulture)));
-            doc.Add(new LeanTextField("body", documents[i]));
-            writer.AddDocument(doc);
-        }
-        writer.Commit();
-        _leanSearcher = new LeanIndexSearcher(_leanDirectory);
-    }
 }

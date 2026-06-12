@@ -35,38 +35,59 @@ public class HnswSearchBenchmarks
     [Params(64, 128)]
     public int Dimension { get; set; }
 
-    private string _hnswPath = string.Empty;
-    private string _flatPath = string.Empty;
-    private LeanIndexSearcher _hnswSearcher = default!;
-    private LeanIndexSearcher _flatSearcher = default!;
+    // Index state — guarded by (DocCount, Dimension) key
+    private static readonly Lock s_gate = new();
+    private static (int docCount, int dim) s_lastKey;
+    private static bool s_built;
+    private static string s_hnswPath = string.Empty;
+    private static string s_flatPath = string.Empty;
+    private static LeanIndexSearcher s_hnswSearcher = default!;
+    private static LeanIndexSearcher s_flatSearcher = default!;
     private float[] _query = [];
 
     [GlobalSetup]
     public void Setup()
     {
-        _hnswPath = Path.Combine(Path.GetTempPath(), "ll_hnsw_bench_" + Guid.NewGuid().ToString("N"));
-        _flatPath = Path.Combine(Path.GetTempPath(), "ll_flat_bench_" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(_hnswPath);
-        Directory.CreateDirectory(_flatPath);
-
-        var rnd = new Random(7);
-        var vectors = new float[DocCount][];
-        for (int i = 0; i < DocCount; i++)
+        var key = (DocCount, Dimension);
+        if (!s_built || s_lastKey != key)
         {
-            var v = new float[Dimension];
-            for (int d = 0; d < Dimension; d++)
-                v[d] = (float)(rnd.NextDouble() * 2 - 1);
-            vectors[i] = v;
+            lock (s_gate)
+            {
+                if (!s_built || s_lastKey != key)
+                {
+                    s_hnswPath = Path.Combine(Path.GetTempPath(),
+                        "ll_hnsw_bench_" + Guid.NewGuid().ToString("N"));
+                    s_flatPath = Path.Combine(Path.GetTempPath(),
+                        "ll_flat_bench_" + Guid.NewGuid().ToString("N"));
+                    Directory.CreateDirectory(s_hnswPath);
+                    Directory.CreateDirectory(s_flatPath);
+
+                    var rnd = new Random(7);
+                    var vectors = new float[DocCount][];
+                    for (int i = 0; i < DocCount; i++)
+                    {
+                        var v = new float[Dimension];
+                        for (int d = 0; d < Dimension; d++)
+                            v[d] = (float)(rnd.NextDouble() * 2 - 1);
+                        vectors[i] = v;
+                    }
+
+                    BuildIndex(s_hnswPath, vectors, hnsw: true);
+                    BuildIndex(s_flatPath, vectors, hnsw: false);
+
+                    s_hnswSearcher = new LeanIndexSearcher(new MMapDirectory(s_hnswPath));
+                    s_flatSearcher = new LeanIndexSearcher(new MMapDirectory(s_flatPath));
+
+                    s_lastKey = key;
+                    s_built = true;
+                }
+            }
         }
 
-        BuildIndex(_hnswPath, vectors, hnsw: true);
-        BuildIndex(_flatPath, vectors, hnsw: false);
-
-        _hnswSearcher = new LeanIndexSearcher(new MMapDirectory(_hnswPath));
-        _flatSearcher = new LeanIndexSearcher(new MMapDirectory(_flatPath));
-
         _query = new float[Dimension];
-        for (int d = 0; d < Dimension; d++) _query[d] = (float)(rnd.NextDouble() * 2 - 1);
+        var qrnd = new Random(7);
+        for (int d = 0; d < Dimension; d++)
+            _query[d] = (float)(qrnd.NextDouble() * 2 - 1);
     }
 
     private static void BuildIndex(string path, float[][] vectors, bool hnsw)
@@ -92,22 +113,19 @@ public class HnswSearchBenchmarks
     public int FlatScan()
     {
         var q = new LeanVectorQuery("emb", _query, topK: 10);
-        return _flatSearcher.Search(q, 10).TotalHits;
+        return s_flatSearcher.Search(q, 10).TotalHits;
     }
 
     [Benchmark(Description = "HNSW two-phase")]
     public int Hnsw()
     {
         var q = new LeanVectorQuery("emb", _query, topK: 10, efSearch: 64);
-        return _hnswSearcher.Search(q, 10).TotalHits;
+        return s_hnswSearcher.Search(q, 10).TotalHits;
     }
 
     [GlobalCleanup]
     public void Cleanup()
     {
-        _hnswSearcher.Dispose();
-        _flatSearcher.Dispose();
-        try { Directory.Delete(_hnswPath, true); } catch { }
-        try { Directory.Delete(_flatPath, true); } catch { }
+        // Static resources persist for class lifetime.
     }
 }
