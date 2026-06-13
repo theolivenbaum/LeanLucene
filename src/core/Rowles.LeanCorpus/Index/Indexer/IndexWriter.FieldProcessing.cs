@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Rowles.LeanCorpus.Analysis;
 using Rowles.LeanCorpus.Analysis.Analysers;
@@ -10,6 +11,8 @@ public sealed partial class IndexWriter
 {
     private void AddDocumentCore(LeanDocument doc, bool suppressFlush = false)
     {
+        using var activity = Diagnostics.LeanCorpusActivitySource.Source
+            .StartActivity(Diagnostics.LeanCorpusActivitySource.AddDocument);
         int localDocId = _buffer.DocCount;
         _buffer.StoredDocStarts.Add(_buffer.StoredFieldIds.Count);
         Dictionary<string, double>? numericDoc = null;
@@ -121,6 +124,8 @@ public sealed partial class IndexWriter
         }
 
         _spanPostingSink.Reset(fieldName, docId, budget, _config.TokenBudgetPolicy);
+        using var analyseActivity = Diagnostics.LeanCorpusActivitySource.Source
+            .StartActivity(Diagnostics.LeanCorpusActivitySource.Analyse);
         analyser.Analyse(input, _spanPostingSink);
         AddTokenCount(fieldName, docId, _spanPostingSink.AcceptedCount);
         _buffer.FieldNames.Add(fieldName);

@@ -21,4 +21,8 @@ internal static class LeanCorpusActivitySource
     internal const string BackupCopy = "leancorpus.index.backup.copy";
     internal const string BackupValidate = "leancorpus.index.backup.validate";
     internal const string BackupRestore = "leancorpus.index.backup.restore";
+    internal const string AddDocument = "leancorpus.index.add_document";
+    internal const string Analyse = "leancorpus.index.analyse";
+    internal const string DeleteQueue = "leancorpus.index.delete_queue";
+    internal const string DeleteApply = "leancorpus.index.delete_apply";
 }

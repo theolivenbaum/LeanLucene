@@ -10,7 +10,7 @@
     <ServerGarbageCollection>true</ServerGarbageCollection>
   </PropertyGroup>
   <!-- Benchmark projects: disable PGO and Server GC to avoid measurement artifacts (zero allocation tracking, timing noise) -->
-  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'Rowles.LeanCorpus.Benchmarks' Or '$(MSBuildProjectName)' == 'Rowles.LeanCorpus.Benchmarks.Compression'">
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'Rowles.LeanCorpus.Benchmarks' Or '$(MSBuildProjectName)' == 'Rowles.LeanCorpus.Benchmarks.Compression' Or '$(MSBuildProjectName)' == 'Rowles.LeanCorpus.Profiling'">
     <TargetFrameworks>net10.0;net11.0</TargetFrameworks>
     <TieredPGO>false</TieredPGO>
     <ServerGarbageCollection>false</ServerGarbageCollection>

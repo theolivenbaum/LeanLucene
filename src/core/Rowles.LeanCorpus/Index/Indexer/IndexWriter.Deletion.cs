@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Rowles.LeanCorpus.Codecs.TermDictionary;
 using Rowles.LeanCorpus.Search.Queries;
 using Rowles.LeanCorpus.Store;
@@ -13,6 +14,8 @@ public sealed partial class IndexWriter
     /// <param name="query">The term query identifying documents to delete.</param>
     public void DeleteDocuments(TermQuery query)
     {
+        using var activity = Diagnostics.LeanCorpusActivitySource.Source
+            .StartActivity(Diagnostics.LeanCorpusActivitySource.DeleteQueue);
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         lock (_writeLock)
         {
@@ -25,6 +28,8 @@ public sealed partial class IndexWriter
 
     private void ApplyPendingDeletions(List<SegmentInfo> segments)
     {
+        using var activity = Diagnostics.LeanCorpusActivitySource.Source
+            .StartActivity(Diagnostics.LeanCorpusActivitySource.DeleteApply);
         if (_pendingDeletes.Count == 0) return;
 
         _deleteQualifiedTermsBuffer.Clear();

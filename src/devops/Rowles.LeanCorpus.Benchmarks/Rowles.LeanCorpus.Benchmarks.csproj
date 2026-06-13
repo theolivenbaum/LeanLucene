@@ -23,4 +23,8 @@
     <OutputType>Exe</OutputType>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Rowles.LeanCorpus.Profiling" />
+  </ItemGroup>
+
 </Project>
