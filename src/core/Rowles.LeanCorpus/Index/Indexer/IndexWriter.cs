@@ -33,6 +33,10 @@ public sealed partial class IndexWriter : IDisposable
     private int _commitGeneration;
     private long _contentToken;
     private bool _contentChangedSinceCommit;
+    // Two-phase commit state
+    private int _preparedGeneration = -1;
+    private List<SegmentInfo>? _preparedSegments;
+    private long _preparedContentToken;
     private readonly List<SegmentInfo> _committedSegments = [];
     // Pending deletions: field  ->  term  ->  set of matching terms to delete
     private readonly List<(string field, string term, bool isSoftDelete)> _pendingDeletes = [];
@@ -536,7 +540,7 @@ public sealed partial class IndexWriter : IDisposable
                 if (_buffer.DocCount > 0)
                     FlushSegment();
 
-                var merger = new SegmentMerger(_directory, _config.MergeThreshold, _config.PostingsSkipInterval,
+                var merger = new SegmentMerger(_directory, _config.MergePolicy, _config.PostingsSkipInterval,
                     _config.SoftDeleteRetentionSeconds);
                 int localOrdinal = _nextSegmentOrdinal;
                 _nextSegmentOrdinal += sourceSegments.Count + 8;
@@ -562,6 +566,11 @@ public sealed partial class IndexWriter : IDisposable
     /// <c>segments_N</c> commit file, and applies the configured deletion policy.
     /// Schedules a background merge after the flush.
     /// </summary>
+    /// <remarks>
+    /// If <see cref="PrepareCommit"/> was called previously, this publishes the
+    /// prepared commit by atomically renaming the <c>.pending</c> file. Otherwise
+    /// it performs a full flush-and-commit cycle.
+    /// </remarks>
     /// <exception cref="ObjectDisposedException">Thrown if the writer has been disposed.</exception>
     public void Commit()
     {
@@ -575,6 +584,126 @@ public sealed partial class IndexWriter : IDisposable
             ExitIndexingOperation();
         }
     }
+
+    /// <summary>
+    /// Flushes all buffered documents and pending deletions to disk and writes a
+    /// <c>segments_N.pending</c> commit file WITHOUT publishing it as the current
+    /// commit point. The prepared commit is not visible to readers until
+    /// <see cref="Commit"/> is called.
+    /// </summary>
+    /// <remarks>
+    /// <para>Call <see cref="Commit"/> to publish the prepared commit, or
+    /// <see cref="Rollback"/> to discard it. The <c>.pending</c> file is durable
+    /// — if the process crashes after <c>PrepareCommit</c> but before
+    /// <c>Commit</c>, recovery will promote it on next open.</para>
+    /// <para>Only one prepared commit may be outstanding at a time. Calling
+    /// <c>PrepareCommit</c> again overwrites the previous prepared state.</para>
+    /// </remarks>
+    /// <exception cref="ObjectDisposedException">Thrown if the writer has been disposed.</exception>
+    public void PrepareCommit()
+    {
+        EnterIndexingOperation();
+        try
+        {
+            lock (_mergeIoLock)
+            lock (_writeLock)
+            {
+                // Apply pending deletions, flush DWPT pool, flush buffered docs.
+                var preFlushSegmentCount = _committedSegments.Count;
+                if (preFlushSegmentCount > 0 && _pendingDeletes.Count > 0)
+                    ApplyPendingDeletions(_committedSegments.GetRange(0, preFlushSegmentCount));
+
+                FlushDwptPool();
+                if (_buffer.DocCount > 0)
+                    FlushSegment();
+
+                if (_pendingDeletes.Count > 0)
+                    ApplyPendingDeletions(_committedSegments);
+
+                if (_contentChangedSinceCommit)
+                    _contentToken++;
+
+                int gen = _commitGeneration + 1;
+                WriteCommitFile(gen, pending: true);
+                _contentChangedSinceCommit = false;
+
+                _preparedGeneration = gen;
+                _preparedSegments = new List<SegmentInfo>(_committedSegments);
+                _preparedContentToken = _contentToken;
+            }
+        }
+        finally
+        {
+            ExitIndexingOperation();
+        }
+    }
+
+    /// <summary>
+    /// Discards a prepared commit created by <see cref="PrepareCommit"/>.
+    /// Deletes the <c>.pending</c> file and any segment files that were
+    /// created exclusively for the prepared commit. Has no effect if no
+    /// commit has been prepared.
+    /// </summary>
+    /// <exception cref="ObjectDisposedException">Thrown if the writer has been disposed.</exception>
+    public void Rollback()
+    {
+        EnterIndexingOperation();
+        try
+        {
+            lock (_mergeIoLock)
+            lock (_writeLock)
+            {
+                if (_preparedGeneration < 0)
+                    return;
+
+                // Delete the pending commit file.
+                var pendingPath = Path.Combine(_directory.DirectoryPath,
+                    $"segments_{_preparedGeneration}.pending");
+                try { File.Delete(pendingPath); } catch { /* best-effort */ }
+
+                // Delete segment files that exist only in the prepared state.
+                if (_preparedSegments is not null)
+                {
+                    var committedIds = new HashSet<string>(
+                        _committedSegments.Select(static s => s.SegmentId),
+                        StringComparer.Ordinal);
+                    foreach (var seg in _preparedSegments)
+                    {
+                        if (!committedIds.Contains(seg.SegmentId))
+                        {
+                            _committedSegments.Remove(seg);
+                            DeleteSegmentFiles(seg.SegmentId);
+                        }
+                    }
+                }
+
+                _preparedGeneration = -1;
+                _preparedSegments = null;
+            }
+        }
+        finally
+        {
+            ExitIndexingOperation();
+        }
+    }
+
+    private void DeleteSegmentFiles(string segId)
+    {
+        foreach (var file in Directory.GetFiles(_directory.DirectoryPath, segId + ".*"))
+        {
+            try { File.Delete(file); } catch { /* best-effort */ }
+        }
+        foreach (var file in Directory.GetFiles(_directory.DirectoryPath, segId + "_v_*.*"))
+        {
+            try { File.Delete(file); } catch { /* best-effort */ }
+        }
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> if a commit has been prepared via <see cref="PrepareCommit"/>
+    /// but not yet published via <see cref="Commit"/>.
+    /// </summary>
+    public bool HasPreparedCommit => _preparedGeneration >= 0;
 
     /// <summary>
     /// Force-merges all committed segments into a single segment, reclaiming disk space
@@ -591,6 +720,83 @@ public sealed partial class IndexWriter : IDisposable
         try
         {
             return CompactWithLocks();
+        }
+        finally
+        {
+            ExitIndexingOperation();
+        }
+    }
+
+    /// <summary>
+    /// Force-merges segments until the segment count reaches <paramref name="maxSegments"/>
+    /// or fewer. Merges the smallest unprotected segments first. This is a synchronous,
+    /// blocking operation.
+    /// </summary>
+    /// <param name="maxSegments">The target maximum number of segments. Must be at least 1.</param>
+    /// <returns>The total number of segments that were merged, or 0 if no merge was needed.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="maxSegments"/> is less than 1.</exception>
+    /// <exception cref="ObjectDisposedException">Thrown if the writer has been disposed.</exception>
+    public int ForceMerge(int maxSegments)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxSegments, 1);
+        EnterIndexingOperation();
+        try
+        {
+            int totalMerged = 0;
+            lock (_mergeIoLock)
+            lock (_writeLock)
+            {
+                // Flush and apply deletions first.
+                if (_pendingDeletes.Count > 0)
+                    ApplyPendingDeletions(_committedSegments);
+                if (_buffer.DocCount > 0)
+                    FlushSegment();
+
+                var protectedSegments = GetSnapshotProtectedSegments();
+
+                while (_committedSegments.Count > maxSegments)
+                {
+                    var mergeable = _committedSegments
+                        .Where(s => !protectedSegments.Contains(s.SegmentId))
+                        .ToList();
+
+                    if (mergeable.Count < 2)
+                        break;
+
+                    // Merge the smallest mergeable segments.
+                    mergeable.Sort(static (a, b) => a.DocCount.CompareTo(b.DocCount));
+                    int count = Math.Min(mergeable.Count, _committedSegments.Count - maxSegments + 1);
+                    var toMerge = mergeable.GetRange(0, count);
+
+                    var merger = new SegmentMerger(_directory, _config.MergePolicy, _config.PostingsSkipInterval,
+                        _config.SoftDeleteRetentionSeconds);
+                    var merged = merger.MergeAll(toMerge, ref _nextSegmentOrdinal);
+
+                    if (merged is null)
+                    {
+                        foreach (var seg in toMerge)
+                            _committedSegments.Remove(seg);
+                    }
+                    else
+                    {
+                        foreach (var seg in toMerge)
+                            _committedSegments.Remove(seg);
+                        _committedSegments.Add(merged);
+                    }
+
+                    totalMerged += toMerge.Count;
+                }
+
+                if (totalMerged > 0)
+                {
+                    _contentToken++;
+                    _commitGeneration++;
+                    WriteCommitFile(_commitGeneration);
+                    WriteCommitStats(_commitGeneration);
+                    _config.DeletionPolicy.OnCommit(_directory.DirectoryPath, _commitGeneration, GetSnapshotProtectedSegments());
+                }
+            }
+            return totalMerged;
         }
         finally
         {
@@ -628,7 +834,7 @@ public sealed partial class IndexWriter : IDisposable
 
             int mergeableCount = mergeable.Count;
 
-            var merger = new SegmentMerger(_directory, _config.MergeThreshold, _config.PostingsSkipInterval,
+            var merger = new SegmentMerger(_directory, _config.MergePolicy, _config.PostingsSkipInterval,
                 _config.SoftDeleteRetentionSeconds);
             var merged = merger.MergeAll(mergeable, ref _nextSegmentOrdinal);
 
@@ -680,6 +886,13 @@ public sealed partial class IndexWriter : IDisposable
         lock (_mergeIoLock)
         lock (_writeLock)
         {
+            if (_preparedGeneration >= 0)
+            {
+                // Publish the prepared commit by renaming .pending → final.
+                PublishPreparedCommit();
+                return;
+            }
+
             using var activity = Diagnostics.LeanCorpusActivitySource.Source
                 .StartActivity(Diagnostics.LeanCorpusActivitySource.Commit);
             activity?.SetTag("index.commit_generation", _commitGeneration + 1);
@@ -691,6 +904,34 @@ public sealed partial class IndexWriter : IDisposable
 
             activity?.SetTag("index.segment_count", _committedSegments.Count);
         }
+    }
+
+    private void PublishPreparedCommit()
+    {
+        var pendingPath = Path.Combine(_directory.DirectoryPath,
+            $"segments_{_preparedGeneration}.pending");
+        var finalPath = Path.Combine(_directory.DirectoryPath,
+            $"segments_{_preparedGeneration}");
+
+        // Atomically rename .pending → final commit file.
+        File.Move(pendingPath, finalPath, overwrite: false);
+
+        _commitGeneration = _preparedGeneration;
+        _contentToken = _preparedContentToken;
+        _contentChangedSinceCommit = false;
+
+        // Persist stats alongside the commit.
+        WriteCommitStats(_commitGeneration);
+
+        // Apply deletion policy to prune old commits.
+        _config.DeletionPolicy.OnCommit(_directory.DirectoryPath, _commitGeneration,
+            GetSnapshotProtectedSegments());
+
+        // Schedule background merge.
+        ScheduleBackgroundMerge();
+
+        _preparedGeneration = -1;
+        _preparedSegments = null;
     }
 
     private void CommitCore()
@@ -737,9 +978,12 @@ public sealed partial class IndexWriter : IDisposable
         ScheduleBackgroundMerge();
     }
 
-    private void WriteCommitFile(int generation)
+    private void WriteCommitFile(int generation, bool pending = false)
     {
         var commitFile = Path.Combine(_directory.DirectoryPath, $"segments_{generation}");
+        if (pending)
+            commitFile += ".pending";
+
         var segmentIds = new List<string>(_committedSegments.Count);
         foreach (var seg in _committedSegments)
             segmentIds.Add(seg.SegmentId);

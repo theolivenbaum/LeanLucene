@@ -77,8 +77,16 @@ public sealed class IndexWriterConfig
     /// <summary>
     /// Segment count threshold that triggers a tiered merge. When the number of segments
     /// at a given size tier reaches this value, the smallest are merged. Default: 10.
+    /// When <see cref="MergePolicy"/> is set to a non-default value, this property is ignored.
     /// </summary>
     public int MergeThreshold { get; set; } = 10;
+
+    /// <summary>
+    /// The merge policy used to select segments for merging. Defaults to
+    /// <see cref="TieredMergePolicy"/> with the configured <see cref="MergeThreshold"/>.
+    /// Set to <see cref="NoMergePolicy.Instance"/> to disable automatic merging.
+    /// </summary>
+    public IMergePolicy MergePolicy { get; set; } = new TieredMergePolicy(10);
 
     /// <summary>
     /// Maximum number of point values in a BKD tree leaf node. Smaller leaves give faster

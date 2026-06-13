@@ -36,13 +36,21 @@ public sealed class StringField : IField
     /// Defaults to <c>true</c>. Set to <c>false</c> to reduce indexing overhead when
     /// faceting, collapsing, or binary DocValues retrieval is not required.
     /// </param>
-    public StringField(string name, string value, bool stored, float boost, bool storeDocValues = true)
+    /// <param name="indexOptions">
+    /// Controls which postings data is written to the inverted index.
+    /// Defaults to <see cref="FieldIndexOptions.DocsAndFreqs"/> — exact-match fields
+    /// benefit from term frequencies for scoring but typically do not need positions.
+    /// Set to <see cref="FieldIndexOptions.DocsOnly"/> for filter-only string fields.
+    /// </param>
+    public StringField(string name, string value, bool stored, float boost, bool storeDocValues = true,
+        FieldIndexOptions indexOptions = FieldIndexOptions.DocsAndFreqs)
     {
         Name = FieldNameValidator.Validate(name, nameof(name));
         Value = value ?? throw new ArgumentNullException(nameof(value));
         IsStored = stored;
         Boost = FieldBoostValidator.Validate(boost, nameof(boost));
         StoreDocValues = storeDocValues;
+        IndexOptions = indexOptions;
     }
 
     /// <inheritdoc/>
@@ -65,4 +73,7 @@ public sealed class StringField : IField
 
     /// <inheritdoc/>
     public bool StoreDocValues { get; }
+
+    /// <inheritdoc/>
+    public FieldIndexOptions IndexOptions { get; }
 }

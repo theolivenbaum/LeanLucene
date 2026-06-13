@@ -24,7 +24,7 @@ public sealed partial class IndexWriter
             {
                 case TextField tf:
                     TrackFieldBoost(tf.Name, localDocId, tf.Boost);
-                    IndexTextField(tf.Name, tf.Value, localDocId);
+                    IndexTextField(tf.Name, tf.Value, localDocId, tf.IndexOptions);
                     if (tf.IsStored)
                     {
                         AppendStoredField(tf.Name, StoredFieldValue.FromString(tf.Value), mirrorStringToBinaryDocValues: false, storeDocValues: tf.StoreDocValues);
@@ -94,7 +94,7 @@ public sealed partial class IndexWriter
             FlushSegment();
     }
 
-    private void IndexTextField(string fieldName, string value, int docId)
+    private void IndexTextField(string fieldName, string value, int docId, FieldIndexOptions indexOptions)
     {
         // Apply char filters before tokenisation
         ReadOnlySpan<char> input = value.AsSpan();
@@ -123,7 +123,7 @@ public sealed partial class IndexWriter
                 throw new Analysis.TokenBudgetExceededException(_spanCountingSink.Count, budget);
         }
 
-        _spanPostingSink.Reset(fieldName, docId, budget, _config.TokenBudgetPolicy);
+        _spanPostingSink.Reset(fieldName, docId, budget, _config.TokenBudgetPolicy, indexOptions);
         using var analyseActivity = Diagnostics.LeanCorpusActivitySource.Source
             .StartActivity(Diagnostics.LeanCorpusActivitySource.Analyse);
         analyser.Analyse(input, _spanPostingSink);
@@ -349,6 +349,7 @@ public sealed partial class IndexWriter
         private int _budget;
         private Analysis.TokenBudgetPolicy _budgetPolicy;
         private int _position;
+        private FieldIndexOptions _fieldIndexOptions;
 
         public SpanPostingTokenSink(DocumentBufferState buffer, IndexWriterConfig config)
         {
@@ -358,13 +359,15 @@ public sealed partial class IndexWriter
 
         public int AcceptedCount { get; private set; }
 
-        public void Reset(string fieldName, int docId, int budget, Analysis.TokenBudgetPolicy budgetPolicy)
+        public void Reset(string fieldName, int docId, int budget, Analysis.TokenBudgetPolicy budgetPolicy,
+            FieldIndexOptions indexOptions)
         {
             _fieldName = fieldName;
             _docId = docId;
             _budget = budget;
             _budgetPolicy = budgetPolicy;
             _position = -1;
+            _fieldIndexOptions = indexOptions;
             AcceptedCount = 0;
         }
 
@@ -388,7 +391,8 @@ public sealed partial class IndexWriter
                 increment = 1;
             _position += increment;
 
-            _buffer.AccumulatePosting(_fieldName, text, _docId, _position, payload, _config.StorePayloads, startOffset, endOffset);
+            _buffer.AccumulatePosting(_fieldName, text, _docId, _position, payload, _config.StorePayloads,
+                _fieldIndexOptions, startOffset, endOffset);
             AcceptedCount++;
         }
     }

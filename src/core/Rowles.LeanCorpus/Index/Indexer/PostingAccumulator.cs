@@ -353,6 +353,102 @@ internal sealed class PostingAccumulator
 
     // ─────── Public API ───────
 
+    /// <summary>
+    /// Adds a posting with the field's index options controlling which data is stored.
+    /// This overload is the primary entry point for the indexing hot path.
+    /// </summary>
+    public void Add(int docId, int position, FieldIndexOptions indexOptions, int startOffset = 0, int endOffset = 0)
+    {
+        if ((int)indexOptions <= (int)FieldIndexOptions.DocsOnly)
+        {
+            // DocsOnly: skip frequency and position data entirely — only track the doc ID.
+            AddDocOnly(docId);
+            return;
+        }
+
+        _hasFreqs = true;
+        if ((int)indexOptions >= (int)FieldIndexOptions.DocsAndFreqsAndPositions)
+            _hasPositions = true;
+
+        if ((int)indexOptions >= (int)FieldIndexOptions.DocsAndFreqsAndPositionsAndOffsets)
+            _hasOffsets = true;
+
+        if (_hasPositions)
+        {
+            if (_hasOffsets && (startOffset != 0 || endOffset != 0))
+            {
+                _hasOffsets = true;
+                Add(docId, position);
+                StoreOffset(docId, _freqs[_count - 1] - 1, startOffset, endOffset);
+                return;
+            }
+            Add(docId, position);
+        }
+        else
+        {
+            // DocsAndFreqs: track freq but not positions.
+            AddDocAndFreq(docId);
+        }
+    }
+
+    /// <summary>
+    /// Adds a posting with a payload and the field's index options.
+    /// Payloads are only stored when positions are enabled.
+    /// </summary>
+    public void AddWithPayload(int docId, int position, byte[]? payload, FieldIndexOptions indexOptions,
+        int startOffset = 0, int endOffset = 0)
+    {
+        if ((int)indexOptions <= (int)FieldIndexOptions.DocsOnly)
+        {
+            AddDocOnly(docId);
+            return;
+        }
+
+        _hasFreqs = true;
+        if ((int)indexOptions >= (int)FieldIndexOptions.DocsAndFreqsAndPositions)
+        {
+            _hasPositions = true;
+            if ((int)indexOptions >= (int)FieldIndexOptions.DocsAndFreqsAndPositionsAndOffsets)
+                _hasOffsets = true;
+
+            if (_hasOffsets && (startOffset != 0 || endOffset != 0))
+            {
+                _hasOffsets = true;
+                AddWithPayload(docId, position, payload, startOffset, endOffset);
+                return;
+            }
+            AddWithPayload(docId, position, payload);
+        }
+        else
+        {
+            // DocsAndFreqs with payload: store freq, discard payload (no positions to attach to).
+            AddDocAndFreq(docId);
+        }
+    }
+
+    /// <summary>
+    /// Adds a doc ID + term frequency without position data.
+    /// Used when <see cref="FieldIndexOptions.DocsAndFreqs"/> is configured.
+    /// </summary>
+    private void AddDocAndFreq(int docId)
+    {
+        if (IsLastDoc(docId))
+        {
+            _freqs[_count - 1]++;
+            return;
+        }
+        if (_count == _docIdsLen) Grow();
+
+        int delta = _count == 0 ? docId : docId - _lastAbsoluteDocId;
+        _docIds[_count] = delta;
+        _freqs[_count] = 1;
+        _posStarts[_count] = NoPositionSentinel;
+        _posByteLens[_count] = 0;
+        _lastAbsoluteDocId = docId;
+        _count++;
+        InvalidateAbsoluteCache();
+    }
+
     public void Add(int docId, int position)
     {
         _hasFreqs = true;

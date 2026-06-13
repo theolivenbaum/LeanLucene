@@ -72,4 +72,7 @@ public sealed class StoredField : IField
     /// of its string value, so this defaults to <c>true</c>.
     /// </remarks>
     public bool StoreDocValues => true;
+
+    /// <inheritdoc/>
+    public FieldIndexOptions IndexOptions => FieldIndexOptions.DocsOnly;
 }

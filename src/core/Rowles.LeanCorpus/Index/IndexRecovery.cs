@@ -27,7 +27,10 @@ public static class IndexRecovery
     {
         // Clean up any leftover temp files from interrupted commits (writer-side only).
         if (cleanupOrphans)
+        {
             CleanupTempFiles(directoryPath);
+            PromotePendingCommits(directoryPath);
+        }
 
         var commitFiles = FindCommitFiles(directoryPath);
         if (commitFiles.Count == 0)
@@ -63,8 +66,9 @@ public static class IndexRecovery
         foreach (var file in Directory.GetFiles(directoryPath, "segments_*"))
         {
             var fileName = Path.GetFileName(file);
-            // Skip temp files
-            if (fileName.EndsWith(".tmp", StringComparison.Ordinal))
+            // Skip temp files and pending commit files
+            if (fileName.EndsWith(".tmp", StringComparison.Ordinal) ||
+                fileName.EndsWith(".pending", StringComparison.Ordinal))
                 continue;
             var genStr = fileName.AsSpan("segments_".Length);
             if (int.TryParse(genStr, out int gen))
@@ -184,6 +188,35 @@ public static class IndexRecovery
         catch
         {
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Promotes orphaned <c>segments_N.pending</c> files to full commits.
+    /// An orphaned pending file (no corresponding <c>segments_N</c>) indicates a crash
+    /// after <c>PrepareCommit</c> but before <c>Commit</c>. The prepared data is complete
+    /// and should be recovered.
+    /// </summary>
+    private static void PromotePendingCommits(string directoryPath)
+    {
+        foreach (var pendingFile in Directory.GetFiles(directoryPath, "segments_*.pending"))
+        {
+            var fileName = Path.GetFileName(pendingFile);
+            // Strip ".pending" suffix to get the target segments_N name.
+            var finalName = fileName.Substring(0, fileName.Length - ".pending".Length);
+            var finalPath = Path.Combine(directoryPath, finalName);
+
+            if (!File.Exists(finalPath))
+            {
+                try { File.Move(pendingFile, finalPath); }
+                catch (IOException) { } catch (UnauthorizedAccessException) { }
+            }
+            else
+            {
+                // Both .pending and final exist — the final commit won, discard the stale pending.
+                try { File.Delete(pendingFile); }
+                catch (IOException) { } catch (UnauthorizedAccessException) { }
+            }
         }
     }
 

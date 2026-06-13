@@ -108,7 +108,7 @@ internal sealed class DocumentsWriterPerThread
             {
                 case TextField tf:
                     TrackFieldBoost(tf.Name, localDocId, tf.Boost);
-                    IndexTextField(tf.Name, tf.Value, localDocId);
+                    IndexTextField(tf.Name, tf.Value, localDocId, tf.IndexOptions);
                     if (tf.IsStored)
                     {
                         AppendStored(tf.Name, StoredFieldValue.FromString(tf.Value), mirrorStringToBinaryDocValues: false, storeDocValues: tf.StoreDocValues);
@@ -186,10 +186,10 @@ internal sealed class DocumentsWriterPerThread
         }
     }
 
-    private void IndexTextField(string fieldName, string value, int docId)
+    private void IndexTextField(string fieldName, string value, int docId, FieldIndexOptions indexOptions)
     {
         var analyser = _fieldAnalysers.GetValueOrDefault(fieldName, _analyser);
-        _spanPostingSink.Reset(fieldName, docId);
+        _spanPostingSink.Reset(fieldName, docId, indexOptions);
         analyser.Analyse(value.AsSpan(), _spanPostingSink);
         AddTokenCount(fieldName, docId, _spanPostingSink.AcceptedCount);
         FieldNames.Add(fieldName);
@@ -400,6 +400,7 @@ internal sealed class DocumentsWriterPerThread
         private string _fieldName = string.Empty;
         private int _docId;
         private int _position;
+        private FieldIndexOptions _fieldIndexOptions;
 
         public SpanPostingTokenSink(DocumentsWriterPerThread owner)
         {
@@ -408,11 +409,12 @@ internal sealed class DocumentsWriterPerThread
 
         public int AcceptedCount { get; private set; }
 
-        public void Reset(string fieldName, int docId)
+        public void Reset(string fieldName, int docId, FieldIndexOptions indexOptions)
         {
             _fieldName = fieldName;
             _docId = docId;
             _position = -1;
+            _fieldIndexOptions = indexOptions;
             AcceptedCount = 0;
         }
 
@@ -435,12 +437,12 @@ internal sealed class DocumentsWriterPerThread
 
             if (_owner._storePayloads && (acc.HasPayloads || payload is { Length: > 0 }))
             {
-                acc.AddWithPayload(_docId, _position, payload, startOffset, endOffset);
+                acc.AddWithPayload(_docId, _position, payload, _fieldIndexOptions, startOffset, endOffset);
                 _owner._estimatedRamBytes += 12 + (payload?.Length ?? 0);
             }
             else
             {
-                acc.Add(_docId, _position, startOffset, endOffset);
+                acc.Add(_docId, _position, _fieldIndexOptions, startOffset, endOffset);
                 _owner._estimatedRamBytes += 12;
             }
 

@@ -44,4 +44,7 @@ public sealed class VectorField : IField
 
     /// <inheritdoc/>
     public bool StoreDocValues => false;
+
+    /// <inheritdoc/>
+    public FieldIndexOptions IndexOptions => FieldIndexOptions.DocsOnly;
 }

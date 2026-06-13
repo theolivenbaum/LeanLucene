@@ -25,4 +25,15 @@ public interface IField
     /// <c>false</c> for <see cref="TextField"/>, <see cref="StoredField"/>, and <see cref="BinaryField"/>.
     /// </summary>
     bool StoreDocValues { get; }
+
+    /// <summary>
+    /// Controls which postings data (doc IDs, frequencies, positions, offsets)
+    /// is written to the inverted index. Lower levels reduce disk usage and
+    /// indexing time but disable phrase queries and scoring features.
+    /// Default: <see cref="FieldIndexOptions.DocsAndFreqsAndPositions"/>
+    /// for <see cref="TextField"/>;
+    /// <see cref="FieldIndexOptions.DocsAndFreqs"/> for <see cref="StringField"/>;
+    /// <see cref="FieldIndexOptions.DocsOnly"/> for <see cref="NumericField"/>.
+    /// </summary>
+    FieldIndexOptions IndexOptions { get; }
 }

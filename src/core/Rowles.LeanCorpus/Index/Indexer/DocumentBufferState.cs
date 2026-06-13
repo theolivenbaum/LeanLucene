@@ -165,6 +165,7 @@ internal sealed class DocumentBufferState
     /// Encodes the qualified term as UTF-8 and probes the open-addressing hash table.
     /// </summary>
     public void AccumulatePosting(string fieldName, ReadOnlySpan<char> term, int docId, int position, byte[]? payload, bool storePayloads,
+        FieldIndexOptions indexOptions = FieldIndexOptions.DocsAndFreqsAndPositions,
         int startOffset = 0, int endOffset = 0)
     {
         // Encode "fieldName\0term" as UTF-8 bytes for hash table probe
@@ -196,16 +197,16 @@ internal sealed class DocumentBufferState
         if (StoreTermVectors)
         {
             if (storePayloads && (acc.HasPayloads || payload is { Length: > 0 }))
-                acc.AddWithPayload(docId, position, payload, startOffset, endOffset);
+                acc.AddWithPayload(docId, position, payload, indexOptions, startOffset, endOffset);
             else
-                acc.Add(docId, position, startOffset, endOffset);
+                acc.Add(docId, position, indexOptions, startOffset, endOffset);
         }
         else
         {
             if (storePayloads && (acc.HasPayloads || payload is { Length: > 0 }))
-                acc.AddWithPayload(docId, position, payload);
+                acc.AddWithPayload(docId, position, payload, indexOptions);
             else
-                acc.Add(docId, position);
+                acc.Add(docId, position, indexOptions);
         }
         PostingsRamBytes += acc.EstimatedBytes - before;
     }

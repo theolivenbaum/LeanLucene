@@ -54,6 +54,9 @@ public sealed class GeoPointField : IField
     /// <inheritdoc/>
     public bool StoreDocValues => true;
 
+    /// <inheritdoc/>
+    public FieldIndexOptions IndexOptions => FieldIndexOptions.DocsOnly;
+
     /// <summary>Returns the lat sub-field name.</summary>
     public string LatFieldName => Name + "_lat";
 

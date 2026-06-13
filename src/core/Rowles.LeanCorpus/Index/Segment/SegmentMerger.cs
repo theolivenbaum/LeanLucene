@@ -24,7 +24,7 @@ namespace Rowles.LeanCorpus.Index.Segment;
 public sealed class SegmentMerger
 {
     private readonly MMapDirectory _directory;
-    private readonly int _mergeThreshold;
+    private readonly IMergePolicy _mergePolicy;
     private readonly int _skipInterval;
     private readonly double _softDeleteRetentionSeconds;
     private readonly Diagnostics.IMetricsCollector _metrics;
@@ -40,22 +40,38 @@ public sealed class SegmentMerger
 
     /// <summary>Initialises a merger bound to the given directory.</summary>
     /// <param name="directory">The directory holding segment files.</param>
+    /// <param name="mergePolicy">The merge policy used to select segments for merging.</param>
+    /// <param name="skipInterval">Postings skip interval used when writing the merged segment.</param>
+    /// <param name="softDeleteRetentionSeconds">Minimum seconds to retain soft-deleted documents during merge.</param>
+    /// <param name="metrics">Optional metrics collector. Defaults to <see cref="Diagnostics.NullMetricsCollector.Instance"/>.</param>
+    public SegmentMerger(
+        MMapDirectory directory,
+        IMergePolicy mergePolicy,
+        int skipInterval = DefaultSkipInterval,
+        double softDeleteRetentionSeconds = DefaultSoftDeleteRetentionSeconds,
+        Diagnostics.IMetricsCollector? metrics = null)
+    {
+        _directory = directory;
+        _mergePolicy = mergePolicy ?? new TieredMergePolicy(DefaultMergeThreshold);
+        _skipInterval = skipInterval;
+        _softDeleteRetentionSeconds = softDeleteRetentionSeconds;
+        _metrics = metrics ?? Diagnostics.NullMetricsCollector.Instance;
+    }
+
+    /// <summary>Initialises a merger bound to the given directory with the default tiered policy.</summary>
+    /// <param name="directory">The directory holding segment files.</param>
     /// <param name="mergeThreshold">Number of segments at one tier before a merge is triggered.</param>
     /// <param name="skipInterval">Postings skip interval used when writing the merged segment.</param>
     /// <param name="softDeleteRetentionSeconds">Minimum seconds to retain soft-deleted documents during merge.</param>
     /// <param name="metrics">Optional metrics collector. Defaults to <see cref="Diagnostics.NullMetricsCollector.Instance"/>.</param>
     public SegmentMerger(
         MMapDirectory directory,
-        int mergeThreshold = DefaultMergeThreshold,
+        int mergeThreshold,
         int skipInterval = DefaultSkipInterval,
         double softDeleteRetentionSeconds = DefaultSoftDeleteRetentionSeconds,
         Diagnostics.IMetricsCollector? metrics = null)
+        : this(directory, new TieredMergePolicy(mergeThreshold), skipInterval, softDeleteRetentionSeconds, metrics)
     {
-        _directory = directory;
-        _mergeThreshold = mergeThreshold;
-        _skipInterval = skipInterval;
-        _softDeleteRetentionSeconds = softDeleteRetentionSeconds;
-        _metrics = metrics ?? Diagnostics.NullMetricsCollector.Instance;
     }
 
     /// <summary>
@@ -76,70 +92,28 @@ public sealed class SegmentMerger
         ref int nextSegmentOrdinal,
         IReadOnlySet<string> protectedSegmentIds)
     {
-        if (segments.Count < _mergeThreshold)
-            return segments;
-
-        // Group segments by size tier without LINQ allocations
-        var tierBuckets = new Dictionary<int, List<SegmentInfo>>();
-        foreach (var s in segments)
-        {
-            int tier = GetSizeTier(s.DocCount);
-            if (!tierBuckets.TryGetValue(tier, out var bucket))
-            {
-                bucket = new List<SegmentInfo>();
-                tierBuckets[tier] = bucket;
-            }
-            bucket.Add(s);
-        }
-
-        // Collect tiers that meet the merge threshold, sorted by tier key
-        var eligibleTiers = new List<int>();
-        foreach (var (tier, bucket) in tierBuckets)
-        {
-            int mergeableCount = 0;
-            foreach (var segment in bucket)
-            {
-                if (!protectedSegmentIds.Contains(segment.SegmentId))
-                    mergeableCount++;
-            }
-
-            if (mergeableCount >= _mergeThreshold)
-                eligibleTiers.Add(tier);
-        }
-
-        if (eligibleTiers.Count == 0)
-            return segments;
-
-        eligibleTiers.Sort();
         var result = new List<SegmentInfo>(segments);
+        bool anyMerged = false;
 
-        foreach (var tierKey in eligibleTiers)
+        while (true)
         {
-            var bucket = tierBuckets[tierKey];
-            var mergeable = bucket
-                .Where(segment => !protectedSegmentIds.Contains(segment.SegmentId))
-                .ToList();
-
-            // Take the smallest segments in this tier
-            mergeable.Sort(static (a, b) => a.DocCount.CompareTo(b.DocCount));
-            var toMerge = mergeable.Count <= _mergeThreshold ? mergeable : mergeable.GetRange(0, _mergeThreshold);
-
+            var toMerge = _mergePolicy.FindMerges(result, protectedSegmentIds);
             if (toMerge.Count < 2)
-                continue;
+                break;
 
-            var merged = MergeSegments(toMerge, ref nextSegmentOrdinal);
+            var merged = MergeSegments(
+                toMerge is List<SegmentInfo> list ? list : new List<SegmentInfo>(toMerge),
+                ref nextSegmentOrdinal);
             if (merged == null)
-                continue;
+                break;
 
-            // Remove merged segments, add the new one
             foreach (var seg in toMerge)
-            {
                 result.Remove(seg);
-            }
             result.Add(merged);
+            anyMerged = true;
         }
 
-        return result;
+        return anyMerged ? result : segments;
     }
 
     /// <summary>

@@ -35,13 +35,22 @@ public sealed class TextField : IField
     /// Whether to populate DocValues for this field. Defaults to <c>false</c>
     /// because <see cref="TextField"/> does not currently populate DocValues.
     /// </param>
-    public TextField(string name, string value, bool stored, float boost, bool storeDocValues = false)
+    /// <param name="indexOptions">
+    /// Controls which postings data is written to the inverted index.
+    /// Defaults to <see cref="FieldIndexOptions.DocsAndFreqsAndPositions"/>.
+    /// Use <see cref="FieldIndexOptions.DocsOnly"/> for filter-only fields or
+    /// <see cref="FieldIndexOptions.DocsAndFreqs"/> when phrase queries and
+    /// highlighting are not required.
+    /// </param>
+    public TextField(string name, string value, bool stored, float boost, bool storeDocValues = false,
+        FieldIndexOptions indexOptions = FieldIndexOptions.DocsAndFreqsAndPositions)
     {
         Name = FieldNameValidator.Validate(name, nameof(name));
         Value = value ?? throw new ArgumentNullException(nameof(value));
         IsStored = stored;
         Boost = FieldBoostValidator.Validate(boost, nameof(boost));
         StoreDocValues = storeDocValues;
+        IndexOptions = indexOptions;
     }
 
     /// <inheritdoc/>
@@ -64,4 +73,7 @@ public sealed class TextField : IField
 
     /// <inheritdoc/>
     public bool StoreDocValues { get; }
+
+    /// <inheritdoc/>
+    public FieldIndexOptions IndexOptions { get; }
 }

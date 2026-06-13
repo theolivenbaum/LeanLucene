@@ -40,4 +40,7 @@ public sealed class BinaryField : IField
     /// so this defaults to <c>true</c>.
     /// </remarks>
     public bool StoreDocValues => true;
+
+    /// <inheritdoc/>
+    public FieldIndexOptions IndexOptions => FieldIndexOptions.DocsOnly;
 }
