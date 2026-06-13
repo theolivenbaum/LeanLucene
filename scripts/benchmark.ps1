@@ -112,7 +112,8 @@ param(
                  'parallel', 'function-score', 'geo', 'collapse-facet', 'similarity',
                  'stemmer', 'kstemmer', 'lightenglish', 'hunspell', 'ngram', 'synonym', 'async-index',
                  'gutenberg-analysis', 'gutenberg-index', 'gutenberg-search',
-                 'tokenbudget', 'diagnostics')]
+                 'tokenbudget', 'diagnostics',
+                 'analysis-filters-v2', 'pattern-tokeniser')]
     [string]$Suite = 'all',
 
     [ValidateSet('default', 'fast', 'quick-compare', 'intense', 'stress', 'exhaustive')]
@@ -180,6 +181,8 @@ $suiteDescriptions = [ordered]@{
     index                = 'IndexingBenchmarks          -- bulk indexing throughput (vs Lucene.NET)'
     query                = 'TermQueryBenchmarks         -- single-term search (vs Lucene.NET)'
     analysis             = 'AnalysisBenchmarks          -- tokenisation pipeline'
+    'analysis-filters-v2' = 'NewTokenFilterBenchmarks    -- new filter parity (Classic, PatternReplace, CommonGrams, HyphenatedWords, Caching)'
+    'pattern-tokeniser'  = 'PatternTokeniserBenchmarks  -- regex tokenisation (vs Lucene.NET PatternTokenizer)'
     boolean              = 'BooleanQueryBenchmarks      -- deterministic BooleanQuery clause shapes'
     phrase               = 'PhraseQueryBenchmarks       -- exact and slop phrase'
     prefix               = 'PrefixQueryBenchmarks       -- prefix matching (vs Lucene.NET)'
@@ -325,12 +328,15 @@ switch ($Strat) {
     }
     'intense' {
         $stratDocCount = 10000
+        $stratJobArgs = @('--job', 'default')
     }
     'stress' {
         $stratDocCount = 50000
+        $stratJobArgs = @('--job', 'default')
     }
     'exhaustive' {
         $stratDocCount = 100000
+        $stratJobArgs = @('--job', 'default')
     }
 }
 
