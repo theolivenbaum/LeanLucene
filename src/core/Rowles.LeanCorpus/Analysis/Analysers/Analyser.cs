@@ -43,6 +43,7 @@ public sealed class Analyser : IAnalyser
         {
             _filteringSink.Reset(_filters, sink);
             _tokeniser.Tokenise(input, _filteringSink);
+            _filteringSink.Finish();
         }
     }
 
@@ -75,6 +76,19 @@ public sealed class Analyser : IAnalyser
             byte[]? payload = null)
         {
             ApplyAt(0, text, startOffset, endOffset, type, positionIncrement, payload);
+        }
+
+        /// <summary>
+        /// Signals end-of-stream to every filter in the chain so stateful filters can
+        /// flush buffered tokens downstream.
+        /// </summary>
+        public void Finish()
+        {
+            for (int i = 0; i < _filters.Length; i++)
+            {
+                ISpanTokenSink nextSink = i + 1 < _filters.Length ? _stageSinks[i] : _finalSink;
+                _filters[i].Finish(nextSink);
+            }
         }
 
         private void ApplyAt(

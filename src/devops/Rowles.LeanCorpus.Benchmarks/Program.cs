@@ -78,6 +78,9 @@ internal static class Program
         if (runAll || suites.Contains(BenchmarkSuite.AnalysisFilters))
             RunSuite<TokenFilterBenchmarks>("analysis-filters", runDir, benchmarkArgs, suiteSummaries, gcDump);
 
+        if (runAll || suites.Contains(BenchmarkSuite.AnalysisFiltersV2))
+            RunSuite<NewTokenFilterBenchmarks>("analysis-filters-v2", runDir, benchmarkArgs, suiteSummaries, gcDump);
+
         if (runAll || suites.Contains(BenchmarkSuite.Boolean))
             RunSuite<BooleanQueryBenchmarks>("boolean", runDir, benchmarkArgs, suiteSummaries, gcDump);
 
@@ -205,6 +208,9 @@ internal static class Program
         if (runAll || suites.Contains(BenchmarkSuite.NGram))
             RunSuite<NGramTokeniserBenchmarks>("ngram", runDir, benchmarkArgs, suiteSummaries, gcDump);
 
+        if (runAll || suites.Contains(BenchmarkSuite.PatternTokeniser))
+            RunSuite<PatternTokeniserBenchmarks>("pattern-tokeniser", runDir, benchmarkArgs, suiteSummaries, gcDump);
+
         if (runAll || suites.Contains(BenchmarkSuite.Synonym))
             RunSuite<SynonymBenchmarks>("synonym", runDir, benchmarkArgs, suiteSummaries, gcDump);
 
@@ -313,6 +319,8 @@ internal static class Program
               analysis         AnalysisBenchmarks -- tokenisation pipeline throughput
               analysis-parity  AnalyserParityBenchmarks -- lightweight analyser parity throughput
               analysis-filters TokenFilterBenchmarks -- token filter allocation and throughput
+              analysis-filters-v2 NewTokenFilterBenchmarks -- new token filter parity (Classic, PatternReplace, CommonGrams, HyphenatedWords, Caching)
+              pattern-tokeniser  PatternTokeniserBenchmarks -- regex tokenisation vs Lucene.NET PatternTokenizer
               boolean          BooleanQueryBenchmarks -- deterministic clause shapes
               phrase           PhraseQueryBenchmarks -- exact and slop phrase matching
               prefix           PrefixQueryBenchmarks -- prefix matching (vs Lucene.NET)
@@ -477,6 +485,8 @@ internal static class Program
             "analysis" => BenchmarkSuite.Analysis,
             "analysisparity" or "analysis-parity" => BenchmarkSuite.AnalysisParity,
             "analysisfilters" or "analysis-filters" => BenchmarkSuite.AnalysisFilters,
+            "analysisfiltersv2" or "analysis-filters-v2" => BenchmarkSuite.AnalysisFiltersV2,
+            "patterntokeniser" or "pattern-tokeniser" => BenchmarkSuite.PatternTokeniser,
             "boolean" => BenchmarkSuite.Boolean,
             "phrase" => BenchmarkSuite.Phrase,
             "prefix" => BenchmarkSuite.Prefix,
@@ -597,5 +607,7 @@ internal static class Program
         Synonym,
         AsyncIndex,
         VectorQuantisation,
+        AnalysisFiltersV2,
+        PatternTokeniser,
     }
 }
