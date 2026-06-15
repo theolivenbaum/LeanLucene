@@ -161,7 +161,6 @@ public sealed class LeanQueryProvider<TDocument> : IQueryProvider
         return selector is not null ? ApplyProjection(source, selector) : source;
     }
 
-    [SuppressMessage("AOT", "IL3050", Justification = "List<TElement> is guaranteed to exist at the call site via Execute<TResult>.")]
     private object ExecuteToArray(Query query, LambdaExpression? selector, int take, int skip, SortField? sort = null)
     {
         var list = (System.Collections.IList)ExecuteToList(query, selector, take, skip, sort);
@@ -538,15 +537,15 @@ public sealed class LeanQueryProvider<TDocument> : IQueryProvider
 
     /// <summary>
     /// Applies a Select projection to materialised documents.
-    /// Uses a type switch over common projection element types to avoid
-    /// <c>MakeGenericType</c>; falls back to it with an AOT suppression
-    /// for uncommon types (which the trimmer preserves because the call
-    /// site in <c>Execute&lt;TResult&gt;</c> references the exact type).
+    /// Uses a type switch over common projection element types for
+    /// strongly-typed <c>List&lt;T&gt;</c> construction; falls back to
+    /// a <c>List&lt;object?&gt;</c> for uncommon types, which is safe
+    /// because all callers consume the result via <see cref="System.Collections.IList"/>
+    /// and the boxed wrapper already returns <c>object?</c>.
     /// The fallback compiles a boxed wrapper delegate instead of using
     /// <see cref="Delegate.DynamicInvoke"/> — one compilation per unique
     /// element type, not per element.
     /// </summary>
-    [SuppressMessage("AOT", "IL3050", Justification = "The projected List<TElement> type is guaranteed by the Execute<TResult> call site.")]
     private static object ApplyProjection(List<TDocument> source, LambdaExpression selector)
     {
         var compiled = s_projectionCache.GetOrAdd(
@@ -559,7 +558,7 @@ public sealed class LeanQueryProvider<TDocument> : IQueryProvider
         if (elementType == typeof(TDocument))
             return source;
 
-        // Fast paths for common projection types — avoids MakeGenericType.
+        // Fast paths for common projection types — strongly-typed lists.
         if (elementType == typeof(string))
             return ProjectToList(source, (Func<TDocument, string>)compiled);
         if (elementType == typeof(int))
@@ -589,12 +588,11 @@ public sealed class LeanQueryProvider<TDocument> : IQueryProvider
         if (elementType == typeof(TimeOnly))
             return ProjectToList(source, (Func<TDocument, TimeOnly>)compiled);
 
-        // Fallback for uncommon types. Compile a boxed wrapper once so that
-        // per-element calls are Direct (no DynamicInvoke boxing).
+        // Fallback for uncommon types. Uses List<object?> since the boxed
+        // wrapper already returns object?, and all callers consume via IList.
         var wrapper = CompileBoxedWrapper(selector, compiled);
 
-        var listType = typeof(List<>).MakeGenericType(elementType);
-        var list = (System.Collections.IList)Activator.CreateInstance(listType)!;
+        var list = new List<object?>(source.Count);
 
         foreach (var doc in source)
             list.Add(wrapper(doc)!);
