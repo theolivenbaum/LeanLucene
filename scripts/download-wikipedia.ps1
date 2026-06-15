@@ -4,8 +4,11 @@
 
 .DESCRIPTION
     Uses the Wikipedia MediaWiki API to download the introductory text of randomly
-    selected English Wikipedia articles as plain-text .txt files in
-    bench/data/wikipedia/ for use in text analysis and indexing benchmarks.
+    selected Wikipedia articles as plain-text .txt files in
+    bench/data/wikipedia/{language}/ for use in text analysis and indexing benchmarks.
+
+    Specify a BCP 47 language code (e.g. en, fr, de, zh, ja) to target that
+    language edition of Wikipedia. All language editions use the same API.
 
     Note: The Wikimedia abstract dump format was discontinued in 2024. This script
     uses the API's random-page generator with plaintext extracts instead.
@@ -15,8 +18,12 @@
 
     Licence: Article text is CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/)
 
+.PARAMETER Language
+    BCP 47 language code. Defaults to "en". Sets the Wikipedia language edition
+    to download from (e.g. "fr" for fr.wikipedia.org).
+
 .PARAMETER OutputDir
-    Override the output directory. Defaults to bench/data/wikipedia relative
+    Override the output directory. Defaults to bench/data/wikipedia/{language} relative
     to the repository root.
 
 .PARAMETER ArticleCount
@@ -27,13 +34,18 @@
 
 .EXAMPLE
     .\scripts\download-wikipedia.ps1
-    Downloads 5,000 article introductions (~250 KB-1 MB of text).
+    Downloads 5,000 English article introductions.
 
 .EXAMPLE
-    .\scripts\download-wikipedia.ps1 -ArticleCount 20000 -ArticlesPerFile 1000
-    Downloads 20,000 articles, 1,000 per file.
+    .\scripts\download-wikipedia.ps1 -Language fr -ArticleCount 2000
+    Downloads 2,000 French article introductions.
+
+.EXAMPLE
+    .\scripts\download-wikipedia.ps1 -Language zh -ArticleCount 10000 -ArticlesPerFile 1000
+    Downloads 10,000 Chinese article introductions, 1,000 per file.
 #>
 param(
+    [string]$Language = 'en',
     [string]$OutputDir = '',
     [int]$ArticleCount = 5000,
     [int]$ArticlesPerFile = 500
@@ -42,13 +54,13 @@ param(
 $repoRoot = Split-Path -Parent $PSScriptRoot
 
 if ([string]::IsNullOrEmpty($OutputDir)) {
-    $OutputDir = Join-Path $repoRoot "bench\data\wikipedia"
+    $OutputDir = Join-Path $repoRoot "bench\data\wikipedia\$Language"
 }
 
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
-$apiBase  = "https://en.wikipedia.org/w/api.php"
-$headers  = @{ 'Api-User-Agent' = 'BenchmarkDataBot/1.0 (benchmark testing; non-commercial)' }
+$apiBase  = "https://${Language}.wikipedia.org/w/api.php"
+$headers  = @{ 'Api-User-Agent' = "BenchmarkDataBot/1.0 ($Language benchmark testing; non-commercial)" }
 $batchSize = 50  # max allowed by the random generator
 
 $totalFetched = 0
@@ -63,8 +75,8 @@ function FlushBatch {
     Write-Host ("  Saved batch {0:D4}: {1} articles -> {2}" -f $Index, $count, $outFile) -ForegroundColor Green
     $Lines.Clear()
 }
-
-Write-Host "Downloading $ArticleCount Wikipedia article introductions..." -ForegroundColor Cyan
+Write-Host "Downloading $ArticleCount Wikipedia ($Language) article introductions..." -ForegroundColor Cyan
+Write-Host "API:    $apiBase"
 Write-Host "Output: $OutputDir"
 Write-Host ""
 
