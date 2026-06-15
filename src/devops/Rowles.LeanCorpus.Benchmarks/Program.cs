@@ -61,6 +61,10 @@ internal static class Program
         // Resolve effective run type for metadata (does not affect output path)
         var effectiveRunType = string.IsNullOrEmpty(runType) ? "full" : runType;
 
+        // Clean up any stale temp directories from previous aborted runs
+        // before any suite builds its index.
+        BenchmarkHelpers.CleanTempRoot();
+
         var suiteSummaries = new List<(string Suite, Summary Summary)>();
 
         if (runAll || suites.Contains(BenchmarkSuite.Query))
@@ -228,6 +232,22 @@ internal static class Program
 
         // Release shared index resources now that all suites have finished.
         SharedStandardIndex.Cleanup();
+
+        // Clean up static Lucene indexes that were built once per class.
+        TermQueryBenchmarks.CleanupLuceneResources();
+        BooleanQueryBenchmarks.CleanupLuceneResources();
+        PhraseQueryBenchmarks.CleanupLuceneResources();
+        PrefixQueryBenchmarks.CleanupLuceneResources();
+        FuzzyQueryBenchmarks.CleanupLuceneResources();
+        WildcardQueryBenchmarks.CleanupLuceneResources();
+        RegexpQueryBenchmarks.CleanupLuceneResources();
+        DisjunctionMaxQueryBenchmarks.CleanupLuceneResources();
+        MultiPhraseQueryBenchmarks.CleanupLuceneResources();
+        SpanQueryBenchmarks.CleanupLuceneResources();
+        GutenbergSearchBenchmarks.CleanupLuceneResources();
+
+        // Nuke the entire bench/tmp tree so subsequent runs start clean.
+        BenchmarkHelpers.CleanTempRoot();
 
         // Build and write consolidated report + index.json
         var report = BenchmarkRunReportBuilder.Build(

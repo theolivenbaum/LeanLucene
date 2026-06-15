@@ -55,9 +55,9 @@ public class HnswSearchBenchmarks
             {
                 if (!s_built || s_lastKey != key)
                 {
-                    s_hnswPath = Path.Combine(Path.GetTempPath(),
+                    s_hnswPath = Path.Combine(BenchmarkHelpers.TempRoot,
                         "ll_hnsw_bench_" + Guid.NewGuid().ToString("N"));
-                    s_flatPath = Path.Combine(Path.GetTempPath(),
+                    s_flatPath = Path.Combine(BenchmarkHelpers.TempRoot,
                         "ll_flat_bench_" + Guid.NewGuid().ToString("N"));
                     Directory.CreateDirectory(s_hnswPath);
                     Directory.CreateDirectory(s_flatPath);

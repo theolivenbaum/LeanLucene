@@ -57,7 +57,7 @@ public class VectorQuantisationBenchmarks
             {
                 if (!s_built || s_lastKey != key)
                 {
-                    s_indexPath = Path.Combine(Path.GetTempPath(),
+                    s_indexPath = Path.Combine(BenchmarkHelpers.TempRoot,
                         "lc_vq_bench_" + Guid.NewGuid().ToString("N"));
                     Directory.CreateDirectory(s_indexPath);
 

@@ -186,7 +186,7 @@ public class TermVectorHighlighterBenchmarks
 
     private void BuildLeanIndex(string[] documents)
     {
-        _leanIndexPath = Path.Combine(Path.GetTempPath(), $"leancorpus-bench-tvh-{Guid.NewGuid():N}");
+        _leanIndexPath = Path.Combine(BenchmarkHelpers.TempRoot, $"leancorpus-bench-tvh-{Guid.NewGuid():N}");
         IODirectory.CreateDirectory(_leanIndexPath);
         _leanDirectory = new LeanMMapDirectory(_leanIndexPath);
         using var writer = new IndexWriter(
@@ -226,7 +226,7 @@ public class TermVectorHighlighterBenchmarks
 
     private void BuildLuceneIndex(string[] documents)
     {
-        _luceneIndexPath = Path.Combine(Path.GetTempPath(), $"lucenenet-bench-tvh-{Guid.NewGuid():N}");
+        _luceneIndexPath = Path.Combine(BenchmarkHelpers.TempRoot, $"lucenenet-bench-tvh-{Guid.NewGuid():N}");
         IODirectory.CreateDirectory(_luceneIndexPath);
 
         _luceneDirectory = new LuceneMMapDirectory(new System.IO.DirectoryInfo(_luceneIndexPath));

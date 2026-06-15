@@ -38,7 +38,7 @@ public class IndexingBenchmarks
     [MethodImpl(MethodImplOptions.NoInlining)]
     public int LeanCorpus_IndexDocuments()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"leancorpus-bench-index-{Guid.NewGuid():N}");
+        var path = Path.Combine(BenchmarkHelpers.TempRoot, $"leancorpus-bench-index-{Guid.NewGuid():N}");
         Directory.CreateDirectory(path);
 
         try
@@ -74,7 +74,7 @@ public class IndexingBenchmarks
     [MethodImpl(MethodImplOptions.NoInlining)]
     public int LuceneNet_IndexDocuments()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"lucenenet-bench-index-{Guid.NewGuid():N}");
+        var path = Path.Combine(BenchmarkHelpers.TempRoot, $"lucenenet-bench-index-{Guid.NewGuid():N}");
         Directory.CreateDirectory(path);
 
         try

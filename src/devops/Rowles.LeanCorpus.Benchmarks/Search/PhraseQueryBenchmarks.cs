@@ -112,7 +112,7 @@ public class PhraseQueryBenchmarks
                 return;
 
             var documents = SharedStandardIndex.Documents;
-            var path = Path.Combine(Path.GetTempPath(),
+            var path = Path.Combine(BenchmarkHelpers.TempRoot,
                 $"lucenenet-shared-stdidx-{Guid.NewGuid():N}");
             IODirectory.CreateDirectory(path);
 
@@ -142,6 +142,27 @@ public class PhraseQueryBenchmarks
             s_luceneReader = DirectoryReader.Open(s_luceneDirectory);
             s_luceneSearcher = new LuceneIndexSearcher(s_luceneReader);
             s_luceneBuilt = true;
+        }
+    }
+
+    public static void CleanupLuceneResources()
+    {
+        if (!s_luceneBuilt)
+            return;
+
+        lock (s_luceneGate)
+        {
+            if (!s_luceneBuilt)
+                return;
+
+            s_luceneSearcher = null;
+            s_luceneReader?.Dispose();
+            s_luceneReader = null;
+            s_luceneAnalyzer?.Dispose();
+            s_luceneAnalyzer = null;
+            s_luceneDirectory?.Dispose();
+            s_luceneDirectory = null;
+            s_luceneBuilt = false;
         }
     }
 }

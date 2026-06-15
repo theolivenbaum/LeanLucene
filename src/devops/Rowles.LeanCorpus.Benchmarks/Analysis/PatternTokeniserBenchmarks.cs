@@ -28,6 +28,7 @@ public class PatternTokeniserBenchmarks
     // LeanCorpus state
     private ISpanTokeniser _tokeniser = null!;
     private string _input = string.Empty;
+    private CountingTokenSink _sink = null!;
 
     // Lucene.NET state
     private Regex _lucenePattern = null!;
@@ -35,6 +36,7 @@ public class PatternTokeniserBenchmarks
     [GlobalSetup]
     public void Setup()
     {
+        _sink = new CountingTokenSink();
         (_tokeniser, _input, _lucenePattern) = Scenario switch
         {
             "comma-short" => (
@@ -63,9 +65,9 @@ public class PatternTokeniserBenchmarks
     [MethodImpl(MethodImplOptions.NoInlining)]
     public int LeanCorpus_Tokenise()
     {
-        var sink = new CountingTokenSink();
-        _tokeniser.Tokenise(_input.AsSpan(), sink);
-        return sink.Count;
+        _sink.Reset();
+        _tokeniser.Tokenise(_input.AsSpan(), _sink);
+        return _sink.Count;
     }
 
     // --- Lucene.NET benchmark ---

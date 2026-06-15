@@ -60,12 +60,38 @@ public class SimilarityBenchmarks
     public void Setup()
     {
         var documents = BenchmarkData.BuildDocuments(DocumentCount);
-        BuildLeanIndex(documents);
-        BuildLuceneIndex(documents);
+        try
+        {
+            BuildLeanIndex(documents);
+            BuildLuceneIndex(documents);
+        }
+        catch
+        {
+            // Index build failed (e.g. disk full). Clean up the partial
+            // temp directories so they don't waste space for later suites.
+            CleanupSearchers();
+            BenchmarkHelpers.DeleteDirectory(_leanIndexPath);
+            _luceneReader?.Dispose();
+            _luceneAnalyzer?.Dispose();
+            _luceneDirectory?.Dispose();
+            BenchmarkHelpers.DeleteDirectory(_luceneIndexPath);
+            throw;
+        }
     }
 
     [GlobalCleanup]
     public void Cleanup()
+    {
+        CleanupSearchers();
+        BenchmarkHelpers.DeleteDirectory(_leanIndexPath);
+
+        _luceneReader?.Dispose();
+        _luceneAnalyzer?.Dispose();
+        _luceneDirectory?.Dispose();
+        BenchmarkHelpers.DeleteDirectory(_luceneIndexPath);
+    }
+
+    private void CleanupSearchers()
     {
         _bm25Searcher?.Dispose();
         _tfIdfSearcher?.Dispose();
@@ -77,14 +103,6 @@ public class SimilarityBenchmarks
         _dirichletSearcher?.Dispose();
         _jmSearcher?.Dispose();
         _absDiscountingSearcher?.Dispose();
-        if (!string.IsNullOrWhiteSpace(_leanIndexPath) && IODirectory.Exists(_leanIndexPath))
-            IODirectory.Delete(_leanIndexPath, recursive: true);
-
-        _luceneReader?.Dispose();
-        _luceneAnalyzer?.Dispose();
-        _luceneDirectory?.Dispose();
-        if (!string.IsNullOrWhiteSpace(_luceneIndexPath) && IODirectory.Exists(_luceneIndexPath))
-            IODirectory.Delete(_luceneIndexPath, recursive: true);
     }
 
     // --- Baseline  ---
@@ -235,7 +253,7 @@ public class SimilarityBenchmarks
 
     private void BuildLeanIndex(string[] documents)
     {
-        _leanIndexPath = Path.Combine(Path.GetTempPath(), $"leancorpus-bench-similarity-{Guid.NewGuid():N}");
+        _leanIndexPath = Path.Combine(BenchmarkHelpers.TempRoot, $"leancorpus-bench-similarity-{Guid.NewGuid():N}");
         IODirectory.CreateDirectory(_leanIndexPath);
         _leanDirectory = new LeanMMapDirectory(_leanIndexPath);
         using var writer = new IndexWriter(
@@ -293,7 +311,7 @@ public class SimilarityBenchmarks
 
     private void BuildLuceneIndex(string[] documents)
     {
-        _luceneIndexPath = Path.Combine(Path.GetTempPath(), $"lucenenet-bench-similarity-{Guid.NewGuid():N}");
+        _luceneIndexPath = Path.Combine(BenchmarkHelpers.TempRoot, $"lucenenet-bench-similarity-{Guid.NewGuid():N}");
         IODirectory.CreateDirectory(_luceneIndexPath);
 
         _luceneDirectory = new LuceneMMapDirectory(new DirectoryInfo(_luceneIndexPath));

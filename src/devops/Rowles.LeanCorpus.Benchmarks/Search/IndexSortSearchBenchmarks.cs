@@ -73,7 +73,7 @@ public class IndexSortSearchBenchmarks
 
     private void BuildSearchIndices((string Body, double Price)[] documentsWithPrices)
     {
-        _unsortedPath = Path.Combine(Path.GetTempPath(), $"leancorpus-bench-sort-ns-{Guid.NewGuid():N}");
+        _unsortedPath = Path.Combine(BenchmarkHelpers.TempRoot, $"leancorpus-bench-sort-ns-{Guid.NewGuid():N}");
         Directory.CreateDirectory(_unsortedPath);
         _unsortedDir = new LeanMMapDirectory(_unsortedPath);
 
@@ -88,7 +88,7 @@ public class IndexSortSearchBenchmarks
         }
         _unsortedSearcher = new LeanIndexSearcher(_unsortedDir);
 
-        _sortedPath = Path.Combine(Path.GetTempPath(), $"leancorpus-bench-sort-s-{Guid.NewGuid():N}");
+        _sortedPath = Path.Combine(BenchmarkHelpers.TempRoot, $"leancorpus-bench-sort-s-{Guid.NewGuid():N}");
         Directory.CreateDirectory(_sortedPath);
         _sortedDir = new LeanMMapDirectory(_sortedPath);
 

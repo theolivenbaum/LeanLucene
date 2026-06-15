@@ -57,7 +57,7 @@ public class GutenbergIndexingBenchmarks
     [MethodImpl(MethodImplOptions.NoInlining)]
     public int LuceneNet_Index()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"lucenenet-realdata-idx-{Guid.NewGuid():N}");
+        var path = Path.Combine(BenchmarkHelpers.TempRoot, $"lucenenet-realdata-idx-{Guid.NewGuid():N}");
         Directory.CreateDirectory(path);
 
         try
@@ -91,7 +91,7 @@ public class GutenbergIndexingBenchmarks
 
     private int RunLeanIndex(IAnalyser analyser)
     {
-        var path = Path.Combine(Path.GetTempPath(), $"leancorpus-realdata-idx-{Guid.NewGuid():N}");
+        var path = Path.Combine(BenchmarkHelpers.TempRoot, $"leancorpus-realdata-idx-{Guid.NewGuid():N}");
         Directory.CreateDirectory(path);
 
         try

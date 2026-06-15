@@ -19,6 +19,7 @@ public class GutenbergAnalysisBenchmarks
     private (string Title, string Text)[] _books = [];
     private StandardAnalyser _standard = null!;
     private EnglishAnalyser _english = null!;
+    private CountingTokenSink _sink = null!;
 
     [GlobalSetup]
     public void Setup()
@@ -26,6 +27,7 @@ public class GutenbergAnalysisBenchmarks
         _books = GutenbergDataLoader.LoadBookTexts();
         _standard = new StandardAnalyser();
         _english = new EnglishAnalyser();
+        _sink = new CountingTokenSink();
     }
 
     [GlobalCleanup]
@@ -44,9 +46,9 @@ public class GutenbergAnalysisBenchmarks
         int total = 0;
         foreach (var (_, text) in _books)
         {
-            var sink = new CountingTokenSink();
-            _standard.Analyse(text.AsSpan(), sink);
-            total += sink.Count;
+            _sink.Reset();
+            _standard.Analyse(text.AsSpan(), _sink);
+            total += _sink.Count;
         }
         return total;
     }
@@ -61,9 +63,9 @@ public class GutenbergAnalysisBenchmarks
         int total = 0;
         foreach (var (_, text) in _books)
         {
-            var sink = new CountingTokenSink();
-            _english.Analyse(text.AsSpan(), sink);
-            total += sink.Count;
+            _sink.Reset();
+            _english.Analyse(text.AsSpan(), _sink);
+            total += _sink.Count;
         }
         return total;
     }

@@ -61,32 +61,48 @@ internal static class SharedStandardIndex
             _documents = BenchmarkData.BuildDocuments(docCount);
 
             _leanIndexPath = Path.Combine(
-                Path.GetTempPath(),
+                BenchmarkHelpers.TempRoot,
                 $"leancorpus-shared-stdidx-{Guid.NewGuid():N}");
             Directory.CreateDirectory(_leanIndexPath);
 
-            _leanDirectory = new LeanMMapDirectory(_leanIndexPath);
-            using (var writer = new Rowles.LeanCorpus.Index.Indexer.IndexWriter(
-                _leanDirectory,
-                new Rowles.LeanCorpus.Index.Indexer.IndexWriterConfig
-                {
-                    MaxBufferedDocs = 10_000,
-                    RamBufferSizeMB = 256
-                }))
+            try
             {
-                for (int i = 0; i < _documents.Length; i++)
+                _leanDirectory = new LeanMMapDirectory(_leanIndexPath);
+                using (var writer = new Rowles.LeanCorpus.Index.Indexer.IndexWriter(
+                    _leanDirectory,
+                    new Rowles.LeanCorpus.Index.Indexer.IndexWriterConfig
+                    {
+                        MaxBufferedDocs = 10_000,
+                        RamBufferSizeMB = 256
+                    }))
                 {
-                    var doc = new LeanDocument();
-                    doc.Add(new LeanStringField("id",
-                        i.ToString(CultureInfo.InvariantCulture)));
-                    doc.Add(new LeanTextField("body", _documents[i]));
-                    writer.AddDocument(doc);
+                    for (int i = 0; i < _documents.Length; i++)
+                    {
+                        var doc = new LeanDocument();
+                        doc.Add(new LeanStringField("id",
+                            i.ToString(CultureInfo.InvariantCulture)));
+                        doc.Add(new LeanTextField("body", _documents[i]));
+                        writer.AddDocument(doc);
+                    }
+
+                    writer.Commit();
                 }
 
-                writer.Commit();
+                _leanSearcher = new LeanIndexSearcher(_leanDirectory);
             }
-
-            _leanSearcher = new LeanIndexSearcher(_leanDirectory);
+            catch
+            {
+                // Index build failed (e.g. disk full). Clean up the partial
+                // temp directory so it doesn't waste space for later suites.
+                _leanSearcher?.Dispose();
+                _leanSearcher = null;
+                _leanDirectory = null;
+                BenchmarkHelpers.DeleteDirectory(_leanIndexPath);
+                _leanIndexPath = string.Empty;
+                _documents = [];
+                _docCount = 0;
+                throw;
+            }
 
             _initialised = true;
         }
@@ -161,12 +177,7 @@ internal static class SharedStandardIndex
         _leanSearcher = null;
         _leanDirectory = null;
 
-        if (!string.IsNullOrWhiteSpace(_leanIndexPath)
-            && Directory.Exists(_leanIndexPath))
-        {
-            try { Directory.Delete(_leanIndexPath, recursive: true); }
-            catch { /* best-effort */ }
-        }
+        BenchmarkHelpers.DeleteDirectory(_leanIndexPath);
 
         _leanIndexPath = string.Empty;
         _documents = [];

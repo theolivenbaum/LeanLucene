@@ -38,7 +38,7 @@ public class IndexSortIndexBenchmarks
     [MethodImpl(MethodImplOptions.NoInlining)]
     public int LeanCorpus_Index_Unsorted()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"leancorpus-bench-sort-{Guid.NewGuid():N}");
+        var path = Path.Combine(BenchmarkHelpers.TempRoot, $"leancorpus-bench-sort-{Guid.NewGuid():N}");
         Directory.CreateDirectory(path);
 
         try
@@ -65,7 +65,7 @@ public class IndexSortIndexBenchmarks
     [MethodImpl(MethodImplOptions.NoInlining)]
     public int LeanCorpus_Index_Sorted()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"leancorpus-bench-sort-{Guid.NewGuid():N}");
+        var path = Path.Combine(BenchmarkHelpers.TempRoot, $"leancorpus-bench-sort-{Guid.NewGuid():N}");
         Directory.CreateDirectory(path);
 
         try

@@ -88,7 +88,7 @@ public class ParallelSearchBenchmarks
 
     private void BuildLeanIndexStatic(string[] documents)
     {
-        s_leanIndexPath = Path.Combine(Path.GetTempPath(), $"leancorpus-bench-parallel-{Guid.NewGuid():N}");
+        s_leanIndexPath = Path.Combine(BenchmarkHelpers.TempRoot, $"leancorpus-bench-parallel-{Guid.NewGuid():N}");
         IODirectory.CreateDirectory(s_leanIndexPath);
         var directory = new LeanMMapDirectory(s_leanIndexPath);
 

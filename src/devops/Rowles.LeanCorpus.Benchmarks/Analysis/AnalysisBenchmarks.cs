@@ -27,6 +27,7 @@ public class AnalysisBenchmarks
     private string[] _documents = [];
     private StandardAnalyser _leanAnalyser = null!;
     private StandardAnalyzer _luceneAnalyzer = null!;
+    private CountingTokenSink _sink = null!;
 
     [GlobalSetup]
     public void Setup()
@@ -34,6 +35,7 @@ public class AnalysisBenchmarks
         _documents = BenchmarkData.BuildDocuments(DocumentCount);
         _leanAnalyser = new StandardAnalyser();
         _luceneAnalyzer = new StandardAnalyzer(LuceneVersion.LUCENE_48);
+        _sink = new CountingTokenSink();
     }
 
     [GlobalCleanup]
@@ -46,13 +48,12 @@ public class AnalysisBenchmarks
     [MethodImpl(MethodImplOptions.NoInlining)]
     public int LeanCorpus_Analyse()
     {
-        var sink = new CountingTokenSink();
         int totalTokens = 0;
         for (int i = 0; i < _documents.Length; i++)
         {
-            sink.Reset();
-            _leanAnalyser.Analyse(_documents[i].AsSpan(), sink);
-            totalTokens += sink.Count;
+            _sink.Reset();
+            _leanAnalyser.Analyse(_documents[i].AsSpan(), _sink);
+            totalTokens += _sink.Count;
         }
         return totalTokens;
     }

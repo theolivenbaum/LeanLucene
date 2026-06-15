@@ -152,9 +152,28 @@ public class GutenbergSearchBenchmarks
         }
     }
 
+    public static void CleanupLuceneResources()
+    {
+        if (!s_built)
+            return;
+
+        lock (s_gate)
+        {
+            if (!s_built)
+                return;
+
+            s_luceneSearcher = null;
+            s_luceneReader?.Dispose();
+            s_luceneReader = null;
+            s_luceneDirectory?.Dispose();
+            s_luceneDirectory = null;
+            s_built = false;
+        }
+    }
+
     private static string BuildLeanIndex(BookParagraph[] paragraphs, IAnalyser analyser, string label)
     {
-        var path = Path.Combine(Path.GetTempPath(), $"leancorpus-realdata-{label}-{Guid.NewGuid():N}");
+        var path = Path.Combine(BenchmarkHelpers.TempRoot, $"leancorpus-realdata-{label}-{Guid.NewGuid():N}");
         Directory.CreateDirectory(path);
 
         var directory = new LeanMMapDirectory(path);
@@ -183,7 +202,7 @@ public class GutenbergSearchBenchmarks
 
     private static string BuildLuceneIndex(BookParagraph[] paragraphs)
     {
-        var path = Path.Combine(Path.GetTempPath(), $"lucenenet-realdata-{Guid.NewGuid():N}");
+        var path = Path.Combine(BenchmarkHelpers.TempRoot, $"lucenenet-realdata-{Guid.NewGuid():N}");
         Directory.CreateDirectory(path);
 
         using var directory = Lucene.Net.Store.FSDirectory.Open(new DirectoryInfo(path));
@@ -209,9 +228,5 @@ public class GutenbergSearchBenchmarks
         return path;
     }
 
-    private static void DeleteDirectory(string path)
-    {
-        if (!string.IsNullOrWhiteSpace(path) && Directory.Exists(path))
-            Directory.Delete(path, recursive: true);
-    }
+
 }

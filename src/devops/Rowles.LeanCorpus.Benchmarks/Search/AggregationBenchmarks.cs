@@ -43,15 +43,25 @@ public class AggregationBenchmarks
     public void Setup()
     {
         var docs = BenchmarkData.BuildDocumentsWithPrices(DocumentCount);
-        BuildLeanIndex(docs);
+        try
+        {
+            BuildLeanIndex(docs);
+        }
+        catch
+        {
+            // Index build failed (e.g. disk full). Clean up the partial
+            // temp directory so it doesn't waste space for later suites.
+            _leanSearcher?.Dispose();
+            BenchmarkHelpers.DeleteDirectory(_leanIndexPath);
+            throw;
+        }
     }
 
     [GlobalCleanup]
     public void Cleanup()
     {
         _leanSearcher?.Dispose();
-        if (!string.IsNullOrWhiteSpace(_leanIndexPath) && IODirectory.Exists(_leanIndexPath))
-            IODirectory.Delete(_leanIndexPath, recursive: true);
+        BenchmarkHelpers.DeleteDirectory(_leanIndexPath);
     }
 
     [Benchmark(Baseline = true)]
@@ -88,7 +98,7 @@ public class AggregationBenchmarks
 
     private void BuildLeanIndex((string Body, double Price)[] docs)
     {
-        _leanIndexPath = Path.Combine(Path.GetTempPath(), $"leancorpus-bench-agg-{Guid.NewGuid():N}");
+        _leanIndexPath = Path.Combine(BenchmarkHelpers.TempRoot, $"leancorpus-bench-agg-{Guid.NewGuid():N}");
         IODirectory.CreateDirectory(_leanIndexPath);
         _leanDirectory = new LeanMMapDirectory(_leanIndexPath);
         using var writer = new Rowles.LeanCorpus.Index.Indexer.IndexWriter(

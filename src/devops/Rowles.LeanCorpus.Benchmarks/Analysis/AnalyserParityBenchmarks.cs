@@ -27,6 +27,7 @@ public class AnalyserParityBenchmarks
     private WhitespaceAnalyzer _luceneWhitespace = null!;
     private KeywordAnalyzer _luceneKeyword = null!;
     private SimpleAnalyzer _luceneSimple = null!;
+    private CountingTokenSink _sink = null!;
 
     [GlobalSetup]
     public void Setup()
@@ -37,6 +38,7 @@ public class AnalyserParityBenchmarks
         _luceneWhitespace = new WhitespaceAnalyzer(LuceneVersion.LUCENE_48);
         _luceneKeyword = new KeywordAnalyzer();
         _luceneSimple = new SimpleAnalyzer(LuceneVersion.LUCENE_48);
+        _sink = new CountingTokenSink();
     }
 
     [GlobalCleanup]
@@ -77,15 +79,14 @@ public class AnalyserParityBenchmarks
     public int LuceneNet_Simple()
         => AnalyseLucene(_luceneSimple);
 
-    private static int AnalyseLean(Rowles.LeanCorpus.Analysis.Analysers.IAnalyser analyser)
+    private int AnalyseLean(Rowles.LeanCorpus.Analysis.Analysers.IAnalyser analyser)
     {
-        var sink = new CountingTokenSink();
         for (int i = 0; i < 100; i++)
         {
-            sink.Reset();
-            analyser.Analyse(Sample.AsSpan(), sink);
+            _sink.Reset();
+            analyser.Analyse(Sample.AsSpan(), _sink);
         }
-        return sink.Count;
+        return _sink.Count;
     }
 
     private static int AnalyseLucene(Analyzer analyser)

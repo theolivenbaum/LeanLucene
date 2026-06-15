@@ -92,7 +92,7 @@ public class RangeQueryBenchmarks
             var docs = BenchmarkData.BuildDocumentsWithPrices(DocumentCount);
 
             // LeanCorpus
-            s_leanIndexPath = Path.Combine(Path.GetTempPath(),
+            s_leanIndexPath = Path.Combine(BenchmarkHelpers.TempRoot,
                 $"leancorpus-bench-range-{Guid.NewGuid():N}");
             IODirectory.CreateDirectory(s_leanIndexPath);
             s_leanDirectory = new LeanMMapDirectory(s_leanIndexPath);

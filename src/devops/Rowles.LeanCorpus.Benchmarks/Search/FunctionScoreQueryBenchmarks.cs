@@ -73,7 +73,7 @@ public class FunctionScoreQueryBenchmarks
 
     private void BuildLeanIndex((string Body, double Price)[] docs)
     {
-        _leanIndexPath = Path.Combine(Path.GetTempPath(), $"leancorpus-bench-funcscore-{Guid.NewGuid():N}");
+        _leanIndexPath = Path.Combine(BenchmarkHelpers.TempRoot, $"leancorpus-bench-funcscore-{Guid.NewGuid():N}");
         IODirectory.CreateDirectory(_leanIndexPath);
         _leanDirectory = new LeanMMapDirectory(_leanIndexPath);
         using var writer = new Rowles.LeanCorpus.Index.Indexer.IndexWriter(
