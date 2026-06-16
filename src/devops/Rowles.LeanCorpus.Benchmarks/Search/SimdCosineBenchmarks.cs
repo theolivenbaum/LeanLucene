@@ -1,8 +1,6 @@
-﻿using BenchmarkDotNet.Attributes;
-using Rowles.LeanCorpus.Search;
+﻿using System.Runtime.CompilerServices;
+using BenchmarkDotNet.Attributes;
 using Rowles.LeanCorpus.Search.Simd;
-using Rowles.LeanCorpus.Search.Parsing;
-using Rowles.LeanCorpus.Search.Highlighting;
 
 namespace Rowles.LeanCorpus.Benchmarks;
 
@@ -35,6 +33,7 @@ public class SimdCosineBenchmarks
     }
 
     [Benchmark(Baseline = true, Description = "System.Numerics.Vector")]
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public float Numerics()
     {
         float total = 0f;
@@ -44,6 +43,7 @@ public class SimdCosineBenchmarks
     }
 
     [Benchmark(Description = "Runtime.Intrinsics")]
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public float Intrinsics()
     {
         float total = 0f;
@@ -53,6 +53,7 @@ public class SimdCosineBenchmarks
     }
 
     [Benchmark(Description = "Numerics dot product")]
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public float NumericsDot()
     {
         float total = 0f;
@@ -62,6 +63,7 @@ public class SimdCosineBenchmarks
     }
 
     [Benchmark(Description = "Intrinsics dot product")]
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public float IntrinsicsDot()
     {
         float total = 0f;

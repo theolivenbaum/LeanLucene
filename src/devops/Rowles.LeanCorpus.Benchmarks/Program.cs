@@ -224,6 +224,19 @@ internal static class Program
         if (runAll || suites.Contains(BenchmarkSuite.VectorQuantisation))
             RunSuite<VectorQuantisationBenchmarks>("vq", runDir, benchmarkArgs, suiteSummaries, gcDump);
 
+        // Microbenchmarks — explicit only, not included in --suite all.
+        if (suites.Contains(BenchmarkSuite.SimdCosine))
+            RunSuite<SimdCosineBenchmarks>("simd-cosine", runDir, benchmarkArgs, suiteSummaries, gcDump);
+
+        if (suites.Contains(BenchmarkSuite.PackedIntCodec))
+            RunSuite<PackedIntCodecBenchmarks>("packed-int-codec", runDir, benchmarkArgs, suiteSummaries, gcDump);
+
+        if (suites.Contains(BenchmarkSuite.NumericAggregatorSimd))
+            RunSuite<NumericAggregatorSimdBenchmarks>("numeric-aggregator", runDir, benchmarkArgs, suiteSummaries, gcDump);
+
+        if (suites.Contains(BenchmarkSuite.IndexWriterContention))
+            RunSuite<IndexWriterContentionBenchmarks>("index-writer", runDir, benchmarkArgs, suiteSummaries, gcDump);
+
         if (suiteSummaries.Count == 0)
         {
             Console.Error.WriteLine("No benchmark suite selected.");
@@ -385,6 +398,10 @@ internal static class Program
               async-index         AsyncIndexingBenchmarks -- sync vs async indexing
               tokenbudget         TokenBudgetBenchmarks -- token budget enforcement overhead (explicit only)
               diagnostics         DiagnosticsBenchmarks -- SlowQueryLog + Analytics hook overhead (explicit only)
+              simd-cosine         SimdCosineBenchmarks -- Vector<T> vs Runtime.Intrinsics cosine/dot product (explicit only)
+              packed-int-codec    PackedIntCodecBenchmarks -- Pack/Unpack scalar loop throughput (explicit only)
+              numeric-aggregator  NumericAggregatorSimdBenchmarks -- scalar vs Vector256 aggregation (explicit only)
+              index-writer        IndexWriterContentionBenchmarks -- concurrent AddDocument throughput (explicit only)
 
             Output:
               Results are written to bench/{machine-name}/{yyyy-MM-dd}/{HH-mm}/
@@ -507,6 +524,10 @@ internal static class Program
             "analysisfilters" or "analysis-filters" => BenchmarkSuite.AnalysisFilters,
             "analysisfiltersv2" or "analysis-filters-v2" => BenchmarkSuite.AnalysisFiltersV2,
             "patterntokeniser" or "pattern-tokeniser" => BenchmarkSuite.PatternTokeniser,
+            "simdcosine" or "simd-cosine" => BenchmarkSuite.SimdCosine,
+            "packedintcodec" or "packed-int-codec" => BenchmarkSuite.PackedIntCodec,
+            "numericaggregator" or "numeric-aggregator" => BenchmarkSuite.NumericAggregatorSimd,
+            "indexwriter" or "index-writer" => BenchmarkSuite.IndexWriterContention,
             "boolean" => BenchmarkSuite.Boolean,
             "phrase" => BenchmarkSuite.Phrase,
             "prefix" => BenchmarkSuite.Prefix,
@@ -629,5 +650,9 @@ internal static class Program
         VectorQuantisation,
         AnalysisFiltersV2,
         PatternTokeniser,
+        SimdCosine,
+        PackedIntCodec,
+        NumericAggregatorSimd,
+        IndexWriterContention,
     }
 }
