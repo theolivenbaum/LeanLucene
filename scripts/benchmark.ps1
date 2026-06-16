@@ -114,7 +114,7 @@ param(
                  'gutenberg-analysis', 'gutenberg-index', 'gutenberg-search',
                  'tokenbudget', 'diagnostics',
                  'analysis-filters-v2', 'pattern-tokeniser',
-                 'simd-cosine', 'packed-int-codec', 'numeric-aggregator', 'index-writer')]
+                 'packed-int-codec', 'numeric-aggregator', 'index-writer')]
     [string]$Suite = 'all',
 
     [ValidateSet('default', 'fast', 'quick-compare', 'intense', 'stress', 'exhaustive')]
@@ -227,7 +227,6 @@ $suiteDescriptions = [ordered]@{
     'gutenberg-search'   = 'GutenbergSearch             -- search on real ebook data'
     tokenbudget          = 'TokenBudgetBenchmarks       -- token budget enforcement overhead (explicit only)'
     diagnostics          = 'DiagnosticsBenchmarks       -- SlowQueryLog + Analytics overhead (explicit only)'
-    'simd-cosine'        = 'SimdCosineBenchmarks        -- Vector<T> vs Runtime.Intrinsics cosine/dot product (explicit only)'
     'packed-int-codec'   = 'PackedIntCodecBenchmarks    -- Pack/Unpack scalar loop throughput (explicit only)'
     'numeric-aggregator' = 'NumericAggregatorSimdBenchmarks -- scalar vs Vector256 aggregation (explicit only)'
     'index-writer'       = 'IndexWriterContentionBenchmarks -- concurrent AddDocument throughput (explicit only)'
