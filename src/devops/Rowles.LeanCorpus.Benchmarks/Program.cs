@@ -234,6 +234,9 @@ internal static class Program
         if (suites.Contains(BenchmarkSuite.IndexWriterContention))
             RunSuite<IndexWriterContentionBenchmarks>("index-writer", runDir, benchmarkArgs, suiteSummaries, gcDump);
 
+        if (suites.Contains(BenchmarkSuite.ConcurrentWrite))
+            RunSuite<ConcurrentVsSequentialBenchmarks>("concurrent-write", runDir, benchmarkArgs, suiteSummaries, gcDump);
+
         if (suiteSummaries.Count == 0)
         {
             Console.Error.WriteLine("No benchmark suite selected.");
@@ -523,6 +526,7 @@ internal static class Program
             "packedintcodec" or "packed-int-codec" => BenchmarkSuite.PackedIntCodec,
             "numericaggregator" or "numeric-aggregator" => BenchmarkSuite.NumericAggregatorSimd,
             "indexwriter" or "index-writer" => BenchmarkSuite.IndexWriterContention,
+            "concurrentwrite" or "concurrent-write" => BenchmarkSuite.ConcurrentWrite,
             "boolean" => BenchmarkSuite.Boolean,
             "phrase" => BenchmarkSuite.Phrase,
             "prefix" => BenchmarkSuite.Prefix,
@@ -648,5 +652,6 @@ internal static class Program
         PackedIntCodec,
         NumericAggregatorSimd,
         IndexWriterContention,
+        ConcurrentWrite,
     }
 }

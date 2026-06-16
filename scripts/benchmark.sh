@@ -109,6 +109,7 @@ declare -A SUITE_DESC=(
     ["packed-int-codec"]="PackedIntCodecBenchmarks    -- Pack/Unpack scalar loop throughput (explicit only)"
     ["numeric-aggregator"]="NumericAggregatorSimdBenchmarks -- scalar vs Vector256 aggregation (explicit only)"
     ["index-writer"]="IndexWriterContentionBenchmarks -- concurrent AddDocument throughput (explicit only)"
+    ["concurrent-write"]="ConcurrentVsSequentialBenchmarks -- DWPT parallel vs sequential indexing throughput (explicit only)"
 )
 
 SUITE_ORDER=(
@@ -120,7 +121,7 @@ SUITE_ORDER=(
     stemmer kstemmer lightenglish hunspell ngram synonym async-index
     gutenberg-analysis gutenberg-index gutenberg-search tokenbudget diagnostics
     analysis-filters-v2 pattern-tokeniser
-    packed-int-codec numeric-aggregator index-writer
+    packed-int-codec numeric-aggregator index-writer concurrent-write
 )
 
 declare -A STRAT_DESC=(

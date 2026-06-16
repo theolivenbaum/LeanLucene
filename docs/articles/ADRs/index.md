@@ -6,6 +6,7 @@
 | ADR002 | 2026-06-16 | Accepted | [Single auto-vectorised SIMD path](ADR002-single-simd-path.md) |
 | ADR003 | 2026-06-16 | Accepted | [Sorted parallel arrays for HNSW frozen adjacency](ADR003-hnsw-frozen-sorted-arrays.md) |
 | ADR004 | 2026-06-16 | Accepted | [ConcurrentDictionary with generation-swap eviction for read-heavy caches](ADR004-concurrentdictionary-cache-pattern.md) |
+| ADR005 | 2026-06-16 | Accepted | [Each DWPT flushes its own segment](ADR005-dwpt-segment-flush.md) |
 
 ## Template
 

@@ -64,155 +64,17 @@ internal static class SegmentFlusher
         };
         segInfo.WriteTo(basePath + ".seg");
 
-        // Sort qualified terms for the dictionary — build sorted (term, originalId) pairs
-        // to avoid a separate term→accumulator dictionary lookup during iteration.
+        // Sort qualified terms for the dictionary — build sorted (term, accumulator) pairs.
         int postingsCount = buffer.PostingsCount;
-        var sortedTerms = new (string Term, int OriginalId)[postingsCount];
+        var accumulatorTerms = new (string Term, PostingAccumulator Acc)[postingsCount];
         for (int i = 0; i < postingsCount; i++)
-            sortedTerms[i] = (buffer.GetTermString(i), i);
-        Array.Sort(sortedTerms, static (a, b) => string.CompareOrdinal(a.Term, b.Term));
+            accumulatorTerms[i] = (buffer.GetTermString(i), buffer.PostingAccumulators[i]);
+        Array.Sort(accumulatorTerms, static (a, b) => string.CompareOrdinal(a.Term, b.Term));
 
-        var postingsOffsets = new Dictionary<string, long>(postingsCount, StringComparer.Ordinal);
-        var headerInfos = new (long HeaderPos, int DocFreq, long SkipOffset)[postingsCount];
-        int termIdx = 0;
+        var (postingsOffsets, sortedTermsList) = WritePostingsBody(accumulatorTerms, basePath);
+        var sortedTermsBuffer = sortedTermsList;
 
-        // Write .pos body to a temporary file, then copy into final .pos with envelope.
-        // Uses FileStream.CopyTo instead of ReadAllBytes to avoid heap-allocating the entire body.
-        string tmpPosBody = basePath + ".pos.body.tmp";
-        try
-        {
-            using (var posOutput = new IndexOutput(tmpPosBody))
-            using (var blockWriter = new BlockPostingsWriter(posOutput))
-            {
-                foreach (var (qt, origId) in sortedTerms)
-                {
-                    var acc = buffer.PostingAccumulators[origId];
-                    var ids = acc.DocIds;
-
-                    bool hasFreqs = acc.HasFreqs;
-                    bool hasPositions = acc.HasPositions;
-                    bool hasPayloads = acc.HasPayloads;
-
-                    long headerPos = posOutput.Position;
-                    postingsOffsets[qt] = headerPos;
-                    posOutput.WriteInt32(0);
-                    posOutput.WriteInt64(0L);
-                    posOutput.WriteBoolean(hasFreqs);
-                    posOutput.WriteBoolean(hasPositions);
-                    posOutput.WriteBoolean(hasPayloads);
-
-                    blockWriter.StartTerm();
-                    for (int i = 0; i < ids.Length; i++)
-                        blockWriter.AddPosting(ids[i], hasFreqs ? acc.GetFreq(i) : 1);
-                    var meta = blockWriter.FinishTerm();
-
-                    if (hasPositions)
-                    {
-                        for (int i = 0; i < ids.Length; i++)
-                        {
-                            acc.GetEncodedPositionDeltas(i, out var deltaBytes, out int firstPos, out int freq);
-                            posOutput.WriteVarInt(freq);
-                            if (freq == 0) continue;
-
-                            posOutput.WriteVarInt(firstPos);
-                            int prevPos = firstPos;
-
-                            if (hasPayloads)
-                            {
-                                var payload0 = acc.GetPayload(i, 0);
-                                if (payload0 is { Length: > 0 })
-                                {
-                                    posOutput.WriteVarInt(payload0.Length);
-                                    posOutput.WriteBytes(payload0);
-                                }
-                                else
-                                {
-                                    posOutput.WriteVarInt(0);
-                                }
-                            }
-
-                            int deltaOffset = 0;
-                            for (int pi = 1; pi < freq; pi++)
-                            {
-                                deltaOffset += PostingAccumulator.ReadVarInt(
-                                    deltaBytes.Slice(deltaOffset), out int delta);
-                                int abs = firstPos + delta;
-                                posOutput.WriteVarInt(abs - prevPos);
-                                prevPos = abs;
-
-                                if (hasPayloads)
-                                {
-                                    var payload = acc.GetPayload(i, pi);
-                                    if (payload is { Length: > 0 })
-                                    {
-                                        posOutput.WriteVarInt(payload.Length);
-                                        posOutput.WriteBytes(payload);
-                                    }
-                                    else
-                                    {
-                                        posOutput.WriteVarInt(0);
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    headerInfos[termIdx++] = (headerPos, meta.DocFreq, meta.SkipOffset);
-                }
-            }
-
-            // Get body length from temp file size.
-            long bodyLength = new System.IO.FileInfo(tmpPosBody).Length;
-            int envelopeOffset = 1 + VarIntSize(bodyLength);
-
-            // Write final .pos: envelope + body streamed from temp file (no ReadAllBytes).
-            string posPath = basePath + ".pos";
-            using (var posStream = new System.IO.FileStream(posPath, System.IO.FileMode.Create,
-                System.IO.FileAccess.Write, System.IO.FileShare.None, bufferSize: 65536, System.IO.FileOptions.SequentialScan))
-            {
-                posStream.WriteByte(CodecConstants.PostingsVersion);
-                byte[] lenBuf = new byte[5];
-                int lenBytes = WriteVarIntToBuffer(lenBuf, (int)bodyLength);
-                posStream.Write(lenBuf, 0, lenBytes);
-
-                using (var tmpStream = new System.IO.FileStream(tmpPosBody, System.IO.FileMode.Open,
-                    System.IO.FileAccess.Read, System.IO.FileShare.Read, bufferSize: 65536, System.IO.FileOptions.SequentialScan))
-                {
-                    tmpStream.CopyTo(posStream);
-                }
-            }
-
-            // Patch header placeholders.
-            Span<byte> patch = stackalloc byte[12];
-            using (var patchStream = new System.IO.FileStream(posPath, System.IO.FileMode.Open,
-                System.IO.FileAccess.ReadWrite, System.IO.FileShare.None))
-            {
-                for (int i = 0; i < postingsCount; i++)
-                {
-                    var (hpos, docFreq, skipOffset) = headerInfos[i];
-                    patchStream.Seek(hpos + envelopeOffset, System.IO.SeekOrigin.Begin);
-                    System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(patch, docFreq);
-                    System.Buffers.Binary.BinaryPrimitives.WriteInt64LittleEndian(patch[4..], skipOffset + envelopeOffset);
-                    patchStream.Write(patch);
-                }
-            }
-
-            // Re-base postingsOffsets to final file positions.
-            var rekeyedOffsets = new Dictionary<string, long>(postingsOffsets.Count, StringComparer.Ordinal);
-            foreach (var kv in postingsOffsets)
-                rekeyedOffsets[kv.Key] = kv.Value + envelopeOffset;
-            postingsOffsets = rekeyedOffsets;
-
-            buffer.SortedTermsBuffer.Clear();
-            foreach (var (term, _) in sortedTerms)
-                buffer.SortedTermsBuffer.Add(term);
-        }
-        finally
-        {
-            TryDeleteTemporaryFile(tmpPosBody);
-        }
-
-        TermDictionaryWriter.Write(basePath + ".dic", buffer.SortedTermsBuffer, postingsOffsets);
+        TermDictionaryWriter.Write(basePath + ".dic", sortedTermsBuffer, postingsOffsets);
 
         // Norms and field lengths
         var normFields = new HashSet<string>(buffer.DocTokenCounts.Keys, StringComparer.Ordinal);
@@ -487,6 +349,456 @@ internal static class SegmentFlusher
         config.Metrics.RecordFlush(flushSw.Elapsed);
 
         return segInfo;
+    }
+
+    /// <summary>
+    /// Writes a segment directly from a <see cref="DocumentsWriterPerThread"/> buffer
+    /// without merging into the main <see cref="DocumentBufferState"/>. Each DWPT
+    /// partition becomes its own segment; the <see cref="IMergePolicy"/> consolidates
+    /// them later.
+    /// </summary>
+    public static SegmentInfo FlushFromDwpt(
+        DocumentsWriterPerThread dwpt,
+        IndexWriterConfig config,
+        string directoryPath,
+        int nextSegmentOrdinal,
+        int commitGeneration,
+        long flushSeqNoStart,
+        long nextSequenceNumber,
+        out int nextOrdinal)
+    {
+        var flushSw = System.Diagnostics.Stopwatch.StartNew();
+        using var flushActivity = Diagnostics.LeanCorpusActivitySource.Source
+            .StartActivity(Diagnostics.LeanCorpusActivitySource.Flush);
+
+        int docCount = dwpt.DocCount;
+
+        var segId = $"seg_{nextSegmentOrdinal}";
+        nextOrdinal = nextSegmentOrdinal + 1;
+        var basePath = Path.Combine(directoryPath, segId);
+        flushActivity?.SetTag("index.segment_id", segId);
+        flushActivity?.SetTag("index.doc_count", docCount);
+
+        var fieldNames = dwpt.FieldNames.ToList();
+
+        var segInfo = new SegmentInfo
+        {
+            SegmentId = segId,
+            DocCount = docCount,
+            LiveDocCount = docCount,
+            CommitGeneration = commitGeneration,
+            FieldNames = fieldNames,
+            IndexSortFields = config.IndexSort?.SerialisedFields,
+            MinSequenceNumber = config.TrackSequenceNumbers ? flushSeqNoStart : null,
+            MaxSequenceNumber = config.TrackSequenceNumbers ? nextSequenceNumber - 1 : null
+        };
+        segInfo.WriteTo(basePath + ".seg");
+
+        // Build sorted (term, accumulator) pairs from the dictionary.
+        int postingsCount = dwpt.Postings.Count;
+        var accumulatorTerms = new (string Term, PostingAccumulator Acc)[postingsCount];
+        int idx = 0;
+        foreach (var (term, acc) in dwpt.Postings)
+            accumulatorTerms[idx++] = (term, acc);
+        Array.Sort(accumulatorTerms, static (a, b) => string.CompareOrdinal(a.Term, b.Term));
+
+        var (postingsOffsets, sortedTermsList) = WritePostingsBody(accumulatorTerms, basePath);
+        var sortedTermsBuffer = sortedTermsList;
+
+        TermDictionaryWriter.Write(basePath + ".dic", sortedTermsBuffer, postingsOffsets);
+
+        // Norms and field lengths
+        var normFields = new HashSet<string>(dwpt.DocTokenCounts.Keys, StringComparer.Ordinal);
+        foreach (var fieldName in dwpt.FieldBoosts.Keys)
+            normFields.Add(fieldName);
+
+        var fieldNorms = new Dictionary<string, float[]>(normFields.Count, StringComparer.Ordinal);
+        var fieldLengths = new Dictionary<string, int[]>(dwpt.DocTokenCounts.Count, StringComparer.Ordinal);
+        var normsReturnList = new List<float[]>(normFields.Count);
+        var lengthsReturnList = new List<int[]>(dwpt.DocTokenCounts.Count);
+        foreach (var fieldName in normFields)
+        {
+            dwpt.DocTokenCounts.TryGetValue(fieldName, out var counts);
+            var norms = ArrayPool<float>.Shared.Rent(docCount);
+            int[]? lengths = counts is not null ? ArrayPool<int>.Shared.Rent(docCount) : null;
+            int countsLen = counts?.Length ?? 0;
+            for (int i = 0; i < docCount; i++)
+            {
+                int tokenCount = counts is not null
+                    ? (i < countsLen ? counts[i] : 0)
+                    : 1;
+                if (lengths is not null)
+                    lengths[i] = tokenCount;
+                norms[i] = 1.0f / (1.0f + Math.Max(1, tokenCount));
+            }
+            fieldNorms[fieldName] = norms;
+            if (lengths is not null)
+                fieldLengths[fieldName] = lengths;
+            normsReturnList.Add(norms);
+            if (lengths is not null)
+                lengthsReturnList.Add(lengths);
+        }
+        NormsWriter.Write(basePath + ".nrm", fieldNorms, docCount: docCount, sparseFieldBoosts: dwpt.FieldBoosts);
+        foreach (var arr in normsReturnList) ArrayPool<float>.Shared.Return(arr, clearArray: false);
+
+        FieldLengthWriter.Write(basePath + ".fln", fieldLengths, docCount);
+        SegmentStats.FromFieldLengths(docCount, docCount, fieldNames, fieldLengths)
+            .WriteTo(SegmentStats.GetStatsPath(directoryPath, segId));
+        foreach (var arr in lengthsReturnList) ArrayPool<int>.Shared.Return(arr, clearArray: false);
+
+        // Stored fields
+        StoredFieldsWriter.Write(basePath + ".fdt", basePath + ".fdx",
+            dwpt.StoredDocStarts, dwpt.StoredFieldIds, dwpt.StoredValues, dwpt.StoredFieldIdToName,
+            config.StoredFieldBlockSize, config.CompressionPolicy);
+
+        // Numeric field index
+        WriteNumericIndexDwpt(dwpt, basePath + ".num");
+
+        // Vectors
+        if (dwpt.Vectors.Count > 0)
+        {
+            foreach (var (fieldName, perField) in dwpt.Vectors)
+            {
+                if (perField.Count == 0) continue;
+
+                int dimension = 0;
+                foreach (var v in perField.Values)
+                {
+                    if (v.Length > 0) { dimension = v.Length; break; }
+                }
+                if (dimension == 0) continue;
+
+                if (config.NormaliseVectors)
+                {
+                    var keys = perField.Keys.ToArray();
+                    foreach (var k in keys)
+                    {
+                        var v = perField[k];
+                        if (v.Length != dimension) continue;
+                        var copy = v.ToArray();
+                        if (Search.Simd.SimdVectorOps.NormaliseInPlace(copy))
+                            perField[k] = copy;
+                    }
+                }
+                var quantisation = config.VectorQuantisation;
+                float int8Min = 0f, int8Alpha = 0f;
+                float[]? bbqCentroid = null;
+
+                if (quantisation == VectorQuantisation.None)
+                {
+                    var vecPath = Codecs.Vectors.VectorFilePaths.VectorFile(basePath, fieldName);
+                    Codecs.Vectors.VectorWriter.WriteField(vecPath, docCount, dimension, perField, quantisation);
+                }
+                else
+                {
+                    switch (quantisation)
+                    {
+                        case VectorQuantisation.Int8:
+                            (int8Min, int8Alpha) = ComputeInt8Params(perField);
+                            break;
+                        case VectorQuantisation.BBQ:
+                            bbqCentroid = ComputeBBQCentroid(perField, dimension);
+                            break;
+                    }
+                }
+
+                bool hasHnsw = false;
+                // Minimum document threshold for HNSW: skip graph construction on tiny
+                // segments where brute-force scan is cheaper than graph traversal.
+                const int minDocsForHnsw = 128;
+                if (config.BuildHnswOnFlush && perField.Count >= 2 && perField.Count >= minDocsForHnsw)
+                {
+                    var docIds = perField.Keys.ToArray();
+                    var hnswSw = System.Diagnostics.Stopwatch.StartNew();
+                    Codecs.Hnsw.HnswGraph graph;
+
+                    if (quantisation == VectorQuantisation.Int8)
+                    {
+                        var int8Source = new Codecs.Vectors.Int8QuantisedMemoryVectorSource(perField, dimension, int8Min, int8Alpha);
+                        var vqPath = Codecs.Vectors.VectorFilePaths.QuantisedVectorFile(basePath, fieldName);
+                        Codecs.Vectors.QuantisedVectorWriter.WriteInt8(vqPath, docCount, dimension, perField);
+                        graph = Codecs.Hnsw.HnswGraphBuilder.Build(int8Source, docIds, config.HnswBuildConfig, config.HnswSeed);
+                    }
+                    else if (quantisation == VectorQuantisation.BBQ)
+                    {
+                        var bbqSource = new Codecs.Vectors.BBQMemoryVectorSource(perField, dimension, bbqCentroid!);
+                        var vqPath = Codecs.Vectors.VectorFilePaths.QuantisedVectorFile(basePath, fieldName);
+                        Codecs.Vectors.QuantisedVectorWriter.WriteBBQ(vqPath, docCount, dimension, perField, bbqCentroid!);
+                        graph = Codecs.Hnsw.HnswGraphBuilder.Build(bbqSource, docIds, config.HnswBuildConfig, config.HnswSeed);
+                    }
+                    else
+                    {
+                        var memSource = new Dictionary<int, ReadOnlyMemory<float>>(perField);
+                        var source = new Codecs.Vectors.InMemoryVectorSource(memSource, dimension);
+                        graph = Codecs.Hnsw.HnswGraphBuilder.Build(source, docIds, config.HnswBuildConfig, config.HnswSeed);
+                    }
+                    hnswSw.Stop();
+                    config.Metrics.RecordHnswBuild(hnswSw.Elapsed, docIds.Length);
+                    var hnswPath = Codecs.Vectors.VectorFilePaths.HnswFile(basePath, fieldName);
+                    Codecs.Hnsw.HnswWriter.Write(hnswPath, graph, dimension, config.NormaliseVectors);
+                    hasHnsw = true;
+                }
+                else if (quantisation != VectorQuantisation.None)
+                {
+                    var vqPath = Codecs.Vectors.VectorFilePaths.QuantisedVectorFile(basePath, fieldName);
+                    switch (quantisation)
+                    {
+                        case VectorQuantisation.Int8:
+                            Codecs.Vectors.QuantisedVectorWriter.WriteInt8(vqPath, docCount, dimension, perField);
+                            break;
+                        case VectorQuantisation.BBQ:
+                            Codecs.Vectors.QuantisedVectorWriter.WriteBBQ(vqPath, docCount, dimension, perField, bbqCentroid!);
+                            break;
+                    }
+                }
+
+                segInfo.VectorFields.Add(new VectorFieldInfo
+                {
+                    FieldName = fieldName,
+                    Dimension = dimension,
+                    Normalised = config.NormaliseVectors,
+                    Quantisation = quantisation,
+                    HasHnsw = hasHnsw,
+                });
+            }
+
+            segInfo.WriteTo(basePath + ".seg");
+        }
+
+        // DocValues
+        if (dwpt.NumericDocValues.Count > 0)
+        {
+            var dvn = new Dictionary<string, double[]>(dwpt.NumericDocValues.Count, StringComparer.Ordinal);
+            var dvnReturnList = new List<double[]>(dwpt.NumericDocValues.Count);
+            var dvnPresence = new Dictionary<string, IReadOnlySet<int>>(dwpt.NumericIndex.Count, StringComparer.Ordinal);
+            foreach (var (field, list) in dwpt.NumericDocValues)
+            {
+                var arr = ArrayPool<double>.Shared.Rent(docCount);
+                Array.Clear(arr, 0, docCount);
+                for (int i = 0; i < Math.Min(list.Count, docCount); i++)
+                    arr[i] = list[i];
+                dvn[field] = arr;
+                dvnReturnList.Add(arr);
+                if (dwpt.NumericIndex.TryGetValue(field, out var sparseMap))
+                    dvnPresence[field] = sparseMap.Keys.ToHashSet();
+            }
+            NumericDocValuesWriter.Write(basePath + ".dvn", dvn, docCount, dvnPresence);
+            foreach (var arr in dvnReturnList) ArrayPool<double>.Shared.Return(arr, clearArray: false);
+        }
+
+        if (dwpt.SortedDocValues.Count > 0)
+        {
+            var dvs = new Dictionary<string, string?[]>(dwpt.SortedDocValues.Count, StringComparer.Ordinal);
+            foreach (var (field, list) in dwpt.SortedDocValues)
+            {
+                var arr = new string?[docCount];
+                for (int i = 0; i < Math.Min(list.Count, docCount); i++)
+                    arr[i] = list[i];
+                dvs[field] = arr;
+            }
+            SortedDocValuesWriter.Write(basePath + ".dvs", dvs, docCount);
+        }
+
+        if (dwpt.SortedSetDocValues.Count > 0)
+            SortedSetDocValuesWriter.Write(basePath + ".dss", ToDenseMultiValueColumns(dwpt.SortedSetDocValues, docCount), docCount);
+
+        if (dwpt.SortedNumericDocValues.Count > 0)
+            SortedNumericDocValuesWriter.Write(basePath + ".dsn", ToDenseMultiValueColumns(dwpt.SortedNumericDocValues, docCount), docCount);
+
+        if (dwpt.BinaryDocValues.Count > 0)
+            BinaryDocValuesWriter.Write(basePath + ".dvb", ToDenseMultiValueColumns(dwpt.BinaryDocValues, docCount), docCount);
+
+        // BKD tree
+        if (dwpt.NumericIndex.Count > 0)
+        {
+            var bkdData = new Dictionary<string, List<(double Value, int DocId)>>(dwpt.NumericIndex.Count, StringComparer.Ordinal);
+            foreach (var (field, docMap) in dwpt.NumericIndex)
+            {
+                var points = new List<(double Value, int DocId)>(docMap.Count);
+                foreach (var (docId, value) in docMap)
+                {
+                    if (docId < docCount)
+                        points.Add((value, docId));
+                }
+                if (points.Count > 0)
+                    bkdData[field] = points;
+            }
+            if (bkdData.Count > 0)
+                BKDWriter.Write(basePath + ".bkd", bkdData, config.BKDMaxLeafSize);
+        }
+
+        // Term vectors — DWPT doesn't support term vectors (they require per-document
+        // position data from the main buffer's offset tracking). Skip.
+        // Block-join — not supported on the concurrent path; skip ParentBitSet.
+
+        flushSw.Stop();
+        config.Metrics.RecordFlush(flushSw.Elapsed);
+
+        return segInfo;
+    }
+
+    /// <summary>
+    /// Writes the .pos postings body for a sorted array of (term, accumulator) pairs.
+    /// Returns postings offsets (keyed by qualified term) and the sorted term list
+    /// for the term dictionary.
+    /// </summary>
+    private static (Dictionary<string, long> PostingsOffsets, List<string> SortedTerms) WritePostingsBody(
+        (string Term, PostingAccumulator Acc)[] accumulatorTerms,
+        string basePath)
+    {
+        int postingsCount = accumulatorTerms.Length;
+        var postingsOffsets = new Dictionary<string, long>(postingsCount, StringComparer.Ordinal);
+        var headerInfos = new (long HeaderPos, int DocFreq, long SkipOffset)[postingsCount];
+        var sortedTerms = new List<string>(postingsCount);
+        int termIdx = 0;
+
+        string tmpPosBody = basePath + ".pos.body.tmp";
+        try
+        {
+            using (var posOutput = new IndexOutput(tmpPosBody))
+            using (var blockWriter = new BlockPostingsWriter(posOutput))
+            {
+                foreach (var (qt, acc) in accumulatorTerms)
+                {
+                    sortedTerms.Add(qt);
+                    var ids = acc.DocIds;
+
+                    bool hasFreqs = acc.HasFreqs;
+                    bool hasPositions = acc.HasPositions;
+                    bool hasPayloads = acc.HasPayloads;
+
+                    long headerPos = posOutput.Position;
+                    postingsOffsets[qt] = headerPos;
+                    posOutput.WriteInt32(0);
+                    posOutput.WriteInt64(0L);
+                    posOutput.WriteBoolean(hasFreqs);
+                    posOutput.WriteBoolean(hasPositions);
+                    posOutput.WriteBoolean(hasPayloads);
+
+                    blockWriter.StartTerm();
+                    for (int i = 0; i < ids.Length; i++)
+                        blockWriter.AddPosting(ids[i], hasFreqs ? acc.GetFreq(i) : 1);
+                    var meta = blockWriter.FinishTerm();
+
+                    if (hasPositions)
+                    {
+                        for (int i = 0; i < ids.Length; i++)
+                        {
+                            acc.GetEncodedPositionDeltas(i, out var deltaBytes, out int firstPos, out int freq);
+                            posOutput.WriteVarInt(freq);
+                            if (freq == 0) continue;
+
+                            posOutput.WriteVarInt(firstPos);
+                            int prevPos = firstPos;
+
+                            if (hasPayloads)
+                            {
+                                var payload0 = acc.GetPayload(i, 0);
+                                if (payload0 is { Length: > 0 })
+                                {
+                                    posOutput.WriteVarInt(payload0.Length);
+                                    posOutput.WriteBytes(payload0);
+                                }
+                                else
+                                {
+                                    posOutput.WriteVarInt(0);
+                                }
+                            }
+
+                            int deltaOffset = 0;
+                            for (int pi = 1; pi < freq; pi++)
+                            {
+                                deltaOffset += PostingAccumulator.ReadVarInt(
+                                    deltaBytes.Slice(deltaOffset), out int delta);
+                                int abs = firstPos + delta;
+                                posOutput.WriteVarInt(abs - prevPos);
+                                prevPos = abs;
+
+                                if (hasPayloads)
+                                {
+                                    var payload = acc.GetPayload(i, pi);
+                                    if (payload is { Length: > 0 })
+                                    {
+                                        posOutput.WriteVarInt(payload.Length);
+                                        posOutput.WriteBytes(payload);
+                                    }
+                                    else
+                                    {
+                                        posOutput.WriteVarInt(0);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    headerInfos[termIdx++] = (headerPos, meta.DocFreq, meta.SkipOffset);
+                }
+            }
+
+            long bodyLength = new System.IO.FileInfo(tmpPosBody).Length;
+            int envelopeOffset = 1 + VarIntSize(bodyLength);
+
+            string posPath = basePath + ".pos";
+            using (var posStream = new System.IO.FileStream(posPath, System.IO.FileMode.Create,
+                System.IO.FileAccess.Write, System.IO.FileShare.None, bufferSize: 65536, System.IO.FileOptions.SequentialScan))
+            {
+                posStream.WriteByte(CodecConstants.PostingsVersion);
+                byte[] lenBuf = new byte[5];
+                int lenBytes = WriteVarIntToBuffer(lenBuf, (int)bodyLength);
+                posStream.Write(lenBuf, 0, lenBytes);
+
+                using (var tmpStream = new System.IO.FileStream(tmpPosBody, System.IO.FileMode.Open,
+                    System.IO.FileAccess.Read, System.IO.FileShare.Read, bufferSize: 65536, System.IO.FileOptions.SequentialScan))
+                {
+                    tmpStream.CopyTo(posStream);
+                }
+            }
+
+            Span<byte> patch = stackalloc byte[12];
+            using (var patchStream = new System.IO.FileStream(posPath, System.IO.FileMode.Open,
+                System.IO.FileAccess.ReadWrite, System.IO.FileShare.None))
+            {
+                for (int i = 0; i < postingsCount; i++)
+                {
+                    var (hpos, docFreq, skipOffset) = headerInfos[i];
+                    patchStream.Seek(hpos + envelopeOffset, System.IO.SeekOrigin.Begin);
+                    System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(patch, docFreq);
+                    System.Buffers.Binary.BinaryPrimitives.WriteInt64LittleEndian(patch[4..], skipOffset + envelopeOffset);
+                    patchStream.Write(patch);
+                }
+            }
+
+            var rekeyedOffsets = new Dictionary<string, long>(postingsOffsets.Count, StringComparer.Ordinal);
+            foreach (var kv in postingsOffsets)
+                rekeyedOffsets[kv.Key] = kv.Value + envelopeOffset;
+
+            return (rekeyedOffsets, sortedTerms);
+        }
+        finally
+        {
+            TryDeleteTemporaryFile(tmpPosBody);
+        }
+    }
+
+    private static void WriteNumericIndexDwpt(DocumentsWriterPerThread dwpt, string filePath)
+    {
+        if (dwpt.NumericIndex.Count == 0) return;
+
+        using var output = new IndexOutput(filePath);
+
+        output.WriteInt32(dwpt.NumericIndex.Count);
+        foreach (var (fieldName, docValues) in dwpt.NumericIndex)
+        {
+            var fieldBytes = System.Text.Encoding.UTF8.GetBytes(fieldName);
+            output.WriteVarInt(fieldBytes.Length);
+            output.WriteBytes(fieldBytes);
+            output.WriteInt32(docValues.Count);
+            foreach (var (docId, value) in docValues)
+            {
+                output.WriteInt32(docId);
+                output.WriteInt64(System.BitConverter.DoubleToInt64Bits(value));
+            }
+        }
     }
 
     private static int[] ComputeSortPermutation(DocumentBufferState buffer, IndexSort sort)

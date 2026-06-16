@@ -17,6 +17,12 @@ internal sealed class DocumentsWriterPerThread
     private readonly bool _storePayloads;
     internal readonly Dictionary<string, PostingAccumulator> Postings = new(StringComparer.Ordinal);
 
+    /// <summary>Stored-field name-to-ID mapping exposed for <see cref="SegmentFlusher.FlushFromDwpt"/>.</summary>
+    internal Dictionary<string, int> StoredFieldNameToId => _storedFieldNameToId;
+
+    /// <summary>Always <see langword="null"/> — block-join indexing is not supported on the concurrent path.</summary>
+    internal HashSet<int>? ParentDocIds => null;
+
     /// <summary>Looks up or creates a posting accumulator by qualified term.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal PostingAccumulator GetOrCreateAccumulator(string qualifiedTerm)
