@@ -1,4 +1,4 @@
-# ADR: Single auto-vectorised SIMD path
+# ADR002: Single auto-vectorised SIMD path
 
 - **Date:** 2026-06-16
 - **Status:** Accepted

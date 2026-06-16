@@ -1,4 +1,4 @@
-# ADR: ConcurrentDictionary with generation-swap eviction for read-heavy caches
+# ADR004: ConcurrentDictionary with generation-swap eviction for read-heavy caches
 
 - **Date:** 2026-06-16
 - **Status:** Accepted

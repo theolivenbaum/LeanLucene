@@ -1,4 +1,4 @@
-# ADR: Sorted parallel arrays for HNSW frozen adjacency
+# ADR003: Sorted parallel arrays for HNSW frozen adjacency
 
 - **Date:** 2026-06-16
 - **Status:** Accepted

@@ -1,7 +1,7 @@
-# ADR: [title]
+# ADRnnn: [title]
 
 - **Date:** YYYY-MM-DD
-- **Status:** Proposed | Accepted | Deprecated | Superseded
+- **Status:** Proposed | Accepted | Deprecated | Superseded by [ADRnnn]
 
 ## Context
 

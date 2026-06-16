@@ -1,4 +1,4 @@
-# ADR: Span-based body encoding for segment serialisation
+# ADR001: Span-based body encoding for segment serialisation
 
 - **Date:** 2026-06-16
 - **Status:** Accepted
