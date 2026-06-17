@@ -57,16 +57,6 @@ jobs:
       - name: Run Native AOT smoke
         run: src/examples/Rowles.LeanCorpus.Example.NativeAot/bin/Release/net10.0/linux-x64/publish/Rowles.LeanCorpus.Example.NativeAot
 
-      - name: Generate coverage report
-        run: dotnet tool install -g dotnet-reportgenerator-globaltool && reportgenerator "-reports:coverage-results/**/coverage.cobertura.xml" "-targetdir:docs/coverage" "-reporttypes:Html" "-title:LeanCorpus Coverage"
-
-      - name: Build docs
-        shell: pwsh
-        run: ./scripts/docs.ps1 -SkipBenchmarks -SkipCoverage
-
-      - name: Copy coverage into docs site
-        run: cp -r docs/coverage docs/site/coverage
-
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v7
@@ -86,6 +76,46 @@ jobs:
           name: coverage-results
           path: coverage-results/**/coverage.cobertura.xml
           if-no-files-found: ignore
+
+  deploy:
+    needs: build
+    if: startsWith(github.event.head_commit.message, '[deploy]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup .NET 11 preview
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '11.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Add .NET tools to PATH
+        run: echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      - name: Download coverage results
+        uses: actions/download-artifact@v7
+        with:
+          name: coverage-results
+          path: coverage-results
+
+      - name: Restore core library
+        run: dotnet restore src/core/Rowles.LeanCorpus/Rowles.LeanCorpus.csproj
+
+      - name: Build core library
+        run: dotnet build src/core/Rowles.LeanCorpus/Rowles.LeanCorpus.csproj -c Release --no-restore
+
+      - name: Build docs
+        shell: pwsh
+        run: ./scripts/docs.ps1
+
+      - name: Copy coverage into docs site
+        run: cp -r docs/coverage docs/site/coverage
 
       - name: Upload docs artifact
         uses: actions/upload-artifact@v7
