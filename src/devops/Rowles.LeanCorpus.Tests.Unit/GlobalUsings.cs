@@ -20,6 +20,7 @@ global using Rowles.LeanCorpus.Codecs.Vectors;
 global using Rowles.LeanCorpus.Store;
 global using Rowles.LeanCorpus.Document.Fields;
 global using Rowles.LeanCorpus.Index.Indexer;
+global using Rowles.LeanCorpus.Index.Migration;
 global using Rowles.LeanCorpus.Index.Segment;
 global using Rowles.LeanCorpus.Mapping;
 global using Rowles.LeanCorpus.Mapping.Attributes;
