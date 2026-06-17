@@ -352,6 +352,7 @@ function render(full){
       maintainAspectRatio:false,
       interaction:{mode:"index",intersect:false},
       plugins:{
+        legend:{labels:{filter:function(item){return item.datasetIndex<2;}}},
         tooltip:{callbacks:{label:function(c){var v=c.raw.y||c.raw;if(c.dataset.yAxisID==="y")return fmtBytes(v);return fmtNs(v);}}}
       },
       scales:{
