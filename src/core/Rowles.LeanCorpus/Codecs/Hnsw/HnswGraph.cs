@@ -34,7 +34,7 @@ internal sealed class HnswGraph
     private readonly IInt8VectorSource? _int8Source;
 
     // Layer 0 is the base; index increases with sparsity.
-    private readonly List<Dictionary<int, List<int>>> _mutableLevels;
+    private List<Dictionary<int, List<int>>> _mutableLevels;
 
     // Populated after Freeze: stable adjacency arrays for thread-safe reads.
     // volatile ensures the frozen graph is fully visible to all threads on ARM64.
@@ -68,6 +68,36 @@ internal sealed class HnswGraph
     public bool IsReadOnly => _frozenLevels is not null;
 
     public HnswGraph(IVectorSource vectors, HnswBuildConfig config, long seed)
+        : this(vectors, config, seed, frozen: false)
+    {
+        _mutableLevels = [new Dictionary<int, List<int>>()];
+    }
+
+    /// <summary>
+    /// Builds an <see cref="HnswGraph"/> from pre-loaded adjacency. Used by the reader to materialise
+    /// a graph from a .hnsw file. The graph is created in the read-only state immediately.
+    /// </summary>
+    internal static HnswGraph FromFrozen(
+        IVectorSource vectors,
+        HnswBuildConfig config,
+        long seed,
+        List<FrozenLevel> levels,
+        int entryPoint,
+        int maxLevel,
+        int nodeCount)
+    {
+        // Use the frozen constructor to skip allocating a mutable dictionary that would
+        // never be used: every accessor already checks _frozenLevels before _mutableLevels.
+        return new HnswGraph(vectors, config, seed, frozen: true)
+        {
+            EntryPoint = entryPoint,
+            MaxLevel = maxLevel,
+            NodeCount = nodeCount,
+            _frozenLevels = levels,
+        };
+    }
+
+    private HnswGraph(IVectorSource vectors, HnswBuildConfig config, long seed, bool frozen)
     {
         ArgumentNullException.ThrowIfNull(vectors);
         ArgumentNullException.ThrowIfNull(config);
@@ -81,7 +111,8 @@ internal sealed class HnswGraph
         Seed = seed;
         _rng = new Random(unchecked((int)seed));
         _levelMultiplier = 1.0 / Math.Log(M);
-        _mutableLevels = [new Dictionary<int, List<int>>()];
+        _mutableLevels = [];
+
         if (vectors is QuantisedVectorSource qvs)
         {
             _vectorQuantisation = qvs.Quantisation;
@@ -100,29 +131,6 @@ internal sealed class HnswGraph
             _vectorQuantisation = VectorQuantisation.Int8;
             _int8Source = int8Mem;
         }
-    }
-
-    /// <summary>
-    /// Builds an <see cref="HnswGraph"/> from pre-loaded adjacency. Used by the reader to materialise
-    /// a graph from a .hnsw file. The graph is created in the read-only state immediately.
-    /// </summary>
-    internal static HnswGraph FromFrozen(
-        IVectorSource vectors,
-        HnswBuildConfig config,
-        long seed,
-        List<FrozenLevel> levels,
-        int entryPoint,
-        int maxLevel,
-        int nodeCount)
-    {
-        var graph = new HnswGraph(vectors, config, seed)
-        {
-            EntryPoint = entryPoint,
-            MaxLevel = maxLevel,
-            NodeCount = nodeCount,
-            _frozenLevels = levels,
-        };
-        return graph;
     }
 
     /// <summary>Marks the graph as immutable. Required before search can be called concurrently.</summary>
