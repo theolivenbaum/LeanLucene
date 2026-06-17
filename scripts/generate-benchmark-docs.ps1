@@ -352,7 +352,7 @@ function render(full){
       maintainAspectRatio:false,
       interaction:{mode:"index",intersect:false},
       plugins:{
-        legend:{labels:{filter:function(item){return item.datasetIndex<2;}}},
+        legend:{labels:{generateLabels:function(chart){var d=chart.data.datasets;return[{text:d[0].label,fillStyle:d[0].backgroundColor,strokeStyle:d[0].borderColor,hidden:!chart.isDatasetVisible(0),datasetIndex:0},{text:d[1].label,fillStyle:d[1].backgroundColor||d[1].borderColor,strokeStyle:d[1].borderColor,hidden:!chart.isDatasetVisible(1),datasetIndex:1,pointStyle:"circle",pointStyleWidth:8}];}}},
         tooltip:{callbacks:{label:function(c){var v=c.raw.y||c.raw;if(c.dataset.yAxisID==="y")return fmtBytes(v);return fmtNs(v);}}}
       },
       scales:{
