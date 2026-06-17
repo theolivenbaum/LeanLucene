@@ -77,6 +77,30 @@ public sealed class SegmentReaderCorruptionTests : IClassFixture<ChaosDirectoryF
     }
 
 
+    [Property(MaxTest = 8)]
+    public void SegmentReader_CorruptedNorms_ThrowsOnRead(NonNegativeInt byteOffset)
+    {
+        var path = Path.Combine(_fixture.Path, $"sr_corrupt_nrm_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(path);
+        using var directory = new MMapDirectory(path);
+        using (var writer = new IndexWriter(directory, new IndexWriterConfig()))
+        {
+            var doc = new LeanDocument();
+            doc.Add(new TextField("body", "hello world"));
+            doc.Add(new StringField("id", "a"));
+            writer.AddDocument(doc);
+            writer.Commit();
+        }
+        var nrmFile = Directory.GetFiles(path, "*.nrm").Single();
+        FlipByte(nrmFile, 0);
+        Assert.ThrowsAny<Exception>((Action)(() =>
+        {
+            using var searcher = new IndexSearcher(directory);
+            var reader = searcher.GetSegmentReaders()[0];
+            _ = reader.GetNorm(0, "body");
+        }));
+    }
+
     private static void FlipByte(string path, long offset)
     {
         using var stream = File.Open(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
