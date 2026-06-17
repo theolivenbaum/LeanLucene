@@ -686,39 +686,27 @@ public sealed partial class IndexWriter : IDisposable
         try { File.Delete(lockPath); } catch (Exception ex) { Diagnostics.LeanCorpusActivitySource.TraceSwallowed(ex, "write-lock file delete"); }
     }
 
+    /// <summary>
+    /// Atomically registers the calling thread as an in-flight indexing operation.
+    /// If the writer has been disposed or is in a failed state, decrements the
+    /// in-flight count and throws rather than allowing the caller to proceed.
+    /// </summary>
     private void EnterIndexingOperation()
     {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-        ThrowIfIndexingFailed();
         Interlocked.Increment(ref _inFlightAdds);
-        if (Volatile.Read(ref _disposed) != 0)
+        if (Volatile.Read(ref _disposed) != 0 || Volatile.Read(ref _indexingFailed) != 0)
         {
             Interlocked.Decrement(ref _inFlightAdds);
-            throw new ObjectDisposedException(nameof(IndexWriter));
-        }
-        try
-        {
-            ThrowIfIndexingFailed();
-        }
-        catch
-        {
-            Interlocked.Decrement(ref _inFlightAdds);
-            throw;
+            if (Volatile.Read(ref _disposed) != 0)
+                throw new ObjectDisposedException(nameof(IndexWriter));
+            throw new InvalidOperationException(
+                "The writer is unusable because an indexing operation failed after mutating the in-memory buffer. Dispose the writer and reopen from the last commit.");
         }
     }
 
     private void ExitIndexingOperation()
     {
         Interlocked.Decrement(ref _inFlightAdds);
-    }
-
-    private void ThrowIfIndexingFailed()
-    {
-        if (Volatile.Read(ref _indexingFailed) != 0)
-        {
-            throw new InvalidOperationException(
-                "The writer is unusable because an indexing operation failed after mutating the in-memory buffer. Dispose the writer and reopen from the last commit.");
-        }
     }
 
     private void MarkIndexingFailed()
