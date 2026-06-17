@@ -16,7 +16,7 @@ Two hot-path caches used `Dictionary` behind a `Lock`:
 ## Decision
 
 Replace `Dictionary`+`Lock` with `ConcurrentDictionary` and use
-`Interlocked.CompareExchange` to swap in a fresh dictionary when the
+`Interlocked.Exchange` to swap in a fresh dictionary when the
 soft entry cap is exceeded. For the wildcard automaton cache, wrap
 values in `Lazy<T>` so only the constructing thread pays the build cost.
 
@@ -32,7 +32,7 @@ instances from the library.
 ## Consequences
 
 - `QueryCache` uses `ConcurrentDictionary` with an approximate count
-  tracked via `Interlocked.Increment`/`Decrement`. The `Put` path
+  tracked via `Interlocked.Increment`. The `Put` path
   writes through the indexer and triggers a generation swap when the
   soft cap is exceeded. `TryGet` is lock-free: it reads the volatile
   dictionary reference and does a single `TryGetValue` plus a

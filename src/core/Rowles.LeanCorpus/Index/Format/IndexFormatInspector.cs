@@ -282,27 +282,7 @@ public static class IndexFormatInspector
             return true;
         }
 
-        ICodec<byte[]>? format = extension switch
-        {
-            ".dic" => CodecFormats.TermDictionary,
-            ".pos" => CodecFormats.Postings,
-            ".nrm" => CodecFormats.Norms,
-            ".fdt" or ".fdx" => CodecFormats.StoredFields,
-            ".vec" => CodecFormats.Vectors,
-            ".vq" or ".vqe" => CodecFormats.QuantisedVectors,
-            ".hnsw" => CodecFormats.Hnsw,
-            ".tvx" or ".tvd" => CodecFormats.TermVectors,
-            ".dvn" => CodecFormats.NumericDocValues,
-            ".dvs" => CodecFormats.SortedDocValues,
-            ".dss" => CodecFormats.SortedSetDocValues,
-            ".dsn" => CodecFormats.SortedNumericDocValues,
-            ".dvb" => CodecFormats.BinaryDocValues,
-            ".bkd" => CodecFormats.Bkd,
-            ".fln" => CodecFormats.FieldLengths,
-            ".del" => CodecFormats.RoaringBitmap,
-            _ => null
-        };
-
+        var format = descriptor.HeaderFormat;
         if (format is null)
         {
             inventory = null!;

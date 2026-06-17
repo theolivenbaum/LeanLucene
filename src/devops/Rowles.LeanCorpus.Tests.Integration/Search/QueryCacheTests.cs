@@ -158,6 +158,29 @@ public sealed class QueryCacheTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that putting the same key twice does not inflate the
+    /// approximate entry count: <see cref="QueryCache.Put"/> guards against
+    /// duplicate keys by checking <c>ContainsKey</c> before incrementing.
+    /// </summary>
+    [Fact(DisplayName = "Cache: Duplicate Key Put Does Not Inflate Count")]
+    public void Cache_DuplicateKeyPut_DoesNotInflateCount()
+    {
+        var cache = new QueryCache(10);
+        var q = new TermQuery("f", "t");
+
+        cache.Put(q, 10, TopDocs.Empty);
+        Assert.Equal(1, cache.Count);
+
+        cache.Put(q, 10, TopDocs.Empty);
+        Assert.Equal(1, cache.Count);
+
+        // A different query should increase the count.
+        var q2 = new TermQuery("f", "u");
+        cache.Put(q2, 10, TopDocs.Empty);
+        Assert.Equal(2, cache.Count);
+    }
+
+    /// <summary>
     /// Verifies the Query Equality: Term Query scenario.
     /// </summary>
     [Fact(DisplayName = "Query Equality: Term Query")]

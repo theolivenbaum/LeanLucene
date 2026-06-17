@@ -88,13 +88,18 @@ public sealed class SearcherManager : IDisposable
     /// </summary>
     public SearcherLease AcquireLease()
     {
+        var spinWait = new SpinWait();
+        const long timeoutTicks = 30 * TimeSpan.TicksPerSecond;
+        long started = Environment.TickCount64;
         while (true)
         {
             ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
             var sr = _current;
             if (sr.TryIncrementRef())
                 return new SearcherLease(sr.Searcher, sr.DecrementRef);
-            Thread.SpinWait(1);
+            spinWait.SpinOnce();
+            if (spinWait.NextSpinWillYield && Environment.TickCount64 - started > timeoutTicks)
+                throw new TimeoutException("SearcherManager.AcquireLease timed out after 30 seconds. The current searcher reference may be stuck.");
         }
     }
 
@@ -104,15 +109,18 @@ public sealed class SearcherManager : IDisposable
     /// </summary>
     public IndexSearcher Acquire()
     {
+        var spinWait = new SpinWait();
+        const long timeoutTicks = 30 * TimeSpan.TicksPerSecond;
+        long started = Environment.TickCount64;
         while (true)
         {
             ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
             var sr = _current;
             if (sr.TryIncrementRef())
                 return sr.Searcher;
-            // The ref was retired between reading _current and incrementing;
-            // _current has already been swapped to a live ref — spin and retry.
-            Thread.SpinWait(1);
+            spinWait.SpinOnce();
+            if (spinWait.NextSpinWillYield && Environment.TickCount64 - started > timeoutTicks)
+                throw new TimeoutException("SearcherManager.Acquire timed out after 30 seconds. The current searcher reference may be stuck.");
         }
     }
 
