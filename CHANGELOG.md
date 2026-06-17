@@ -19,7 +19,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Five new scoring models: `Bm25PlusSimilarity`, `Bm25LSimilarity`, and three TF-IDF variants (`TfIdfAugmentedSimilarity`, `TfIdfDoubleNormSimilarity`, `TfIdfPivotedSimilarity`).
 - Three language-model similarities: `LMJelinekMercerSimilarity` (linear interpolation), `DirichletSimilarity` (Bayesian smoothing), and `LMAbsoluteDiscountingSimilarity` (absolute discounting). All consume `CollectionStatistics` for term probability estimation.
 - `PostingsHighlighter` and `TermVectorHighlighter` for snippet extraction using stored term-vector offsets without re-analysing the original text. `HybridHighlighter` combines stored-field re-analysis with term-vector snippet placement.
-- `GetStoredFields` overload with an optional `fieldsToLoad` parameter for selective stored-field retrieval, reducing allocations when only a subset of fields is needed.
 - `StoreDocValues` flag on `StringField`, `TextField`, and `NumericField` (defaults: `true` for `StringField`/`NumericField`, `false` for `TextField`). When `false`, the field skips populating sorted, sorted-set, numeric, and binary DocValues, cutting per-document buffer overhead and shrinking the flush I/O footprint.
 - Profiling project with `ActivitySource`-based phased breakdown of indexing time (`add_document`, `analyse`, `flush`, `commit`, `merge`), plus a deletion-phased benchmark.
 
@@ -49,6 +48,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Commit` now waits for the background merge to finish before returning, preventing a race where a reader opened immediately after commit could see a new commit referencing segment files the merge had not yet flushed to disk.
 - `QueryCache` uses `ConcurrentDictionary` with generation-swap eviction instead of `Dictionary`+`Lock`+`LinkedList`. The `TryGet` path is lock-free. `Put` triggers a dictionary swap when the soft entry cap is exceeded. (ADR004)
 - `CodecFormatDescriptor` now carries a `HeaderFormat` field per extension, populated from `CodecFormats`, so version checks use the correct codec format rather than a single hardcoded value.
+- CodecKit extension points previously marked `internal` are now `public` so third-party codec authors can register custom checksums and formats: `ChecksumAlgorithmId`, `ChecksumPlacement`, `IChecksumProvider`, `CodecFileHeader`, and `CodecFormat`.
+- The CodecKit exception hierarchy was reorganised with three purpose-built public base classes. `CodecFormatException` covers structural problems (unknown version, trailing data, insufficient data), `CodecIntegrityException` covers checksum and hash failures, and `CodecResourceException` covers allocation and overflow errors. The intermediate `FormatViolationException` was removed and its subtypes distributed to the new bases. `CodecValidationException` was made public.
+- Norms format bumped to v2. `NormsReader` reads both v1 and v2 on open; `NormsWriter` produces v2. A migration path upgrades v1 `.nrm` files in place.
+- `SearcherManager.Acquire` and `AcquireLease` spin-waits now throw `TimeoutException` after 30 seconds instead of spinning indefinitely, matching the timeout applied to `IndexWriter.Dispose`.
 
 ### Fixed
 
@@ -57,6 +60,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - AOT smoke test script now auto-detects the OS when selecting the runtime identifier.
 - Highlighter and similarity benchmark comparisons against Lucene.NET corrected.
 - Every `await` in the library now includes `ConfigureAwait(false)`, preventing continuations from capturing the caller's `SynchronizationContext`.
+
+## [1.4.1] - 2026-06-13
+
+### Added
+
+- `GetStoredFields` overload with an optional `fieldsToLoad` parameter for selective stored-field retrieval, reducing allocations when only a subset of fields is needed.
 
 ## [1.4.0] - 2026-05-29
 
