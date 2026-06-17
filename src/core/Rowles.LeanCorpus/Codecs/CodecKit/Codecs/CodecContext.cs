@@ -12,7 +12,7 @@ namespace Rowles.LeanCorpus.Codecs.CodecKit.Codecs;
 /// Tracks nesting depth, diagnostic path, byte offsets, delimited scopes, and scratch buffers.
 /// Created per top-level codec call; never shared across concurrent operations.
 /// </summary>
-internal sealed class CodecContext
+public sealed class CodecContext
 {
     private readonly CodecOptions _options;
     private readonly CodecRegistry _registry;
@@ -253,12 +253,12 @@ internal sealed class CodecContext
 /// Passing the sequence through ensures that nested rewinds — which may narrow
 /// <c>reader.Sequence</c> to a sub-slice — cannot invalidate an outer checkpoint.
 /// </summary>
-internal readonly struct CodecCheckpoint
+public readonly struct CodecCheckpoint
 {
     internal readonly SequencePosition Position;
     internal readonly ReadOnlySequence<byte> Sequence;
 
-    internal CodecCheckpoint(SequencePosition position, ReadOnlySequence<byte> sequence)
+    public CodecCheckpoint(SequencePosition position, ReadOnlySequence<byte> sequence)
     {
         Position = position;
         Sequence = sequence;

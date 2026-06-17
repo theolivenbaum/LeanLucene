@@ -3,17 +3,8 @@ using System;
 
 namespace Rowles.LeanCorpus.Codecs.CodecKit.Exceptions;
 
-/// <summary>The wire format violates a structural constraint (base for magic, padding, trailing data, unknown discriminator/version).</summary>
-internal class FormatViolationException : CodecException
-{
-    public FormatViolationException(CodecErrorCode errorCode, long byteOffset, string path, string message, Exception? innerException = null)
-        : base(errorCode, byteOffset, path, message, innerException)
-    {
-    }
-}
-
 /// <summary>A magic byte pattern did not match.</summary>
-internal sealed class MagicMismatchException : FormatViolationException
+public sealed class MagicMismatchException : CodecValidationException
 {
     public MagicMismatchException(long byteOffset, string path, byte[] expected, byte[] actual)
         : base(CodecErrorCode.MagicMismatch, byteOffset, path,
@@ -31,7 +22,7 @@ internal sealed class MagicMismatchException : FormatViolationException
 }
 
 /// <summary>Padding bytes did not match the expected fill value.</summary>
-internal sealed class InvalidPaddingException : FormatViolationException
+public sealed class InvalidPaddingException : CodecValidationException
 {
     public InvalidPaddingException(long byteOffset, string path, byte expectedByte)
         : base(CodecErrorCode.InvalidPadding, byteOffset, path,
@@ -53,7 +44,7 @@ internal sealed class InvalidPaddingException : FormatViolationException
 }
 
 /// <summary>Unexpected trailing bytes after the expected payload.</summary>
-internal sealed class TrailingDataException : FormatViolationException
+public sealed class TrailingDataException : CodecFormatException
 {
     public TrailingDataException(long byteOffset, string path, long trailingBytes)
         : base(CodecErrorCode.TrailingData, byteOffset, path,
@@ -66,7 +57,7 @@ internal sealed class TrailingDataException : FormatViolationException
 }
 
 /// <summary>A choice discriminator value has no matching case.</summary>
-internal sealed class UnknownDiscriminatorException : FormatViolationException
+public sealed class UnknownDiscriminatorException : CodecFormatException
 {
     public UnknownDiscriminatorException(long byteOffset, string path, object discriminatorValue)
         : base(CodecErrorCode.UnknownDiscriminator, byteOffset, path,
@@ -79,7 +70,7 @@ internal sealed class UnknownDiscriminatorException : FormatViolationException
 }
 
 /// <summary>A version number has no matching case in a Versioned codec.</summary>
-internal sealed class UnknownVersionException : FormatViolationException
+public sealed class UnknownVersionException : CodecFormatException
 {
     public UnknownVersionException(long byteOffset, string path, object versionValue)
         : base(CodecErrorCode.UnknownVersion, byteOffset, path,

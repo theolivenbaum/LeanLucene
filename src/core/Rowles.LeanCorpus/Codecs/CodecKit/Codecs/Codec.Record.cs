@@ -3,7 +3,7 @@ using System;
 
 namespace Rowles.LeanCorpus.Codecs.CodecKit;
 
-internal static partial class Codec
+public static partial class Codec
 {
     /// <summary>
     /// Creates a new record builder for type <typeparamref name="T"/>.

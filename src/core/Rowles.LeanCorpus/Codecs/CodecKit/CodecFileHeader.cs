@@ -9,23 +9,19 @@ namespace Rowles.LeanCorpus.Codecs.CodecKit;
 /// CodecKit file header read/write for codec files.
 /// CodecKit format: [byte version][VarInt64 bodyLen][body]
 /// </summary>
-internal static class CodecFileHeader
+public static class CodecFileHeader
 {
     /// <summary>
     /// The result of reading a codec file body, including the format version.
     /// </summary>
-    internal readonly struct ReadResult
+    public readonly struct ReadResult
     {
         public byte[] Body { get; }
         public byte Version { get; }
         public ReadResult(byte[] body, byte version) { Body = body; Version = version; }
     }
 
-    // ═══════════════════════════════════════════════════
-    //  IndexOutput / IndexInput
-    // ═══════════════════════════════════════════════════
-
-    internal static ReadResult Read(IndexInput input, ICodec<byte[]> format)
+    public static ReadResult Read(IndexInput input, ICodec<byte[]> format)
     {
         long remaining = input.Length - input.Position;
         if (remaining < 1)
@@ -51,14 +47,14 @@ internal static class CodecFileHeader
         return new ReadResult(body, version);
     }
 
-    internal static byte ReadVersion(IndexInput input, ICodec<byte[]> format)
+    public static byte ReadVersion(IndexInput input, ICodec<byte[]> format)
     {
         byte version = input.ReadByte();
         SkipVarInt64(input);
         return version;
     }
 
-    internal static void Write(IndexOutput output, ICodec<byte[]> format, byte[] body)
+    public static void Write(IndexOutput output, ICodec<byte[]> format, byte[] body)
     {
         var writer = new Adapters.IndexOutputBuffer(output);
         var ctx = new CodecContext(CodecOptions.Default, CodecRegistry.Default);
@@ -70,7 +66,7 @@ internal static class CodecFileHeader
     /// Uses the <see cref="VersionEnvelopeCodec{TBase,TVersion}"/> fast path when
     /// available, avoiding the intermediate <c>byte[]</c> allocation and scratch staging.
     /// </summary>
-    internal static void Write(IndexOutput output, ICodec<byte[]> format, ReadOnlySpan<byte> body)
+    public static void Write(IndexOutput output, ICodec<byte[]> format, ReadOnlySpan<byte> body)
     {
         var writer = new Adapters.IndexOutputBuffer(output);
         var ctx = new CodecContext(CodecOptions.Default, CodecRegistry.Default);
@@ -86,7 +82,7 @@ internal static class CodecFileHeader
         }
     }
 
-    internal static (T Value, byte Version) Read<T>(IndexInput input, ICodec<byte[]> format, ICodec<T> bodyCodec)
+    public static (T Value, byte Version) Read<T>(IndexInput input, ICodec<byte[]> format, ICodec<T> bodyCodec)
     {
         var result = Read(input, format);
         var seq = new ReadOnlySequence<byte>(result.Body);
@@ -96,11 +92,7 @@ internal static class CodecFileHeader
         return (value, result.Version);
     }
 
-    // ═══════════════════════════════════════════════════
-    //  BinaryWriter / BinaryReader
-    // ═══════════════════════════════════════════════════
-
-    internal static void Write(BinaryWriter writer, ICodec<byte[]> format, byte[] body)
+    public static void Write(BinaryWriter writer, ICodec<byte[]> format, byte[] body)
     {
         var buf = new ArrayBufferWriter<byte>(body.Length + 16);
         var ctx = new CodecContext(CodecOptions.Default, CodecRegistry.Default);
@@ -112,7 +104,7 @@ internal static class CodecFileHeader
     /// <see cref="ReadOnlySpan{Byte}"/> overload for the <see cref="BinaryWriter"/> path.
     /// Uses the <see cref="VersionEnvelopeCodec{TBase,TVersion}"/> fast path when available.
     /// </summary>
-    internal static void Write(BinaryWriter writer, ICodec<byte[]> format, ReadOnlySpan<byte> body)
+    public static void Write(BinaryWriter writer, ICodec<byte[]> format, ReadOnlySpan<byte> body)
     {
         var buf = new ArrayBufferWriter<byte>(body.Length + 16);
         var ctx = new CodecContext(CodecOptions.Default, CodecRegistry.Default);
@@ -129,7 +121,7 @@ internal static class CodecFileHeader
         writer.Write(buf.WrittenSpan);
     }
 
-    internal static ReadResult Read(BinaryReader reader, ICodec<byte[]> format)
+    public static ReadResult Read(BinaryReader reader, ICodec<byte[]> format)
     {
         long remaining = reader.BaseStream.Length - reader.BaseStream.Position;
         if (remaining < 1)
@@ -153,16 +145,12 @@ internal static class CodecFileHeader
         return new ReadResult(body, version);
     }
 
-    internal static byte ReadVersion(BinaryReader reader, ICodec<byte[]> format)
+    public static byte ReadVersion(BinaryReader reader, ICodec<byte[]> format)
     {
         byte version = reader.ReadByte();
         SkipVarInt64(reader);
         return version;
     }
-
-    // ═══════════════════════════════════════════════════
-    //  LEB128 VarInt64 skipping
-    // ═══════════════════════════════════════════════════
 
     private static void SkipVarInt64(IndexInput input)
     {

@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Text;
 using Rowles.LeanCorpus.Codecs.CodecKit;
 using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
+using Rowles.LeanCorpus.Codecs.Postings;
 using Rowles.LeanCorpus.Store;
 
 namespace Rowles.LeanCorpus.Codecs.DocValues;
@@ -22,16 +23,16 @@ internal static class NormsWriter
     {
         var bodyBuf = new ArrayBufferWriter<byte>(4096);
 
-        bodyBuf.WriteInt32(fieldNorms.Count);
+        PostingsWriter.WriteVarInt(bodyBuf, fieldNorms.Count);
 
         foreach (var (fieldName, norms) in fieldNorms)
         {
             int count = docCount >= 0 ? docCount : norms.Length;
             var fieldBytes = Encoding.UTF8.GetBytes(fieldName);
-            bodyBuf.WriteInt32(fieldBytes.Length);
+            PostingsWriter.WriteVarInt(bodyBuf, fieldBytes.Length);
             bodyBuf.WriteBytes(fieldBytes);
 
-            bodyBuf.WriteInt32(count);
+            PostingsWriter.WriteVarInt(bodyBuf, count);
 
             for (int i = 0; i < count; i++)
             {
@@ -49,7 +50,7 @@ internal static class NormsWriter
             }
             else
             {
-                bodyBuf.WriteInt32(0);
+                PostingsWriter.WriteVarInt(bodyBuf, 0);
             }
         }
 
@@ -66,7 +67,7 @@ internal static class NormsWriter
                 boostCount++;
         }
 
-        bw.WriteInt32(boostCount);
+        PostingsWriter.WriteVarInt(bw, boostCount);
         if (boostCount == 0)
             return;
 
@@ -76,7 +77,7 @@ internal static class NormsWriter
             if (boost == 1.0f)
                 continue;
 
-            bw.WriteInt32(i);
+            PostingsWriter.WriteVarInt(bw, i);
             bw.WriteSingle(boost);
         }
     }
@@ -90,7 +91,7 @@ internal static class NormsWriter
                 boostCount++;
         }
 
-        bw.WriteInt32(boostCount);
+        PostingsWriter.WriteVarInt(bw, boostCount);
         if (boostCount == 0)
             return;
 
@@ -99,7 +100,7 @@ internal static class NormsWriter
             if ((uint)docId >= (uint)count || boost == 1.0f)
                 continue;
 
-            bw.WriteInt32(docId);
+            PostingsWriter.WriteVarInt(bw, docId);
             bw.WriteSingle(boost);
         }
     }

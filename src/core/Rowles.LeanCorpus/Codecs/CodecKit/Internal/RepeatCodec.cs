@@ -96,7 +96,7 @@ internal sealed class RepeatPrefixedCodec<T> : ICodec<IReadOnlyList<T>>
             long count = _countCodec.Decode(ref reader, context);
 
             if (count < 0)
-                throw new InvalidValueException(
+                throw new CodecValidationException(
                     CodecErrorCode.InvalidValue,
                     context.GetByteOffset(ref reader),
                     context.CurrentPath,

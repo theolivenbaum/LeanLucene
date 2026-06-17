@@ -7,7 +7,7 @@ namespace Rowles.LeanCorpus.Codecs.CodecKit.Checksum.Providers;
 /// Provides checksum computation and verification over byte sequences.
 /// Implementations must be thread-safe and stateless.
 /// </summary>
-internal interface IChecksumProvider
+public interface IChecksumProvider
 {
     /// <summary>Size of the checksum in bytes.</summary>
     int ChecksumByteLength { get; }

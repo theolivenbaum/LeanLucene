@@ -55,7 +55,7 @@ internal sealed class VersionEnvelopeCodec<TBase, TVersion> : ICodec<TBase> wher
             long bodyLength = _bodyLengthCodec.Decode(ref reader, context);
 
             if (bodyLength < 0)
-                throw new InvalidValueException(
+                throw new CodecValidationException(
                     CodecErrorCode.NegativeLength,
                     context.GetByteOffset(ref reader),
                     context.CurrentPath,
@@ -149,7 +149,7 @@ internal sealed class VersionEnvelopeCodec<TBase, TVersion> : ICodec<TBase> wher
         if (matchedCase == null)
         {
             var registeredTypes = string.Join(", ", Array.ConvertAll(_cases, c => c.CaseType.Name));
-            throw new InvalidValueException(
+            throw new CodecValidationException(
                 CodecErrorCode.InvalidValue, 0, context.CurrentPath,
                 $"No matching version case for type {value.GetType().Name}. Registered cases: {registeredTypes}");
         }

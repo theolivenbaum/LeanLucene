@@ -94,7 +94,7 @@ internal sealed class OptionalSentinelCodec<T, TSentinel> : ICodec<T?> where TSe
 
             if (!sentinel.Equals(_presentValue))
             {
-                throw new InvalidValueException(
+                throw new CodecValidationException(
                     CodecErrorCode.InvalidValue,
                     context.GetByteOffset(ref reader),
                     context.CurrentPath,

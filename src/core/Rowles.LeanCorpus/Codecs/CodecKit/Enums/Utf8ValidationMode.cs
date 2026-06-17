@@ -3,7 +3,7 @@
 /// <summary>
 /// Controls how UTF-8 byte sequences are validated during string decoding.
 /// </summary>
-internal enum Utf8ValidationMode
+public enum Utf8ValidationMode
 {
     /// <summary>Invalid UTF-8 throws <see cref="Exceptions.InvalidUtf8Exception"/>.</summary>
     Strict = 0,

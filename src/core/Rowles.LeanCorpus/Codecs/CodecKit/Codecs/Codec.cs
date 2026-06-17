@@ -10,7 +10,7 @@ namespace Rowles.LeanCorpus.Codecs.CodecKit;
 /// Primary entry point for all codec operations. Provides factory methods for primitive
 /// and composite codecs, as well as top-level encode/decode entry points.
 /// </summary>
-internal static partial class Codec
+public static partial class Codec
 {
     /// <summary>
     /// Decodes a value of type <typeparamref name="T"/> from the given bytes.
@@ -73,6 +73,26 @@ internal static partial class Codec
     {
         var ctx = new CodecContext(options ?? CodecOptions.Default, registry ?? CodecRegistry.Default);
         codec.Encode(value, writer, ctx);
+    }
+
+    /// <summary>
+    /// Encodes a <see cref="ReadOnlySpan{Byte}"/> body through a version-envelope codec
+    /// without allocating a <c>byte[]</c>. If the codec is a
+    /// <see cref="VersionEnvelopeCodec{TBase,TVersion}"/> the fast span path is used;
+    /// otherwise falls back to the normal <see cref="Encode{T}"/> path.
+    /// </summary>
+    public static void EncodeSpan(ICodec<byte[]> codec, ReadOnlySpan<byte> body, IBufferWriter<byte> writer, CodecOptions? options = null, CodecRegistry? registry = null)
+    {
+        var ctx = new CodecContext(options ?? CodecOptions.Default, registry ?? CodecRegistry.Default);
+
+        if (codec is VersionEnvelopeCodec<byte[], byte> envelope)
+        {
+            envelope.EncodeSpan(body, writer, ctx);
+        }
+        else
+        {
+            codec.Encode(body.ToArray(), writer, ctx);
+        }
     }
 
     /// <summary>

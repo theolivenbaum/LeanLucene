@@ -95,7 +95,7 @@ return caseDef.Handler.Decode(ref reader, context);
         }
 
         var registeredTypes = string.Join(", ", Array.ConvertAll(_cases, c => c.CaseType.Name));
-        throw new InvalidValueException(
+        throw new CodecValidationException(
             CodecErrorCode.InvalidValue, 0, context.CurrentPath,
             $"No matching version case for type {value.GetType().Name}. Registered cases: {registeredTypes}");
     }

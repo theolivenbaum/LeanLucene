@@ -14,7 +14,7 @@ public sealed class CodecRegistryTests
     {
         var registry = CodecRegistry.Empty;
 
-        Assert.Throws<InvalidValueException>(() => registry.GetChecksumProvider(ChecksumAlgorithms.Crc32));
+        Assert.Throws<CodecValidationException>(() => registry.GetChecksumProvider(ChecksumAlgorithms.Crc32));
     }
 
     [Fact(DisplayName = "Default registry contains Crc32, XxHash32, XxHash64")]
@@ -43,14 +43,14 @@ public sealed class CodecRegistryTests
 
         Assert.Same(provider, updated.GetChecksumProvider(ChecksumAlgorithms.Crc32));
         // Original registry unchanged
-        Assert.Throws<InvalidValueException>(() => registry.GetChecksumProvider(ChecksumAlgorithms.Crc32));
+        Assert.Throws<CodecValidationException>(() => registry.GetChecksumProvider(ChecksumAlgorithms.Crc32));
     }
 
     [Fact(DisplayName = "GetChecksumProvider for unknown algorithm throws")]
     public void GetChecksumProvider_UnknownAlgorithm_Throws()
     {
         var registry = CodecRegistry.Empty;
-        var ex = Assert.Throws<InvalidValueException>(() =>
+        var ex = Assert.Throws<CodecValidationException>(() =>
             registry.GetChecksumProvider(new ChecksumAlgorithmId("nonexistent")));
 
         Assert.Equal(CodecErrorCode.UnknownAlgorithm, ex.ErrorCode);

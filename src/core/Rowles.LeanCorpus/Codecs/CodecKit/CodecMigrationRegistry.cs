@@ -4,10 +4,12 @@ namespace Rowles.LeanCorpus.Codecs.CodecKit;
 
 /// <summary>
 /// Global registry of codec formats for version migration.
-/// Third-party codecs call <see cref="Register"/> to add their formats;
-/// <c>CodecFormats</c> consults the registry during format creation.
+/// Built-in formats are registered by <see cref="Formats.CodecFormats"/> during static
+/// initialisation. The migration system was primed at 2.0.0 with all formats reset to v1
+/// (except term vectors, which reached v2) to provide a clean baseline for forward evolution.
+/// Third-party codecs call <see cref="Register"/> to add their formats.
 /// </summary>
-internal sealed class CodecMigrationRegistry
+public sealed class CodecMigrationRegistry
 {
     private readonly ConcurrentDictionary<string, CodecFormat> _formats = new(StringComparer.Ordinal);
 

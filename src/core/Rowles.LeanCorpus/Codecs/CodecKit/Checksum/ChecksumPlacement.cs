@@ -3,7 +3,7 @@
 /// <summary>
 /// Controls where the checksum is placed relative to the body.
 /// </summary>
-internal enum ChecksumPlacement
+public enum ChecksumPlacement
 {
     /// <summary>Checksum is placed before the body: <c>[checksum][body]</c>.</summary>
     Header = 0,

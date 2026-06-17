@@ -5,7 +5,7 @@ namespace Rowles.LeanCorpus.Codecs.CodecKit.Enums;
 /// <summary>
 /// Defines the padding strategy for fixed-size frames.
 /// </summary>
-internal abstract class FramePadding
+public abstract class FramePadding
 {
     private FramePadding() { }
 

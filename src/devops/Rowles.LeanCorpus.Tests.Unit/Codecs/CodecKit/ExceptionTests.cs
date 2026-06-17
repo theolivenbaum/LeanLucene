@@ -158,15 +158,15 @@ public sealed class ExceptionTests
     [Fact(DisplayName = "All exception types inherit from CodecException")]
     public void AllExceptionTypes_InheritFromCodecException()
     {
-        Assert.IsAssignableFrom<CodecException>(new FormatViolationException(CodecErrorCode.MagicMismatch, 0, "", ""));
+        Assert.IsAssignableFrom<CodecException>(new CodecFormatException(CodecErrorCode.MagicMismatch, 0, "", ""));
         Assert.IsAssignableFrom<CodecException>(new MagicMismatchException(0, "", [], []));
         Assert.IsAssignableFrom<CodecException>(new InvalidPaddingException(0, "", 0x00));
         Assert.IsAssignableFrom<CodecException>(new TrailingDataException(0, "", 0));
         Assert.IsAssignableFrom<CodecException>(new UnknownDiscriminatorException(0, "", 0));
         Assert.IsAssignableFrom<CodecException>(new UnknownVersionException(0, "", 1));
-        Assert.IsAssignableFrom<CodecException>(new IntegrityException(CodecErrorCode.ChecksumMismatch, 0, "", ""));
+        Assert.IsAssignableFrom<CodecException>(new CodecIntegrityException(CodecErrorCode.ChecksumMismatch, 0, "", ""));
         Assert.IsAssignableFrom<CodecException>(new ChecksumMismatchException(0, "", "", [], []));
-        Assert.IsAssignableFrom<CodecException>(new InvalidValueException(CodecErrorCode.InvalidBoolean, 0, "", ""));
+        Assert.IsAssignableFrom<CodecException>(new CodecValidationException(CodecErrorCode.InvalidBoolean, 0, "", ""));
         Assert.IsAssignableFrom<CodecException>(new InvalidBooleanException(0, "", 0x02));
         Assert.IsAssignableFrom<CodecException>(new InvalidUtf8Exception(0, ""));
         Assert.IsAssignableFrom<CodecException>(new LimitExceededException(CodecErrorCode.DepthExceeded, 0, "", "", 1, 1));

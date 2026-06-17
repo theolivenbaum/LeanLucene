@@ -3,17 +3,8 @@ using System;
 
 namespace Rowles.LeanCorpus.Codecs.CodecKit.Exceptions;
 
-/// <summary>A decoded value is invalid (base for InvalidBoolean, InvalidUtf8).</summary>
-internal class InvalidValueException : CodecException
-{
-    public InvalidValueException(CodecErrorCode errorCode, long byteOffset, string path, string message, Exception? innerException = null)
-        : base(errorCode, byteOffset, path, message, innerException)
-    {
-    }
-}
-
 /// <summary>A boolean byte was not 0x00 or 0x01.</summary>
-internal sealed class InvalidBooleanException : InvalidValueException
+public sealed class InvalidBooleanException : CodecValidationException
 {
     public InvalidBooleanException(long byteOffset, string path, byte actualValue)
         : base(CodecErrorCode.InvalidBoolean, byteOffset, path,
@@ -26,7 +17,7 @@ internal sealed class InvalidBooleanException : InvalidValueException
 }
 
 /// <summary>A byte sequence is not valid UTF-8.</summary>
-internal sealed class InvalidUtf8Exception : InvalidValueException
+public sealed class InvalidUtf8Exception : CodecValidationException
 {
     public InvalidUtf8Exception(long byteOffset, string path)
         : base(CodecErrorCode.InvalidUtf8, byteOffset, path,

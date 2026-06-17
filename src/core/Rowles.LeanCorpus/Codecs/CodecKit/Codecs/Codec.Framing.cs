@@ -5,7 +5,7 @@ using Rowles.LeanCorpus.Codecs.CodecKit.Enums;
 
 namespace Rowles.LeanCorpus.Codecs.CodecKit;
 
-internal static partial class Codec
+public static partial class Codec
 {
     /// <summary>
     /// Length-prefixed framing: <c>[length][body]</c>.

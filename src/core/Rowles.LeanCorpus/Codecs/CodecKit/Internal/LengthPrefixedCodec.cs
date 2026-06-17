@@ -33,7 +33,7 @@ internal sealed class LengthPrefixedCodec<T> : ICodec<T>
             length = _lengthCodec.Decode(ref reader, context);
 
             if (length < 0)
-                throw new InvalidValueException(
+                throw new CodecValidationException(
                     CodecErrorCode.InvalidValue,
                     context.GetByteOffset(ref reader),
                     context.CurrentPath,

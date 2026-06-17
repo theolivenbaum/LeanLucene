@@ -2,7 +2,7 @@
 
 namespace Rowles.LeanCorpus.Codecs.CodecKit;
 
-internal static partial class Codec
+public static partial class Codec
 {
     // Fixed-size unsigned integers
     public static ICodec<byte> UInt8 { get; } = new Primitives.UInt8Codec();

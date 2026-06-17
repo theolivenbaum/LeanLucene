@@ -10,7 +10,7 @@ namespace Rowles.LeanCorpus.Codecs.CodecKit;
 /// <param name="Version">The integer version number this step handles.</param>
 /// <param name="Label">Diagnostic label for path segments.</param>
 /// <param name="Reader">The reader codec for this version's data.</param>
-internal sealed record CodecVersionStep(
+public sealed record CodecVersionStep(
     int Version,
     string Label,
     ICodec<byte[]> Reader);

@@ -7,7 +7,7 @@ namespace Rowles.LeanCorpus.Codecs.CodecKit.Internal;
 /// <summary>
 /// A single case in a Choice codec. Created via <see cref="Codec.Case{TBase,TCase}"/>.
 /// </summary>
-internal sealed class CaseDefinition<TBase>
+public sealed class CaseDefinition<TBase>
 {
     internal CaseDefinition(object tag, string label, Type caseType,
         ICaseHandler<TBase> handler)

@@ -5,7 +5,7 @@ namespace Rowles.LeanCorpus.Codecs.CodecKit.Codecs;
 /// <summary>
 /// Describes a dependent field whose codec is created dynamically from a previously decoded field value.
 /// </summary>
-internal sealed class DependentFieldFactory<TDep, TOut>
+public sealed class DependentFieldFactory<TDep, TOut>
 {
     internal string FieldName { get; }
     internal Func<TDep, ICodec<TOut>> Factory { get; }

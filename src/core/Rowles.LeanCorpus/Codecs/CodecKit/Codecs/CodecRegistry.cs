@@ -11,7 +11,7 @@ namespace Rowles.LeanCorpus.Codecs.CodecKit.Codecs;
 /// Immutable registry of checksum providers.
 /// Use the builder pattern to register providers, then build an immutable instance.
 /// </summary>
-internal sealed class CodecRegistry
+public sealed class CodecRegistry
 {
     private readonly Dictionary<ChecksumAlgorithmId, IChecksumProvider> _checksumProviders;
 
@@ -38,7 +38,7 @@ internal sealed class CodecRegistry
     {
         if (_checksumProviders.TryGetValue(algorithmId, out var provider))
             return provider;
-        throw new InvalidValueException(CodecErrorCode.UnknownAlgorithm, 0, string.Empty,
+        throw new CodecValidationException(CodecErrorCode.UnknownAlgorithm, 0, string.Empty,
             $"No checksum provider registered for algorithm '{algorithmId.Name}'.");
     }
 

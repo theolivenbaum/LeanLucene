@@ -5,7 +5,7 @@ using Rowles.LeanCorpus.Codecs.CodecKit.Codecs;
 
 namespace Rowles.LeanCorpus.Codecs.CodecKit;
 
-internal static partial class Codec
+public static partial class Codec
 {
     /// <summary>
     /// Decode/encode a fixed number of <typeparamref name="T"/> items.

@@ -17,7 +17,7 @@ namespace Rowles.LeanCorpus.Codecs.CodecKit.Codecs;
 ///     (int)f["count"]))
 /// </code>
 /// </remarks>
-internal readonly struct FieldValues
+public readonly struct FieldValues
 {
     private readonly object?[] _values;
     private readonly IReadOnlyDictionary<string, int> _nameToIndex;

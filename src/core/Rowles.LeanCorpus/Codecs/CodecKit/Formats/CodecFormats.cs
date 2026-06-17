@@ -12,6 +12,13 @@ namespace Rowles.LeanCorpus.Codecs.CodecKit.Formats;
 /// </summary>
 internal static class CodecFormats
 {
+    /// <summary>
+    /// Registers all built-in codec formats with the migration registry.
+    /// Formats are registered by <see cref="CodecMigrationRegistry.Register"/> during static
+    /// initialisation. Adding a new version to an existing format means inserting a new
+    /// <see cref="CodecVersionStep"/> into the format's constructor call here and bumping
+    /// the corresponding constant in <see cref="CodecConstants"/>.
+    /// </summary>
     static CodecFormats()
     {
         var reg = CodecMigrationRegistry.Default;
@@ -22,8 +29,14 @@ internal static class CodecFormats
             new CodecVersionStep(2, "tvx-v2", Codec.BytesOwnedRemaining())
         ]));
 
+        // Norms — v1 uses Int32LE for length fields; v2 uses VarInt.
+        reg.Register(new CodecFormat("nrm", [
+            new CodecVersionStep(1, "nrm-v1", Codec.BytesOwnedRemaining()),
+            new CodecVersionStep(2, "nrm-v2", Codec.BytesOwnedRemaining())
+        ]));
+
         // All other formats are at v1.
-        foreach (var ext in new[] { "nrm","fln","ndv","sdv","bdv","ssdv","sndv","fdt","pos","tim","hnsw","vec","qvec","bkd","rbm" })
+        foreach (var ext in new[] { "fln","ndv","sdv","bdv","ssdv","sndv","fdt","pos","tim","hnsw","vec","qvec","bkd","rbm" })
             reg.Register(new CodecFormat(ext, [
                 new CodecVersionStep(1, $"{ext}-v1", Codec.BytesOwnedRemaining())
             ]));

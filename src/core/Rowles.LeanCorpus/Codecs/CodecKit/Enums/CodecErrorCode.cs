@@ -6,7 +6,7 @@ namespace Rowles.LeanCorpus.Codecs.CodecKit.Enums;
 /// Machine-readable error codes for all codec failure categories.
 /// Every <see cref="Exceptions.CodecException"/> and <see cref="CodecFailure"/> carries one of these values.
 /// </summary>
-internal enum CodecErrorCode
+public enum CodecErrorCode
 {
     Truncated,
     Overflow,

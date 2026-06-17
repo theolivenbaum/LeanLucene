@@ -10,7 +10,7 @@ namespace Rowles.LeanCorpus.Codecs.CodecKit.Codecs;
 /// Fluent builder for composing multiple field codecs into a single record codec.
 /// Fields are decoded/encoded in registration order.
 /// </summary>
-internal sealed class RecordBuilder<T>
+public sealed class RecordBuilder<T>
 {
     private readonly List<BuilderFieldEntry> _fields = new();
     private readonly HashSet<string> _fieldNames = new HashSet<string>(StringComparer.Ordinal);
@@ -79,7 +79,7 @@ internal sealed class RecordBuilder<T>
     private void ValidateUniqueName(string name)
     {
         if (!_fieldNames.Add(name))
-            throw new InvalidValueException(CodecErrorCode.DuplicateFieldName, 0, string.Empty,
+            throw new CodecValidationException(CodecErrorCode.DuplicateFieldName, 0, string.Empty,
                 $"Duplicate field name: '{name}'.");
     }
 

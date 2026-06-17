@@ -37,7 +37,7 @@ internal sealed class VarUInt32Codec : ICodec<uint>
                 if (b > 0x0F)
                 {
                     context.Rewind(ref reader, checkpoint);
-                    throw new InvalidValueException(
+                    throw new CodecValidationException(
                         CodecErrorCode.Overflow, offset, context.CurrentPath,
                         $"VarUInt32 overflow at offset {offset}: 5th byte 0x{b:X2} exceeds 4-bit limit.");
                 }
@@ -56,7 +56,7 @@ internal sealed class VarUInt32Codec : ICodec<uint>
             if (bytesRead >= MaxBytes)
             {
                 context.Rewind(ref reader, checkpoint);
-                throw new InvalidValueException(
+                throw new CodecValidationException(
                     CodecErrorCode.Overflow, offset, context.CurrentPath,
                     $"VarUInt32 overflow at offset {offset}: exceeded {MaxBytes} bytes.");
             }
@@ -71,7 +71,7 @@ internal sealed class VarUInt32Codec : ICodec<uint>
             if (bytesRead > minBytesNeeded)
             {
                 context.Rewind(ref reader, checkpoint);
-                throw new InvalidValueException(
+                throw new CodecValidationException(
                     CodecErrorCode.Overflow, offset, context.CurrentPath,
                     $"Non-canonical VarUInt32 at offset {offset}: used {bytesRead} bytes but {minBytesNeeded} would suffice.");
             }

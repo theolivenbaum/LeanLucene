@@ -4,7 +4,7 @@ using System;
 namespace Rowles.LeanCorpus.Codecs.CodecKit.Exceptions;
 
 /// <summary>A user-supplied delegate (e.g., Map, Record.Build) threw an exception.</summary>
-internal sealed class UserCodeException : CodecException
+public sealed class UserCodeException : CodecException
 {
     public UserCodeException(long byteOffset, string path, Exception innerException)
         : base(CodecErrorCode.UserCodeFailed, byteOffset, path,

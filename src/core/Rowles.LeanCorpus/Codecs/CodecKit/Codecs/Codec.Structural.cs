@@ -4,7 +4,7 @@ using Rowles.LeanCorpus.Codecs.CodecKit.Codecs;
 
 namespace Rowles.LeanCorpus.Codecs.CodecKit;
 
-internal static partial class Codec
+public static partial class Codec
 {
     /// <summary>
     /// Creates a codec that transforms values using the given encode/decode delegates.

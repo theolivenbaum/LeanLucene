@@ -4,7 +4,7 @@ using System;
 namespace Rowles.LeanCorpus.Codecs.CodecKit.Exceptions;
 
 /// <summary>Encoded payload exceeds a fixed frame size.</summary>
-internal sealed class FrameOverflowException : CodecException
+public sealed class FrameOverflowException : CodecResourceException
 {
     public FrameOverflowException(long byteOffset, string path, int frameSize, int payloadSize)
         : base(CodecErrorCode.FrameOverflow, byteOffset, path,

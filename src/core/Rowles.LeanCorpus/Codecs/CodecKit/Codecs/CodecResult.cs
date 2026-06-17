@@ -8,7 +8,7 @@ namespace Rowles.LeanCorpus.Codecs.CodecKit.Codecs;
 /// Access <see cref="Value"/> on success or <see cref="Failure"/> on failure.
 /// Accessing the wrong property throws <see cref="InvalidOperationException"/>.
 /// </summary>
-internal readonly struct CodecResult<T>
+public readonly struct CodecResult<T>
 {
     private readonly T? _value;
     private readonly CodecFailure? _failure;

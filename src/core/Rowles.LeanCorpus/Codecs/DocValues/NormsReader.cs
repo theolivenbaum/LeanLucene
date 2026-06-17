@@ -17,32 +17,53 @@ internal static class NormsReader
 
         byte version = CodecFileHeader.ReadVersion(input, CodecFormats.Norms);
 
-        int fieldCount = input.ReadInt32();
+        return version switch
+        {
+            1 => ReadV1Body(input),
+            2 => ReadV2Body(input),
+            _ => throw new NotSupportedException($"Unsupported norms version: {version}")
+        };
+    }
 
+    private static NormsData ReadV1Body(IndexInput input)
+    {
+        int fieldCount = input.ReadInt32();
+        return ReadFields(input, fieldCount, readLen: static i => i.ReadInt32(), readCount: static i => i.ReadInt32(), readBoostCount: static i => i.ReadInt32(), readDocId: static i => i.ReadInt32());
+    }
+
+    private static NormsData ReadV2Body(IndexInput input)
+    {
+        int fieldCount = input.ReadVarInt();
+        return ReadFields(input, fieldCount, readLen: static i => i.ReadVarInt(), readCount: static i => i.ReadVarInt(), readBoostCount: static i => i.ReadVarInt(), readDocId: static i => i.ReadVarInt());
+    }
+
+    private static NormsData ReadFields(IndexInput input, int fieldCount,
+        Func<IndexInput, int> readLen, Func<IndexInput, int> readCount,
+        Func<IndexInput, int> readBoostCount, Func<IndexInput, int> readDocId)
+    {
         var result = new NormsData();
 
         for (int f = 0; f < fieldCount; f++)
         {
-            int fieldNameLen = input.ReadInt32();
+            int fieldNameLen = readLen(input);
 
             byte[] nameBytes = input.ReadBytes(fieldNameLen);
             string fieldName = Encoding.UTF8.GetString(nameBytes, 0, fieldNameLen);
 
-            int docCount = input.ReadInt32();
+            int docCount = readCount(input);
 
             byte[] norms = input.ReadBytes(docCount);
 
             result.Norms[fieldName] = norms;
 
-            // Current format: sparse boost data
-            int boostCount = input.ReadInt32();
+            int boostCount = readBoostCount(input);
             if ((uint)boostCount > (uint)docCount)
                 throw new InvalidDataException($"Invalid norms file: boost count {boostCount} exceeds document count {docCount} for field '{fieldName}'.");
 
             float[]? boosts = null;
             for (int i = 0; i < boostCount; i++)
             {
-                int docId = input.ReadInt32();
+                int docId = readDocId(input);
                 float boost = input.ReadSingle();
 
                 if ((uint)docId >= (uint)docCount)

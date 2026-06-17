@@ -4,7 +4,7 @@ using System;
 namespace Rowles.LeanCorpus.Codecs.CodecKit.Exceptions;
 
 /// <summary>Not enough bytes available to decode the expected value.</summary>
-internal sealed class InsufficientDataException : CodecException
+public sealed class InsufficientDataException : CodecFormatException
 {
     public InsufficientDataException(long byteOffset, string path, int expectedBytes, int availableBytes)
         : base(CodecErrorCode.Truncated, byteOffset, path,

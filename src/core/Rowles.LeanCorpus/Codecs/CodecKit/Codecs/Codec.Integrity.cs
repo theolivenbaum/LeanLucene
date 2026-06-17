@@ -5,7 +5,7 @@ using Rowles.LeanCorpus.Codecs.CodecKit.Compression;
 
 namespace Rowles.LeanCorpus.Codecs.CodecKit;
 
-internal static partial class Codec
+public static partial class Codec
 {
     /// <summary>
     /// Wraps a codec with checksum computation and verification.

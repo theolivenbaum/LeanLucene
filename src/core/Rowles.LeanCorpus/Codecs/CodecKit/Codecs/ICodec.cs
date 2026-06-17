@@ -8,7 +8,7 @@ namespace Rowles.LeanCorpus.Codecs.CodecKit.Codecs;
 /// and decodes bytes back to values of type <typeparamref name="T"/>.
 /// Implementations must be immutable and thread-safe. All mutable state lives in <see cref="CodecContext"/>.
 /// </summary>
-internal interface ICodec<T>
+public interface ICodec<T>
 {
     /// <summary>
     /// Encodes <paramref name="value"/> into the <paramref name="writer"/>.

@@ -4,7 +4,7 @@ using Rowles.LeanCorpus.Codecs.CodecKit.Codecs;
 
 namespace Rowles.LeanCorpus.Codecs.CodecKit;
 
-internal static partial class Codec
+public static partial class Codec
 {
     /// <summary>
     /// Creates a version case definition for use in <see cref="Versioned{TBase,TVersion}"/>

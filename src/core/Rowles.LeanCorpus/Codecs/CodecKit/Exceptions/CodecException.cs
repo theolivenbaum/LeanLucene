@@ -6,7 +6,7 @@ namespace Rowles.LeanCorpus.Codecs.CodecKit.Exceptions;
 /// Base class for all codec-related exceptions.
 /// Carries structured diagnostic information: byte offset, path, and machine-readable error code.
 /// </summary>
-internal abstract class CodecException : Exception
+public abstract class CodecException : Exception
 {
     protected CodecException(CodecErrorCode errorCode, long byteOffset, string path, string message, Exception? innerException = null)
         : base(message, innerException)

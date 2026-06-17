@@ -6,7 +6,7 @@ namespace Rowles.LeanCorpus.Codecs.CodecKit.Codecs;
 /// <summary>
 /// Immutable configuration for codec operations. All limits are validated at construction time.
 /// </summary>
-internal sealed record CodecOptions
+public sealed record CodecOptions
 {
     private readonly long _maxFrameBytes = 64 * 1024 * 1024;
     private readonly int _maxSequenceElements = 1_000_000;

@@ -38,7 +38,7 @@ internal sealed class WithCompressionCodec<T> : ICodec<T>
             long compressedLength = _compressedLengthCodec.Decode(ref reader, context);
 
             if (compressedLength < 0)
-                throw new InvalidValueException(
+                throw new CodecValidationException(
                     CodecErrorCode.NegativeLength,
                     context.GetByteOffset(ref reader),
                     context.CurrentPath,
@@ -70,7 +70,7 @@ internal sealed class WithCompressionCodec<T> : ICodec<T>
             }
             catch (Exception ex) when (ex is not CodecException)
             {
-                throw new InvalidValueException(
+                throw new CodecValidationException(
                     CodecErrorCode.DecompressionFailed,
                     context.GetByteOffset(ref reader),
                     context.CurrentPath,

@@ -6,7 +6,7 @@ namespace Rowles.LeanCorpus.Codecs.CodecKit.Codecs;
 /// A type with exactly one value, used for codecs that produce no meaningful result
 /// (e.g., <c>Skip</c>, <c>Magic</c>, <c>Padding</c>).
 /// </summary>
-internal readonly struct Unit : IEquatable<Unit>
+public readonly struct Unit : IEquatable<Unit>
 {
     public static readonly Unit Value = default;
 

@@ -35,7 +35,7 @@ internal sealed class VarUInt64Codec : ICodec<ulong>
                 if (b > 0x01)
                 {
                     context.Rewind(ref reader, checkpoint);
-                    throw new InvalidValueException(
+                    throw new CodecValidationException(
                         CodecErrorCode.Overflow, offset, context.CurrentPath,
                         $"VarUInt64 overflow at offset {offset}: 10th byte 0x{b:X2} exceeds 1-bit limit.");
                 }
@@ -51,7 +51,7 @@ internal sealed class VarUInt64Codec : ICodec<ulong>
             if (bytesRead >= MaxBytes)
             {
                 context.Rewind(ref reader, checkpoint);
-                throw new InvalidValueException(
+                throw new CodecValidationException(
                     CodecErrorCode.Overflow, offset, context.CurrentPath,
                     $"VarUInt64 overflow at offset {offset}: exceeded {MaxBytes} bytes.");
             }
@@ -63,7 +63,7 @@ internal sealed class VarUInt64Codec : ICodec<ulong>
             if (bytesRead > minBytesNeeded)
             {
                 context.Rewind(ref reader, checkpoint);
-                throw new InvalidValueException(
+                throw new CodecValidationException(
                     CodecErrorCode.Overflow, offset, context.CurrentPath,
                     $"Non-canonical VarUInt64 at offset {offset}: used {bytesRead} bytes but {minBytesNeeded} would suffice.");
             }

@@ -523,10 +523,10 @@ public sealed partial class SegmentReader : IDisposable
             throw new InvalidDataException($"Segment dictionary file is truncated: '{basePath}.dic'.");
 
         var nrmLength = new FileInfo(basePath + ".nrm").Length;
-        // Per-field format: 4-byte field count header = minimum 4 bytes
-        if (nrmLength < 4)
+        // CodecKit envelope (version + VarInt64 bodyLen) + minimum body (VarInt fieldCount of 0)
+        if (nrmLength < 3)
             throw new InvalidDataException(
-                $"Segment norms file '{basePath}.nrm' is truncated: expected at least 4 bytes, found {nrmLength}.");
+                $"Segment norms file '{basePath}.nrm' is truncated: expected at least 3 bytes, found {nrmLength}.");
     }
 
     private static void ValidateExistingFile(string path)

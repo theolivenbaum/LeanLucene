@@ -502,7 +502,7 @@ public sealed class CombinatorCodecTests
     [Fact(DisplayName = "RecordBuilder duplicate field name throws")]
     public void RecordBuilder_DuplicateFieldName_Throws()
     {
-        var ex = Assert.Throws<InvalidValueException>(() =>
+        var ex = Assert.Throws<CodecValidationException>(() =>
         {
             Codec.Record<SimpleRecord>()
                 .Field("dup", r => r.Count, Codec.VarInt32)

@@ -6,7 +6,7 @@ namespace Rowles.LeanCorpus.Codecs.CodecKit.Codecs;
 /// <summary>
 /// A single case in a Versioned codec. Created via <see cref="Codec.VersionCase{TBase,TCase}"/>.
 /// </summary>
-internal sealed class VersionCaseDefinition<TBase>
+public sealed class VersionCaseDefinition<TBase>
 {
     internal VersionCaseDefinition(object version, string label, Type caseType,
         ICaseHandler<TBase> handler)

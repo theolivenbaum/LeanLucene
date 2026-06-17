@@ -4,7 +4,7 @@ using System;
 namespace Rowles.LeanCorpus.Codecs.CodecKit.Exceptions;
 
 /// <summary>A configured limit was exceeded (e.g., MaxFrameBytes, MaxSequenceElements).</summary>
-internal sealed class LimitExceededException : CodecException
+public sealed class LimitExceededException : CodecResourceException
 {
     public LimitExceededException(CodecErrorCode errorCode, long byteOffset, string path, string limitName, long actualValue, long limitValue)
         : base(errorCode, byteOffset, path,

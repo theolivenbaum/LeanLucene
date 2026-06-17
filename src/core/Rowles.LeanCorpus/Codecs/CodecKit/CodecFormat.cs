@@ -5,7 +5,7 @@ namespace Rowles.LeanCorpus.Codecs.CodecKit;
 /// <see cref="Steps"/>[0] is the oldest version; <see cref="Steps"/>[^1] is current.
 /// Duplicate versions are rejected on construction.
 /// </summary>
-internal sealed record CodecFormat
+public sealed record CodecFormat
 {
     /// <summary>
     /// Creates a codec format with the given identifier and ordered version steps.

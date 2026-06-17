@@ -3,7 +3,7 @@
 /// <summary>
 /// Controls whether trailing bytes after the expected payload are rejected or silently allowed.
 /// </summary>
-internal enum TrailingDataPolicy
+public enum TrailingDataPolicy
 {
     /// <summary>Trailing bytes cause a <see cref="Exceptions.TrailingDataException"/>.</summary>
     Reject = 0,

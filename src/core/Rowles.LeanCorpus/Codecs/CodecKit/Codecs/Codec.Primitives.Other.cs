@@ -4,7 +4,7 @@ using System.Buffers;
 
 namespace Rowles.LeanCorpus.Codecs.CodecKit;
 
-internal static partial class Codec
+public static partial class Codec
 {
     public static ICodec<bool> Bool { get; } = new Primitives.BoolCodec();
     public static ICodec<Guid> GuidRfc4122 { get; } = new Primitives.GuidRfc4122Codec();
