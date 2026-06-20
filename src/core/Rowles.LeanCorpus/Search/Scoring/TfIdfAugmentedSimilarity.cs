@@ -27,6 +27,7 @@ public sealed class TfIdfAugmentedSimilarity : ISimilarity
     /// </param>
     public TfIdfAugmentedSimilarity(float k = 0.5f)
     {
+        if (k <= 0) throw new ArgumentOutOfRangeException(nameof(k), k, "k must be positive.");
         _k = k;
         _oneMinusK = 1.0f - k;
     }

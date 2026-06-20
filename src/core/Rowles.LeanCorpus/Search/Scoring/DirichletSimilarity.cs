@@ -20,6 +20,7 @@ public sealed class DirichletSimilarity : ISimilarity
     /// <param name="mu">Smoothing parameter. Typical range: 100–3000. Default 2000.</param>
     public DirichletSimilarity(float mu = 2000f)
     {
+        if (mu <= 0) throw new ArgumentOutOfRangeException(nameof(mu), mu, "mu must be positive.");
         _mu = mu;
     }
 

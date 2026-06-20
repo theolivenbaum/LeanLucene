@@ -32,6 +32,8 @@ public sealed class TfIdfDoubleNormSimilarity : ISimilarity
     /// </param>
     public TfIdfDoubleNormSimilarity(float k = 0.5f, float s = 0.2f)
     {
+        if (k <= 0) throw new ArgumentOutOfRangeException(nameof(k), k, "k must be positive.");
+        if (s < 0 || s > 1) throw new ArgumentOutOfRangeException(nameof(s), s, "s must be in [0, 1].");
         _k = k;
         _s = s;
         _oneMinusK = 1.0f - k;

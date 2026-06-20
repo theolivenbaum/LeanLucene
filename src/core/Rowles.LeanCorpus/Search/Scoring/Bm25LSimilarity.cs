@@ -27,6 +27,9 @@ public sealed class Bm25LSimilarity : ISimilarity
     /// <param name="delta">Delta coefficient modulated by tf/(1+tf). Default 0.5.</param>
     public Bm25LSimilarity(float k1 = 1.2f, float b = 0.75f, float delta = 0.5f)
     {
+        if (k1 < 0) throw new ArgumentOutOfRangeException(nameof(k1), k1, "k1 must not be negative.");
+        if (b < 0 || b > 1) throw new ArgumentOutOfRangeException(nameof(b), b, "b must be in [0, 1].");
+        if (delta < 0) throw new ArgumentOutOfRangeException(nameof(delta), delta, "delta must not be negative.");
         _k1 = k1;
         _b = b;
         _delta = delta;

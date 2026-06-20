@@ -20,6 +20,7 @@ public sealed class LMJelinekMercerSimilarity : ISimilarity
     /// <param name="lambda">Interpolation weight for the collection model. Range (0, 1). Default 0.1.</param>
     public LMJelinekMercerSimilarity(float lambda = 0.1f)
     {
+        if (lambda < 0 || lambda > 1) throw new ArgumentOutOfRangeException(nameof(lambda), lambda, "lambda must be in [0, 1].");
         _lambda = lambda;
     }
 

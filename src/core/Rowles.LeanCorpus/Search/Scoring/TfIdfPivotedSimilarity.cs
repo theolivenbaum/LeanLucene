@@ -27,6 +27,7 @@ public sealed class TfIdfPivotedSimilarity : ISimilarity
     /// </param>
     public TfIdfPivotedSimilarity(float s = 0.2f)
     {
+        if (s < 0 || s > 1) throw new ArgumentOutOfRangeException(nameof(s), s, "s must be in [0, 1].");
         _s = s;
         _oneMinusS = 1.0f - s;
     }

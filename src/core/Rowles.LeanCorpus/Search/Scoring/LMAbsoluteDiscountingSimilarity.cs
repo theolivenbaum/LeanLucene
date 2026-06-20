@@ -21,6 +21,7 @@ public sealed class LMAbsoluteDiscountingSimilarity : ISimilarity
     /// <param name="delta">Absolute discount constant. Typical range: 0.5–0.9. Default 0.7.</param>
     public LMAbsoluteDiscountingSimilarity(float delta = 0.7f)
     {
+        if (delta < 0 || delta >= 1) throw new ArgumentOutOfRangeException(nameof(delta), delta, "delta must be in [0, 1).");
         _delta = delta;
     }
 
