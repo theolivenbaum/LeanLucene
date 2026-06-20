@@ -136,22 +136,7 @@ public static class IndexValidator
     }
 
     private static bool IsRecognisedTemporaryFile(string fileName)
-        => fileName is "migration_state.json.tmp"
-           || (fileName.StartsWith("segments_", StringComparison.Ordinal) && fileName.EndsWith(".tmp", StringComparison.Ordinal))
-           || (fileName.StartsWith("stats_", StringComparison.Ordinal) && fileName.EndsWith(".json.tmp", StringComparison.Ordinal))
-           || fileName.EndsWith(".dic.tmp", StringComparison.Ordinal)
-           || fileName.EndsWith(".pos.tmp", StringComparison.Ordinal)
-           || fileName.EndsWith(".dvn.tmp", StringComparison.Ordinal)
-           || fileName.EndsWith(".dvs.tmp", StringComparison.Ordinal)
-           || fileName.EndsWith(".dss.tmp", StringComparison.Ordinal)
-           || fileName.EndsWith(".dsn.tmp", StringComparison.Ordinal)
-           || fileName.EndsWith(".dvb.tmp", StringComparison.Ordinal)
-           || fileName.EndsWith(".fln.tmp", StringComparison.Ordinal)
-           || fileName.EndsWith(".fdt.tmp", StringComparison.Ordinal)
-           || fileName.EndsWith(".fdx.tmp", StringComparison.Ordinal)
-           || fileName.EndsWith(".seg.tmp", StringComparison.Ordinal)
-           || fileName.EndsWith(".stats.json.tmp", StringComparison.Ordinal)
-           || (fileName.Contains("_gen_", StringComparison.Ordinal) && fileName.EndsWith(".del.tmp", StringComparison.Ordinal));
+        => Codecs.CodecKit.Formats.CodecFormats.IsRecognisedTemporaryFile(fileName);
 
     private static void CheckSegment(string dirPath, string segmentId, IndexCheckOptions options, IndexCheckResult result)
     {
