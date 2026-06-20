@@ -1,77 +1,36 @@
 using System.Runtime.CompilerServices;
 using Rowles.LeanCorpus.Codecs.TermVectors;
 using Rowles.LeanCorpus.Analysis.Analysers;
+using Rowles.LeanCorpus.Analysis.Filters;
 
 namespace Rowles.LeanCorpus.Search.Highlighting;
 
 /// <summary>
 /// Extracts text snippets from stored fields with matching terms highlighted.
+/// Query term occurrences are located directly in the text via case-insensitive
+/// substring search with word-boundary validation, avoiding the cost of full
+/// re-analysis through the standard analyser pipeline.
 /// </summary>
 public sealed class Highlighter : IHighlighter
 {
     private readonly string _preTag;
     private readonly string _postTag;
-    private readonly IAnalyser _analyser;
-    private readonly OffsetCapturingSink _sink = new();
+    private readonly StopWordFilter _stopWordFilter;
     private readonly System.Text.StringBuilder _stringBuilder = new();
 
-    /// <summary>Lightweight offset-only token used by the highlighter to avoid string allocations per token.</summary>
-    private readonly struct HighlightToken
-    {
-        public readonly int StartOffset;
-        public readonly int EndOffset;
-
-        public HighlightToken(int startOffset, int endOffset)
-        {
-            StartOffset = startOffset;
-            EndOffset = endOffset;
-        }
-    }
-
-    /// <summary>
-    /// An <see cref="Rowles.LeanCorpus.Analysis.ISpanTokenSink"/> that captures character offsets
-    /// and simultaneously checks tokens against query terms, avoiding a separate O(n) scan
-    /// after tokenisation. The original text must be kept alive by the caller for slicing.
-    /// </summary>
-    private sealed class OffsetCapturingSink : Rowles.LeanCorpus.Analysis.ISpanTokenSink
-    {
-        public readonly List<HighlightToken> Tokens = [];
-        public readonly List<int> Matches = [];
-        private string _text = "";
-        private HashSet<string>.AlternateLookup<ReadOnlySpan<char>> _lookup;
-
-        public void Configure(string text, HashSet<string>.AlternateLookup<ReadOnlySpan<char>> lookup)
-        {
-            _text = text;
-            _lookup = lookup;
-        }
-
-        public void Add(ReadOnlySpan<char> tokenText, int startOffset, int endOffset,
-            string type = Rowles.LeanCorpus.Analysis.Token.DefaultType,
-            int positionIncrement = 1, byte[]? payload = null)
-        {
-            int idx = Tokens.Count;
-            Tokens.Add(new HighlightToken(startOffset, endOffset));
-            if (_lookup.Contains(_text.AsSpan(startOffset, endOffset - startOffset)))
-                Matches.Add(idx);
-        }
-
-        public void Clear()
-        {
-            Tokens.Clear();
-            Matches.Clear();
-        }
-    }
-
-    /// <summary>Initialises a new <see cref="Highlighter"/> with the given tags and analyser.</summary>
+    /// <summary>Initialises a new <see cref="Highlighter"/> with the given tags.</summary>
     /// <param name="preTag">Opening highlight tag, e.g. "&lt;b&gt;" or "&lt;em&gt;".</param>
     /// <param name="postTag">Closing highlight tag, e.g. "&lt;/b&gt;" or "&lt;/em&gt;".</param>
-    /// <param name="analyser">Analyser to tokenise the input text (should match the index-time analyser).</param>
+    /// <param name="analyser">
+    /// Retained for binary compatibility; no longer used. Highlighting now locates
+    /// query terms directly in the stored text without re-analysing.
+    /// </param>
     public Highlighter(string preTag = "<b>", string postTag = "</b>", IAnalyser? analyser = null)
     {
+        _ = analyser; // retained for binary compatibility, no longer consumed
         _preTag = preTag;
         _postTag = postTag;
-        _analyser = analyser ?? new StandardAnalyser();
+        _stopWordFilter = new StopWordFilter(null);
     }
 
     /// <summary>
@@ -79,7 +38,7 @@ public sealed class Highlighter : IHighlighter
     /// occurrences of the query terms. Returns the original text (truncated) if no matches.
     /// </summary>
     /// <param name="text">The stored field text to highlight.</param>
-    /// <param name="queryTerms">Lowercased terms to highlight.</param>
+    /// <param name="queryTerms">Terms to highlight. Stop words are ignored.</param>
     /// <param name="maxSnippetLength">Maximum character length of the returned snippet.</param>
     /// <returns>A snippet of <paramref name="text"/> with matching terms wrapped in highlight tags, with ellipsis when truncated.</returns>
     public string GetBestFragment(string text, IReadOnlySet<string> queryTerms, int maxSnippetLength = 200)
@@ -87,21 +46,23 @@ public sealed class Highlighter : IHighlighter
         if (string.IsNullOrEmpty(text) || queryTerms.Count == 0)
             return Truncate(text, maxSnippetLength);
 
-        // Always use AlternateLookup to avoid per-token substring allocations.
-        var set = queryTerms as HashSet<string>
-            ?? new HashSet<string>(queryTerms, StringComparer.OrdinalIgnoreCase);
-        var lookup = set.GetAlternateLookup<ReadOnlySpan<char>>();
+        // Scan for each query term directly in the text at word boundaries.
+        var matches = new List<(int Start, int End)>();
+        foreach (var term in queryTerms)
+        {
+            if (string.IsNullOrEmpty(term))
+                continue;
+            if (_stopWordFilter.IsStopWord(term.AsSpan()))
+                continue;
 
-        _sink.Clear();
-        _sink.Configure(text, lookup);
-        _analyser.Analyse(text.AsSpan(), _sink);
-        var tokens = _sink.Tokens;
-        var matches = _sink.Matches;
-        if (tokens.Count == 0)
-            return Truncate(text, maxSnippetLength);
+            FindTermOccurrences(text, term, matches);
+        }
 
         if (matches.Count == 0)
             return Truncate(text, maxSnippetLength);
+
+        // Sort by start offset for window scoring.
+        matches.Sort(static (a, b) => a.Start.CompareTo(b.Start));
 
         int bestStart = 0;
         int bestEnd = Math.Min(text.Length, maxSnippetLength);
@@ -110,15 +71,15 @@ public sealed class Highlighter : IHighlighter
         int right = 0;
         for (int left = 0; left < matches.Count; left++)
         {
-            var token = tokens[matches[left]];
-            int windowStart = Math.Max(0, token.StartOffset - maxSnippetLength / 4);
+            var m = matches[left];
+            int windowStart = Math.Max(0, m.Start - maxSnippetLength / 4);
             int windowEnd = Math.Min(text.Length, windowStart + maxSnippetLength);
 
             if (right < left)
                 right = left;
             while (right < matches.Count &&
-                   tokens[matches[right]].StartOffset >= windowStart &&
-                   tokens[matches[right]].EndOffset <= windowEnd)
+                   matches[right].Start >= windowStart &&
+                   matches[right].End <= windowEnd)
             {
                 right++;
             }
@@ -130,9 +91,13 @@ public sealed class Highlighter : IHighlighter
                 bestStart = windowStart;
                 bestEnd = windowEnd;
             }
+
+            // Short-circuit: remaining matches can't exceed the current best.
+            if (matches.Count - left <= bestScore)
+                break;
         }
 
-        // Build snippet — iterate matching tokens only, not all tokens.
+        // Build snippet.
         var sb = _stringBuilder;
         sb.Clear();
         sb.EnsureCapacity(bestEnd - bestStart + matches.Count * (_preTag.Length + _postTag.Length) + 6);
@@ -142,17 +107,21 @@ public sealed class Highlighter : IHighlighter
         int lastEnd = bestStart;
         for (int i = 0; i < matches.Count; i++)
         {
-            var t = tokens[matches[i]];
-            if (t.StartOffset < bestStart || t.EndOffset > bestEnd || t.StartOffset < lastEnd)
+            var m = matches[i];
+            if (m.End <= bestStart)
+                continue;
+            if (m.Start >= bestEnd)
+                break;
+            if (m.Start < bestStart || m.End > bestEnd || m.Start < lastEnd)
                 continue;
 
-            sb.Append(text, lastEnd, t.StartOffset - lastEnd);
+            sb.Append(text, lastEnd, m.Start - lastEnd);
             sb.Append(_preTag);
-            sb.Append(text, t.StartOffset, t.EndOffset - t.StartOffset);
+            sb.Append(text, m.Start, m.End - m.Start);
             sb.Append(_postTag);
-            lastEnd = t.EndOffset;
+            lastEnd = m.End;
 
-            if (t.EndOffset >= bestEnd)
+            if (m.End >= bestEnd)
                 break;
         }
         sb.Append(text, lastEnd, bestEnd - lastEnd);
@@ -171,7 +140,7 @@ public sealed class Highlighter : IHighlighter
         return GetBestFragment(text, terms, maxSnippetLength);
     }
 
-    /// <summary>Extracts query terms from a TermQuery for use with GetBestFragment.</summary>
+    /// <summary>Extracts query terms from a query for use with GetBestFragment.</summary>
     /// <param name="query">The query from which to collect searchable terms.</param>
     /// <returns>A case-insensitive set of term strings suitable for use with one of the GetBestFragment overloads.</returns>
     public static HashSet<string> ExtractTerms(Query query)
@@ -200,6 +169,31 @@ public sealed class Highlighter : IHighlighter
             case PrefixQuery prefixQ:
                 terms.Add(prefixQ.Prefix);
                 break;
+        }
+    }
+
+    /// <summary>
+    /// Finds all occurrences of <paramref name="term"/> in <paramref name="text"/>
+    /// that sit at word boundaries (preceded and followed by a non-letter-or-digit
+    /// character, or the start/end of the string).
+    /// </summary>
+    private static void FindTermOccurrences(string text, string term, List<(int Start, int End)> results)
+    {
+        int searchStart = 0;
+        while (searchStart < text.Length)
+        {
+            int idx = text.IndexOf(term, searchStart, StringComparison.OrdinalIgnoreCase);
+            if (idx < 0)
+                break;
+
+            bool leftBoundary = idx == 0 || !char.IsLetterOrDigit(text[idx - 1]);
+            bool rightBoundary = idx + term.Length >= text.Length
+                || !char.IsLetterOrDigit(text[idx + term.Length]);
+
+            if (leftBoundary && rightBoundary)
+                results.Add((idx, idx + term.Length));
+
+            searchStart = idx + 1;
         }
     }
 

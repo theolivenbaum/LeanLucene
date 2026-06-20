@@ -301,13 +301,9 @@ public sealed partial class IndexSearcher
             return (results, []);
 
         var matches = SearchAllMatches(query, results.TotalHits);
-        var seenDocs = new HashSet<int>();
-        foreach (var scoreDoc in matches.ScoreDocs)
-            seenDocs.Add(scoreDoc.DocId);
-        var matchingDocIds = seenDocs.ToArray();
 
         var aggs = NumericAggregator.Aggregate(
-            matchingDocIds, aggregations, _readers, _docBases, _totalDocCount);
+            matches.ScoreDocs.AsSpan(), aggregations, _readers, _docBases, _totalDocCount);
 
         return (results, aggs);
     }
