@@ -8,10 +8,11 @@ namespace Rowles.LeanCorpus.Analysis.Filters;
 /// <remarks>
 /// <para>This operates on individual tokens (unlike <see cref="PatternReplaceCharFilter"/>
 /// which operates on the raw character input before tokenisation).</para>
-/// <para>The regex is compiled with <see cref="RegexOptions.Compiled"/> and
-/// <see cref="RegexOptions.CultureInvariant"/> by default; callers may override via
-/// the constructor's <c>options</c> parameter, which is merged with the defaults
-/// via bitwise OR.</para>
+/// <para>The regex uses the interpreter (not <see cref="RegexOptions.Compiled"/>) for
+/// Native AOT compatibility and applies <see cref="RegexOptions.CultureInvariant"/> by default;
+/// callers may override via the constructor's <c>options</c> parameter, which is merged with the defaults
+/// via bitwise OR. Callers requiring compilation should use the
+/// <see cref="PatternReplaceFilter(Regex, string)"/> constructor with a pre-compiled regex.</para>
 /// <para>Tokens whose text does not match the pattern are forwarded unchanged with
 /// a single zero-allocation <see cref="Regex.IsMatch(ReadOnlySpan{char})"/> check.</para>
 /// </remarks>
@@ -28,17 +29,17 @@ public sealed class PatternReplaceFilter : ISpanTokenFilter
     /// <param name="replacement">The replacement string. Supports regex substitution
     /// syntax (<c>$1</c>, <c>${name}</c>, etc.).</param>
     /// <param name="options">Optional regex options merged with the defaults
-    /// (<see cref="RegexOptions.Compiled"/> | <see cref="RegexOptions.CultureInvariant"/>).</param>
+    /// (<see cref="RegexOptions.CultureInvariant"/>). <see cref="RegexOptions.Compiled"/>
+    /// is not supported on Native AOT.</param>
     public PatternReplaceFilter(string pattern, string replacement, RegexOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(pattern);
         ArgumentNullException.ThrowIfNull(replacement);
 
         RegexOptions merged = (options ?? RegexOptions.None)
-            | RegexOptions.Compiled
             | RegexOptions.CultureInvariant;
 
-        _regex = new Regex(pattern, merged);
+        _regex = new Regex(pattern, merged, TimeSpan.FromSeconds(1));
         _replacement = replacement;
     }
 

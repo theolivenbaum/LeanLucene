@@ -27,21 +27,22 @@ public sealed class PatternTokeniser : ISpanTokeniser
 
     /// <summary>
     /// Initialises a new <see cref="PatternTokeniser"/> from a regex pattern string.
-    /// The regex is compiled with <see cref="RegexOptions.Compiled"/> and
-    /// <see cref="RegexOptions.CultureInvariant"/> by default.
+    /// The regex uses the interpreter (not <see cref="RegexOptions.Compiled"/>) for
+    /// Native AOT compatibility and applies <see cref="RegexOptions.CultureInvariant"/> by default.
     /// </summary>
     /// <param name="pattern">A regular expression pattern. Each match becomes a token.</param>
     /// <param name="options">Optional regex options merged with the defaults
-    /// (<see cref="RegexOptions.Compiled"/> | <see cref="RegexOptions.CultureInvariant"/>).</param>
+    /// (<see cref="RegexOptions.CultureInvariant"/>). <see cref="RegexOptions.Compiled"/>
+    /// is not supported on Native AOT; callers requiring compilation should use the
+    /// <see cref="PatternTokeniser(Regex)"/> constructor with a pre-compiled regex.</param>
     public PatternTokeniser(string pattern, RegexOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(pattern);
 
         RegexOptions merged = (options ?? RegexOptions.None)
-            | RegexOptions.Compiled
             | RegexOptions.CultureInvariant;
 
-        _regex = new Regex(pattern, merged);
+        _regex = new Regex(pattern, merged, TimeSpan.FromSeconds(1));
     }
 
     /// <inheritdoc/>
