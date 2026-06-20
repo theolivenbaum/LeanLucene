@@ -200,4 +200,58 @@ public sealed class IndexWriterConfig
     /// is <c>true</c>. Default: 86400 (24 hours).
     /// </summary>
     public double SoftDeleteRetentionSeconds { get; set; } = 86400.0;
+
+    /// <summary>
+    /// Validates that property values are individually sensible and mutually consistent.
+    /// Called by <see cref="IndexWriter"/> at construction time so that misconfiguration
+    /// is surfaced before any state is set up.
+    /// </summary>
+    /// <exception cref="ArgumentException">Thrown when a property is invalid.</exception>
+    internal void Validate()
+    {
+        if (RamBufferSizeMB < 0)
+            throw new ArgumentException("RamBufferSizeMB must not be negative.", nameof(RamBufferSizeMB));
+
+        if (MaxBufferedDocs < 0)
+            throw new ArgumentException("MaxBufferedDocs must not be negative.", nameof(MaxBufferedDocs));
+
+        if (RamBufferSizeMB == 0 && MaxBufferedDocs == 0)
+            throw new ArgumentException(
+                "At least one flush trigger must be configured. Set RamBufferSizeMB > 0 or MaxBufferedDocs > 0.");
+
+        if (MaxQueuedDocs < 0)
+            throw new ArgumentException("MaxQueuedDocs must not be negative.", nameof(MaxQueuedDocs));
+
+        if (StoredFieldBlockSize < 1)
+            throw new ArgumentException("StoredFieldBlockSize must be at least 1.", nameof(StoredFieldBlockSize));
+
+        if (PostingsSkipInterval < 1)
+            throw new ArgumentException("PostingsSkipInterval must be at least 1.", nameof(PostingsSkipInterval));
+
+        if (BKDMaxLeafSize < 2)
+            throw new ArgumentException("BKDMaxLeafSize must be at least 2.", nameof(BKDMaxLeafSize));
+
+        if (AnalyserInternCacheSize < 0)
+            throw new ArgumentException("AnalyserInternCacheSize must not be negative.", nameof(AnalyserInternCacheSize));
+
+        if (MaxTokensPerDocument < 0)
+            throw new ArgumentException("MaxTokensPerDocument must not be negative.", nameof(MaxTokensPerDocument));
+
+        if (MergeThrottleSegments < 0)
+            throw new ArgumentException("MergeThrottleSegments must not be negative.", nameof(MergeThrottleSegments));
+
+        if (MergeThreshold < 2)
+            throw new ArgumentException("MergeThreshold must be at least 2.", nameof(MergeThreshold));
+
+        if (SoftDeletesEnabled && SoftDeleteRetentionSeconds <= 0)
+            throw new ArgumentException(
+                "SoftDeleteRetentionSeconds must be positive when SoftDeletesEnabled is true.",
+                nameof(SoftDeleteRetentionSeconds));
+
+        if (!Codecs.StoredFields.CompressionCodecRegistry.TryGet((byte)CompressionPolicy, out _))
+            throw new ArgumentException(
+                $"No compression codec is registered for policy '{CompressionPolicy}'. " +
+                "Install the matching compression package or register a codec before opening the writer.",
+                nameof(CompressionPolicy));
+    }
 }

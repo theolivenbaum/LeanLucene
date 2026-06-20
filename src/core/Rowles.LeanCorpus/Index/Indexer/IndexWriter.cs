@@ -75,6 +75,10 @@ public sealed partial class IndexWriter : IDisposable
     /// <exception cref="WriteLockException">Thrown if another <see cref="IndexWriter"/> already holds the write lock for this directory.</exception>
     public IndexWriter(MMapDirectory directory, IndexWriterConfig config)
     {
+        ArgumentNullException.ThrowIfNull(directory);
+        ArgumentNullException.ThrowIfNull(config);
+        config.Validate();
+
         _directory = directory;
         _config = config;
         _spanPostingSink = new SpanPostingTokenSink(_buffer, _config);
