@@ -560,8 +560,10 @@ public sealed class SegmentMerger
                                 foreach (var docId in perField.Keys)
                                     if (!graph.ContainsNode(docId)) graph.Insert(docId);
                             }
-                            catch
+                            catch (Exception ex) when (ex is IOException or InvalidDataException)
                             {
+                                Diagnostics.LeanCorpusActivitySource.TraceSwallowed(
+                                    ex, $"HNSW seed read failed for '{fieldName}' — rebuilding graph from scratch");
                                 graph = null;
                             }
                         }

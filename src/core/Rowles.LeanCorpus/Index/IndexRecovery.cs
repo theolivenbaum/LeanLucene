@@ -185,7 +185,8 @@ public static class IndexRecovery
 
             return true;
         }
-        catch
+        catch (Exception ex) when (ex is IOException or InvalidDataException
+            or UnauthorizedAccessException or JsonException)
         {
             return false;
         }

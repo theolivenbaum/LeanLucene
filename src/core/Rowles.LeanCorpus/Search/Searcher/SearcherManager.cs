@@ -193,6 +193,11 @@ public sealed class SearcherManager : IDisposable
             {
                 RecordRefreshFailure(ex);
             }
+            catch (Exception ex)
+            {
+                // The refresh loop must never exit on an unexpected exception.
+                RecordRefreshFailure(ex);
+            }
         }
     }
 
@@ -219,6 +224,12 @@ public sealed class SearcherManager : IDisposable
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
         {
+            RecordRefreshFailure(ex);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            // The refresh loop must never exit on an unexpected exception.
             RecordRefreshFailure(ex);
             return false;
         }

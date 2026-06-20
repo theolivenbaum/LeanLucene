@@ -61,6 +61,7 @@ public sealed partial class IndexWriter : IDisposable
 
     private readonly Lock _writeLock = new();
     private int _disposed;      // 0 = alive, 1 = disposed (atomically set via Interlocked)
+    private int _closing;       // 0 = open, 1 = Dispose has started draining (prevents TOCTOU)
     private int _inFlightAdds;  // count of indexing callers that passed the disposed-check gate
     private int _indexingFailed;
     private readonly FileStream _writeLockFile;
@@ -601,6 +602,9 @@ public sealed partial class IndexWriter : IDisposable
     {
         if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0) return;
 
+        // Prevent new callers from entering while we drain in-flight operations.
+        Volatile.Write(ref _closing, 1);
+
         var spinWait = new SpinWait();
         const long drainTimeoutTicks = 30 * TimeSpan.TicksPerSecond;
         long started = Environment.TickCount64;
@@ -610,7 +614,9 @@ public sealed partial class IndexWriter : IDisposable
             if (spinWait.NextSpinWillYield)
             {
                 if (Environment.TickCount64 - started > drainTimeoutTicks)
-                    break;
+                    throw new TimeoutException(
+                        $"IndexWriter.Dispose timed out after 30 seconds waiting for " +
+                        $"{Volatile.Read(ref _inFlightAdds)} in-flight indexing operation(s) to complete.");
                 Thread.Sleep(1);
             }
         }
@@ -631,11 +637,14 @@ public sealed partial class IndexWriter : IDisposable
     internal void EnterIndexingOperation()
     {
         Interlocked.Increment(ref _inFlightAdds);
-        if (Volatile.Read(ref _disposed) != 0 || Volatile.Read(ref _indexingFailed) != 0)
+        if (Volatile.Read(ref _disposed) != 0 || Volatile.Read(ref _closing) != 0 || Volatile.Read(ref _indexingFailed) != 0)
         {
             Interlocked.Decrement(ref _inFlightAdds);
             if (Volatile.Read(ref _disposed) != 0)
                 throw new ObjectDisposedException(nameof(IndexWriter));
+            if (Volatile.Read(ref _closing) != 0)
+                throw new ObjectDisposedException(nameof(IndexWriter),
+                    "The writer is shutting down. No new indexing operations are accepted.");
             throw new InvalidOperationException(
                 "The writer is unusable because an indexing operation failed after mutating the in-memory buffer. Dispose the writer and reopen from the last commit.");
         }

@@ -144,7 +144,7 @@ public sealed class IndexStats
                 dto.FieldDocCounts ?? new(StringComparer.Ordinal),
                 dto.FieldLengthSums ?? new(StringComparer.Ordinal));
         }
-        catch
+        catch (Exception ex) when (ex is IOException or JsonException)
         {
             return null;
         }
