@@ -750,7 +750,7 @@ public sealed class SegmentMerger
         if (!File.Exists(filePath))
             return result;
 
-        using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        using var fs = FileOpenRetry.OpenRead(filePath);
         using var reader = new BinaryReader(fs, System.Text.Encoding.UTF8, leaveOpen: false);
 
         int fieldCount = reader.ReadInt32();

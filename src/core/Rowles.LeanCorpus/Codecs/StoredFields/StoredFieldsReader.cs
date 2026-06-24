@@ -1,4 +1,5 @@
 using System.Buffers;
+using Rowles.LeanCorpus.Store;
 
 namespace Rowles.LeanCorpus.Codecs.StoredFields;
 
@@ -39,7 +40,7 @@ internal sealed class StoredFieldsReader : IDisposable
     public static StoredFieldsReader Open(string fdtPath, string fdxPath)
     {
         // Read .fdx to get block offsets
-        using var fdxStream = new FileStream(fdxPath, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+        using var fdxStream = FileOpenRetry.OpenReadDelete(fdxPath);
         using var fdxReader = new BinaryReader(fdxStream, System.Text.Encoding.UTF8, leaveOpen: false);
 
         int firstInt = fdxReader.ReadInt32();
@@ -71,7 +72,7 @@ internal sealed class StoredFieldsReader : IDisposable
             blockOffsets[i] = fdxReader.ReadInt64();
 
         // Open .fdt and read its header to get compression type
-        var fs = new FileStream(fdtPath, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+        var fs = FileOpenRetry.OpenReadDelete(fdtPath);
         var reader = new BinaryReader(fs, System.Text.Encoding.UTF8, leaveOpen: true);
 
         FieldCompressionPolicy compression;

@@ -131,18 +131,15 @@ internal static class DirectoryFsync
 
     private static void SyncFileCore(string filePath)
     {
-        var sw = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
             fs.Flush(flushToDisk: true);
-            System.Console.WriteLine($"  [FSYNC W] {System.IO.Path.GetFileName(filePath)}: {sw.Elapsed.TotalMilliseconds:F0}ms");
         }
         catch (IOException) when (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
             fs.Flush(flushToDisk: true);
-            System.Console.WriteLine($"  [FSYNC R] {System.IO.Path.GetFileName(filePath)}: {sw.Elapsed.TotalMilliseconds:F0}ms");
         }
     }
 }

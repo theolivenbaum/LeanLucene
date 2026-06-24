@@ -56,8 +56,7 @@ public sealed unsafe class IndexInput : IDisposable
         // still active. Without this, the merge's CleanupSegmentFiles cannot delete old
         // segment files that are still mapped by a live IndexSearcher, causing orphan
         // files to accumulate on disk and fsync storms that stall the writer.
-        var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read,
-            FileShare.Read | FileShare.Delete);
+        var fs = FileOpenRetry.OpenReadDelete(filePath);
         _mmf = MemoryMappedFile.CreateFromFile(fs, null, 0,
             MemoryMappedFileAccess.Read, HandleInheritability.None, leaveOpen: false);
         _accessor = _mmf.CreateViewAccessor(0, _length, MemoryMappedFileAccess.Read);

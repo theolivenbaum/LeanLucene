@@ -181,7 +181,7 @@ public sealed class SearcherManager : IDisposable
                     Interlocked.Increment(ref _unobservedBackgroundRefreshes);
             }
             catch (OperationCanceledException) { break; }
-            catch (Exception ex) when (ex is IOException or InvalidDataException)
+            catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
             {
                 RecordRefreshFailure(ex);
             }
@@ -209,7 +209,7 @@ public sealed class SearcherManager : IDisposable
             Interlocked.Exchange(ref _consecutiveRefreshFailures, 0);
             return refreshed;
         }
-        catch (Exception ex) when (ex is IOException or InvalidDataException)
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
         {
             RecordRefreshFailure(ex);
             return false;

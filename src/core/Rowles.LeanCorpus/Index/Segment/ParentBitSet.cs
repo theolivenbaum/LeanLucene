@@ -1,4 +1,6 @@
-﻿namespace Rowles.LeanCorpus.Index.Segment;
+﻿using Rowles.LeanCorpus.Store;
+
+namespace Rowles.LeanCorpus.Index.Segment;
 
 /// <summary>
 /// A bitset tracking which document IDs within a segment are parent documents.
@@ -106,7 +108,7 @@ internal sealed class ParentBitSet
     /// <summary>Reads a bitset from a binary file (.pbs).</summary>
     public static ParentBitSet ReadFrom(string filePath)
     {
-        using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        using var fs = FileOpenRetry.OpenRead(filePath);
         using var br = new BinaryReader(fs);
         int length = br.ReadInt32();
         int wordCount = br.ReadInt32();

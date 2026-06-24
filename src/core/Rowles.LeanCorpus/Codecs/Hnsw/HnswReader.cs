@@ -1,4 +1,5 @@
 ﻿using Rowles.LeanCorpus.Codecs.Vectors;
+using Rowles.LeanCorpus.Store;
 namespace Rowles.LeanCorpus.Codecs.Hnsw;
 
 /// <summary>
@@ -25,7 +26,7 @@ internal static class HnswReader
         bool? expectedNormalised,
         IReadOnlyDictionary<int, int>? docIdRemap)
     {
-        using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        using var fs = FileOpenRetry.OpenRead(filePath);
         using var reader = new BinaryReader(fs, System.Text.Encoding.UTF8, leaveOpen: false);
 
         CodecConstants.ValidateHeader(reader, CodecConstants.HnswVersion, "HNSW");

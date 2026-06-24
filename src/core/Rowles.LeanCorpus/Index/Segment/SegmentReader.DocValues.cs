@@ -1,6 +1,7 @@
 ﻿using Rowles.LeanCorpus.Codecs.DocValues;
 using Rowles.LeanCorpus.Codecs.Hnsw;
 using Rowles.LeanCorpus.Codecs.Vectors;
+using Rowles.LeanCorpus.Store;
 using Rowles.LeanCorpus.Util;
 
 namespace Rowles.LeanCorpus.Index.Segment;
@@ -444,7 +445,7 @@ public sealed partial class SegmentReader
     private static Dictionary<string, Dictionary<int, double>> ReadNumericIndex(string filePath)
     {
         var result = new Dictionary<string, Dictionary<int, double>>();
-        using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        using var fs = FileOpenRetry.OpenRead(filePath);
         using var reader = new BinaryReader(fs, System.Text.Encoding.UTF8, leaveOpen: false);
 
         int fieldCount = reader.ReadInt32();
