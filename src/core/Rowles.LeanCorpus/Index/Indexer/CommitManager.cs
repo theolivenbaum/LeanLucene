@@ -188,19 +188,33 @@ internal static class CommitManager
         ref int totalDocCount,
         ref int liveDocCount)
     {
-        using var reader = new SegmentReader(directory, segment);
-        totalDocCount += reader.MaxDoc;
-        for (int docId = 0; docId < reader.MaxDoc; docId++)
+        SegmentReader? reader = null;
+        try
         {
-            if (!reader.IsLive(docId))
-                continue;
+            reader = new SegmentReader(directory, segment);
+        }
+        catch (FileNotFoundException)
+        {
+            // A background merge may have deleted this segment's files.
+            // Skip the segment rather than failing the commit.
+            return;
+        }
 
-            liveDocCount++;
-            foreach (var field in segment.FieldNames)
+        using (reader)
+        {
+            totalDocCount += reader.MaxDoc;
+            for (int docId = 0; docId < reader.MaxDoc; docId++)
             {
-                int length = reader.GetFieldLength(docId, field);
-                fieldLengthSums[field] = fieldLengthSums.GetValueOrDefault(field) + length;
-                fieldDocCounts[field] = fieldDocCounts.GetValueOrDefault(field) + 1;
+                if (!reader.IsLive(docId))
+                    continue;
+
+                liveDocCount++;
+                foreach (var field in segment.FieldNames)
+                {
+                    int length = reader.GetFieldLength(docId, field);
+                    fieldLengthSums[field] = fieldLengthSums.GetValueOrDefault(field) + length;
+                    fieldDocCounts[field] = fieldDocCounts.GetValueOrDefault(field) + 1;
+                }
             }
         }
     }
