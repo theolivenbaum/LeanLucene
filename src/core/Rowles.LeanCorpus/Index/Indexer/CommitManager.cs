@@ -5,7 +5,6 @@ using Rowles.LeanCorpus.Index.Compatibility;
 using Rowles.LeanCorpus.Search;
 using Rowles.LeanCorpus.Serialization;
 using Rowles.LeanCorpus.Store;
-using Rowles.LeanCorpus.Store;
 
 namespace Rowles.LeanCorpus.Index.Indexer;
 
@@ -81,8 +80,6 @@ internal static class CommitManager
                 writer.Directory, writer.CommitGeneration,
                 writer.Config.DurableCommits);
 
-        MergeScheduler.ScheduleBackgroundMerge(writer);
-
         if (writer.ContentChangedSinceCommit)
             writer.ContentToken++;
 
@@ -93,6 +90,10 @@ internal static class CommitManager
         WriteCommitStats(writer);
         writer.Config.DeletionPolicy.OnCommit(writer.Directory.DirectoryPath, writer.CommitGeneration,
             SnapshotManager.GetSnapshotProtectedSegments(writer));
+
+        // Schedule background merge after commit is fully written — segment files must
+        // remain intact while WriteCommitStats opens them for scanning.
+        MergeScheduler.ScheduleBackgroundMerge(writer);
     }
 
     public static void WriteCommitFile(IndexWriter writer, bool pending = false, int? generationOverride = null)
