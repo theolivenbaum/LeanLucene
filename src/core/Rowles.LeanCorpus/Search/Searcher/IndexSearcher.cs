@@ -513,7 +513,7 @@ public sealed partial class IndexSearcher : IDisposable
 
     private (List<string> SegmentIds, int Generation) LoadLatestCommitWithGeneration()
     {
-        var recovery = IndexRecovery.RecoverLatestCommit(_directory.DirectoryPath);
+        var recovery = IndexRecovery.RecoverLatestCommit(_directory.DirectoryPath, cleanupOrphans: false);
         return recovery is not null
             ? (recovery.SegmentIds, recovery.Generation)
             : ([], 0);
