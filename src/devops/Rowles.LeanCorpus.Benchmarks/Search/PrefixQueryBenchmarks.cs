@@ -1,14 +1,7 @@
 ﻿using BenchmarkDotNet.Attributes;
-using Lucene.Net.Analysis.Standard;
 using Lucene.Net.Index;
 using Lucene.Net.Search;
-using Lucene.Net.Util;
-using IODirectory = System.IO.Directory;
 using LeanIndexSearcher = Rowles.LeanCorpus.Search.Searcher.IndexSearcher;
-using LuceneIndexSearcher = Lucene.Net.Search.IndexSearcher;
-using LuceneMMapDirectory = Lucene.Net.Store.MMapDirectory;
-using LuceneStringField = Lucene.Net.Documents.StringField;
-using LuceneTextField = Lucene.Net.Documents.TextField;
 
 namespace Rowles.LeanCorpus.Benchmarks;
 
@@ -33,14 +26,6 @@ public class PrefixQueryBenchmarks
     [Params("gov", "pres", "mark")]
     public string QueryPrefix { get; set; } = "gov";
 
-    // Lucene.NET fields — built once per class regardless of [Params] combos
-    private static readonly Lock s_luceneGate = new();
-    private static bool s_luceneBuilt;
-    private static LuceneMMapDirectory? s_luceneDirectory;
-    private static StandardAnalyzer? s_luceneAnalyzer;
-    private static DirectoryReader? s_luceneReader;
-    private static LuceneIndexSearcher? s_luceneSearcher;
-
     private LeanIndexSearcher? _leanSearcher;
 
     [GlobalSetup]
@@ -48,13 +33,12 @@ public class PrefixQueryBenchmarks
     {
         SharedStandardIndex.EnsureInitialised(DocumentCount);
         _leanSearcher = SharedStandardIndex.LeanSearcher;
-        EnsureLuceneIndex();
     }
 
     [GlobalCleanup]
     public void Cleanup()
     {
-        // Lean resources owned by SharedStandardIndex; Lucene persists for class lifetime.
+        // All resources are owned by SharedStandardIndex; do not dispose.
     }
 
     [Benchmark(Baseline = true)]
@@ -70,73 +54,6 @@ public class PrefixQueryBenchmarks
     public int LuceneNet_PrefixQuery()
     {
         var query = new Lucene.Net.Search.PrefixQuery(new Term("body", QueryPrefix));
-        return s_luceneSearcher!.Search(query, TopN).TotalHits;
-    }
-
-    // --- One-shot Lucene index builder ---
-
-    private static void EnsureLuceneIndex()
-    {
-        if (s_luceneBuilt)
-            return;
-
-        lock (s_luceneGate)
-        {
-            if (s_luceneBuilt)
-                return;
-
-            var documents = SharedStandardIndex.Documents;
-            var path = Path.Combine(BenchmarkHelpers.TempRoot,
-                $"lucenenet-shared-stdidx-{Guid.NewGuid():N}");
-            IODirectory.CreateDirectory(path);
-
-            s_luceneDirectory = new LuceneMMapDirectory(new DirectoryInfo(path));
-            s_luceneAnalyzer = new StandardAnalyzer(LuceneVersion.LUCENE_48);
-
-            using (var writer = new Lucene.Net.Index.IndexWriter(
-                s_luceneDirectory,
-                new Lucene.Net.Index.IndexWriterConfig(LuceneVersion.LUCENE_48, s_luceneAnalyzer)))
-            {
-                for (int i = 0; i < documents.Length; i++)
-                {
-                    var doc = new Lucene.Net.Documents.Document
-                    {
-                        new LuceneStringField("id",
-                            i.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                            Lucene.Net.Documents.Field.Store.NO),
-                        new LuceneTextField("body", documents[i],
-                            Lucene.Net.Documents.Field.Store.NO)
-                    };
-                    writer.AddDocument(doc);
-                }
-
-                writer.Commit();
-            }
-
-            s_luceneReader = DirectoryReader.Open(s_luceneDirectory);
-            s_luceneSearcher = new LuceneIndexSearcher(s_luceneReader);
-            s_luceneBuilt = true;
-        }
-    }
-
-    public static void CleanupLuceneResources()
-    {
-        if (!s_luceneBuilt)
-            return;
-
-        lock (s_luceneGate)
-        {
-            if (!s_luceneBuilt)
-                return;
-
-            s_luceneSearcher = null;
-            s_luceneReader?.Dispose();
-            s_luceneReader = null;
-            s_luceneAnalyzer?.Dispose();
-            s_luceneAnalyzer = null;
-            s_luceneDirectory?.Dispose();
-            s_luceneDirectory = null;
-            s_luceneBuilt = false;
-        }
+        return SharedStandardIndex.LuceneSearcher.Search(query, TopN).TotalHits;
     }
 }

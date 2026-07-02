@@ -299,18 +299,7 @@ internal static class Program
         // Release shared index resources now that all suites have finished.
         SharedStandardIndex.Cleanup();
 
-        // Clean up static Lucene indexes that were built once per class.
-        TermQueryBenchmarks.CleanupLuceneResources();
-        BooleanQueryBenchmarks.CleanupLuceneResources();
-        PhraseQueryBenchmarks.CleanupLuceneResources();
-        PrefixQueryBenchmarks.CleanupLuceneResources();
-        FuzzyQueryBenchmarks.CleanupLuceneResources();
-        WildcardQueryBenchmarks.CleanupLuceneResources();
-        RegexpQueryBenchmarks.CleanupLuceneResources();
-        DisjunctionMaxQueryBenchmarks.CleanupLuceneResources();
-        MultiPhraseQueryBenchmarks.CleanupLuceneResources();
-        SpanQueryBenchmarks.CleanupLuceneResources();
-        GutenbergSearchBenchmarks.CleanupLuceneResources();
+        // Non-shared Lucene indexes (one per non-standard suite).
         HnswSearchBenchmarks.CleanupLuceneResources();
         VectorQuantisationBenchmarks.CleanupLuceneResources();
         ParallelSearchBenchmarks.CleanupLuceneResources();
