@@ -205,7 +205,7 @@ public sealed partial class IndexSearcher
                     int docLength = fieldLengths is not null && (uint)docId < (uint)fieldLengths.Length
                         ? fieldLengths[docId] : 1;
                     float score = ScoreTerm(f1, f2, f3, postings[leaderIdx].Freq, docLength);
-                    if (boost != 1.0f) score *= boost;
+                    if (Math.Abs(boost - 1.0f) > 1e-6f) score *= boost;
                     collector.Collect(docBase + docId, ApplyFieldBoost(fieldBoosts, docId, score));
                 }
             }
@@ -260,7 +260,7 @@ public sealed partial class IndexSearcher
                     int docLength = fieldLengths is not null && (uint)docId < (uint)fieldLengths.Length
                         ? fieldLengths[docId] : 1;
                     float score = ScoreTerm(f1, f2, f3, postings.Freq, docLength);
-                    if (boost != 1.0f) score *= boost;
+                    if (Math.Abs(boost - 1.0f) > 1e-6f) score *= boost;
                     collector.Collect(docBase + docId, ApplyFieldBoost(fieldBoosts, docId, score));
                 }
             }
