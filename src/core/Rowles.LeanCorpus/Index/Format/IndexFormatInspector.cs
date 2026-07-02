@@ -293,7 +293,7 @@ public static class IndexFormatInspector
         byte? version = null;
         try
         {
-            using var stream = File.OpenRead(filePath);
+            using var stream = FileOpenRetry.OpenReadDelete(filePath);
             using var reader = new BinaryReader(stream);
             version = CodecFileHeader.ReadVersion(reader, format);
             hasValidMagic = true;

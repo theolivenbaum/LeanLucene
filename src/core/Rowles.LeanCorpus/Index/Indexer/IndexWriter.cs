@@ -626,8 +626,9 @@ public sealed partial class IndexWriter : IDisposable
 
         _mergeCts.Cancel();
         try { _mergeTask?.Wait(); }
-        catch (AggregateException) { }
-        catch (ObjectDisposedException) { }
+        catch (AggregateException) { /* Expected: merge task cancelled during shutdown */ }
+        catch (ObjectDisposedException) { /* CTS already disposed */ }
+        catch (TaskSchedulerException) { /* Task was rejected by scheduler during shutdown */ }
         _mergeCts.Dispose();
 
         _backpressureSemaphore?.Dispose();

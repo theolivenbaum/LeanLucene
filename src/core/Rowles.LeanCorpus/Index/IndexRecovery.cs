@@ -3,6 +3,7 @@ using Rowles.LeanCorpus.Codecs.CodecKit;
 using Rowles.LeanCorpus.Codecs.CodecKit.Codecs;
 using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
 using Rowles.LeanCorpus.Serialization;
+using Rowles.LeanCorpus.Store;
 
 namespace Rowles.LeanCorpus.Index;
 
@@ -165,7 +166,7 @@ public static class IndexRecovery
             {
                 var path = basePath + ext;
                 if (!File.Exists(path)) return false;
-                using var fs = File.OpenRead(path);
+            using var fs = FileOpenRetry.OpenReadDelete(path);
                 using var reader = new BinaryReader(fs);
                 CodecFileHeader.ReadVersion(reader, format);
             }

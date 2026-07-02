@@ -87,7 +87,7 @@ internal static class MergeScheduler
                 return;
 
             var ct = writer.MergeCts.Token;
-            writer.MergeTask = Task.Factory.StartNew(() =>
+            writer.MergeTask = Task.Run(() =>
             {
                 if (ct.IsCancellationRequested) return;
 
@@ -172,7 +172,7 @@ internal static class MergeScheduler
                         }
                     }
                 }
-            }, ct, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            }, ct);
         }
     }
 }

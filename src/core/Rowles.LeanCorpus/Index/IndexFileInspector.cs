@@ -180,7 +180,7 @@ internal static class IndexFileInspector
         var fileName = Path.GetFileName(filePath);
         try
         {
-            using var stream = File.OpenRead(filePath);
+            using var stream = FileOpenRetry.OpenReadDelete(filePath);
             using var reader = new BinaryReader(stream, System.Text.Encoding.UTF8, leaveOpen: false);
             byte version = CodecFileHeader.ReadVersion(reader, format);
             if (version > maxVersion)

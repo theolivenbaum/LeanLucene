@@ -465,7 +465,7 @@ public static class IndexBackup
 
     private static uint ComputeFileCrc32(string path)
     {
-        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
         return Crc32.Compute(stream);
     }
 
@@ -500,7 +500,7 @@ public static class IndexBackup
         Directory.CreateDirectory(Path.GetDirectoryName(targetPath) ?? string.Empty);
         IndexAtomicFileWriter.Write(targetPath, durable: true, stream =>
         {
-            using var source = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            using var source = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
             source.CopyTo(stream);
         });
     }

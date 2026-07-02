@@ -171,6 +171,7 @@ public sealed class SearcherManager : IDisposable
         try { _refreshTask.Wait(TimeSpan.FromSeconds(5)); }
         catch (AggregateException) { /* Expected: task cancelled during shutdown */ }
         catch (ObjectDisposedException) { /* CTS already disposed */ }
+        catch (TaskSchedulerException) { /* Task was rejected by scheduler during shutdown */ }
         _cts.Dispose();
         lock (_swapLock)
         {

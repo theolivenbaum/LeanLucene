@@ -69,7 +69,7 @@ internal static class IndexOpenGuard
 
         try
         {
-            using var stream = File.OpenRead(filePath);
+            using var stream = FileOpenRetry.OpenReadDelete(filePath);
             using var reader = new BinaryReader(stream);
             version = CodecFileHeader.ReadVersion(reader, descriptor.HeaderFormat!);
             currentVersion = descriptor.CurrentVersion.Value;
