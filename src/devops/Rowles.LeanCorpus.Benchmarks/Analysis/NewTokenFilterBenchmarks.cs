@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 using BenchmarkDotNet.Attributes;
 using Rowles.LeanCorpus.Analysis;
 using Rowles.LeanCorpus.Analysis.Filters;
@@ -159,7 +160,7 @@ public class NewTokenFilterBenchmarks
             "pattern-replace-noop" or "pattern-replace-mutating" =>
                 new Lucene.Net.Analysis.Pattern.PatternReplaceFilter(
                     input,
-                    new System.Text.RegularExpressions.Regex("[0-9]+"),
+                    new System.Text.RegularExpressions.Regex("[0-9]+", RegexOptions.None, TimeSpan.FromSeconds(1)),
                     "#",
                     all: true),
 

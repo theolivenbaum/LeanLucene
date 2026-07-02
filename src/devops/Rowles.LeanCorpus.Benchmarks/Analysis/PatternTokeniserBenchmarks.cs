@@ -42,19 +42,19 @@ public class PatternTokeniserBenchmarks
             "comma-short" => (
                 (ISpanTokeniser)new PatternTokeniser(@"[^,]+"),
                 "alpha,beta,gamma,delta,epsilon,zeta,eta,theta",
-                new Regex(@"[^,]+", RegexOptions.Compiled | RegexOptions.CultureInvariant)),
+                new Regex(@"[^,]+", RegexOptions.Compiled | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1))),
             "comma-long" => (
                 (ISpanTokeniser)new PatternTokeniser(@"[^,]+"),
                 string.Join(",", Enumerable.Range(0, 500).Select(i => $"token{i}")),
-                new Regex(@"[^,]+", RegexOptions.Compiled | RegexOptions.CultureInvariant)),
+                new Regex(@"[^,]+", RegexOptions.Compiled | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1))),
             "whitespace-short" => (
                 (ISpanTokeniser)new PatternTokeniser(@"\S+"),
                 "the quick brown fox jumped over the lazy dog",
-                new Regex(@"\S+", RegexOptions.Compiled | RegexOptions.CultureInvariant)),
+                new Regex(@"\S+", RegexOptions.Compiled | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1))),
             "whitespace-long" => (
                 (ISpanTokeniser)new PatternTokeniser(@"\S+"),
                 GenerateLoremIpsum(200),
-                new Regex(@"\S+", RegexOptions.Compiled | RegexOptions.CultureInvariant)),
+                new Regex(@"\S+", RegexOptions.Compiled | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1))),
             _ => throw new InvalidOperationException($"Unknown scenario '{Scenario}'.")
         };
     }
