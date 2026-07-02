@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
 using Rowles.LeanCorpus.Store;
 
 namespace Rowles.LeanCorpus.Tests.Unit.Store;
@@ -184,7 +185,8 @@ public sealed class NativeMethodsTests : IDisposable
 
         // posix_fadvise returns 0 on success and the errno value directly on failure
         // (unlike most syscalls that return -1).  fd=-1 → EBADF (9).
-        int result = NativeMethods.posix_fadvise(-1, 0, 0, NativeMethods.POSIX_FADV_DONTNEED);
+        using var handle = new SafeFileHandle(new IntPtr(-1), ownsHandle: false);
+        int result = NativeMethods.posix_fadvise(handle, 0, 0, NativeMethods.POSIX_FADV_DONTNEED);
         Assert.Equal(9, result); // EBADF
     }
 
