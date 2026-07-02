@@ -60,6 +60,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - AOT smoke test script now auto-detects the OS when selecting the runtime identifier.
 - Highlighter and similarity benchmark comparisons against Lucene.NET corrected.
 - Every `await` in the library now includes `ConfigureAwait(false)`, preventing continuations from capturing the caller's `SynchronizationContext`.
+- `GetVector(int docId)` in `SegmentReader.DocValues` now iterates all vector fields instead of returning on the first iteration, fixing a bug where only one field was ever checked.
+- `NumericDocValues` bit-packing range calculation uses signed subtraction to keep the compiler happy on unsigned underflow in unchecked arithmetic.
+- `IndexOutputBuffer` now implements `IDisposable`; callers use `using` blocks to return rented arrays to the pool.
+- `posix_fadvise` P/Invoke accepts a `SafeFileHandle` directly instead of unsafely extracting the raw fd.
+- `BackpressureController.AcquireBackpressureSlotAsync` uses `WaitAsync` instead of a blocking `Wait(0)` on the async path.
+- `IndexBackup` retry loops converted from `for(;;)` to `while(true)` so the stop condition and incrementer stay close to the exit check.
+- AOT example file-scoped types moved into a named namespace.
+- Floating-point equality on `RamBufferSizeMB` and scoring boosts replaced with range comparisons.
+- Generic null checks across CodecKit (`CaseDefinition`, `ChoiceCodec`, `OptionalCodec`, `VersionedCodec`, `VersionEnvelopeCodec`) switched to `is null` so the compiler's nullable analysis stays accurate.
+- Benchmark regex instances include a timeout, silencing ReDoS hotspot noise.
+
+### Changed
+
+- `ShingleFilter` and `SynonymGraphFilter` now buffer tokens in `Apply` and generate expansions in `Finish` instead of being pass-through stubs.
+- `SnowballStemmer` abstract base replaces seven duplicated `RemoveSuffix` implementations with a configurable N-step pipeline, pre/post-processing hooks, and per-language suffix arrays (Italian, Portuguese, Spanish, Dutch, French, German, Russian).
+- `SharedStandardIndex` now builds and caches a shared Lucene.NET index alongside the LeanCorpus one, stripping ~500 lines of duplicated Lucene setup/teardown from ten search benchmark suites.
+- `IndexWriter.Dispose` drain timeout changed from throwing to logging via `TraceSwallowed`.
+- `CombinedFieldsQueryBenchmarks`, `QueryCacheBenchmarks`, and `CollapseAndFacetBenchmarks` use shared `AddDocuments` helpers and pre-built queries to cut duplicated index construction.
 
 ## [1.4.1] - 2026-06-13
 
