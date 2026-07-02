@@ -3,7 +3,11 @@
 ##
 ## Get latest from `dotnet new gitignore`
 
+# Benchmark results (ignore output, keep data)
 bench/*
+!bench/data/
+!bench/data/**
+bench/data/*.tar.gz
 coverage-report/
 coverage-results/
 StrykerOutput/
