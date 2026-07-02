@@ -1,6 +1,7 @@
 ﻿using Rowles.LeanCorpus.Codecs.CodecKit.Codecs;
 using System;
 using System.Buffers;
+using System.Collections.Generic;
 
 namespace Rowles.LeanCorpus.Codecs.CodecKit.Internal;
 
@@ -53,7 +54,7 @@ internal sealed class CaseHandler<TBase, TCase> : ICaseHandler<TBase> where TCas
     public bool Matches(TBase value) => value is TCase;
 
     public bool MatchesExact(TBase value) =>
-        value != null && value.GetType() == typeof(TCase);
+        !EqualityComparer<TBase>.Default.Equals(value, default) && value!.GetType() == typeof(TCase);
 
     public void Encode(TBase value, IBufferWriter<byte> writer, CodecContext context)
         => _codec.Encode((TCase)value!, writer, context);
