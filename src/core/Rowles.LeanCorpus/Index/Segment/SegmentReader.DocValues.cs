@@ -384,7 +384,11 @@ public sealed partial class SegmentReader
     public float[]? GetVector(int docId)
     {
         foreach (var fieldName in _vectorPaths.Keys)
-            return ReadVectorFromField(fieldName, docId);
+        {
+            var result = ReadVectorFromField(fieldName, docId);
+            if (result is not null)
+                return result;
+        }
         return null;
     }
 
