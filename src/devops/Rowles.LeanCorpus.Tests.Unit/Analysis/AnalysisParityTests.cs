@@ -335,10 +335,11 @@ public class AnalysisParityTests
 
         var matSink = new MaterialisingTokenSink();
         foreach (var t in tokens) filter.Apply(t.Text.AsSpan(), t.StartOffset, t.EndOffset, t.Type, t.PositionIncrement, t.Payload, matSink);
+        filter.Finish(matSink);
         tokens.Clear();
         tokens.AddRange(matSink.Tokens);
 
-        Assert.Equal(["new", "york", "city"], tokens.Select(t => t.Text));
+        Assert.Equal(["new", "york", "city", "new york", "york city", "new york city"], tokens.Select(t => t.Text));
     }
 
     /// <summary>
