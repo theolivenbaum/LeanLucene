@@ -617,9 +617,14 @@ public sealed partial class IndexWriter : IDisposable
             if (spinWait.NextSpinWillYield)
             {
                 if (Environment.TickCount64 - started > drainTimeoutTicks)
-                    throw new TimeoutException(
-                        $"IndexWriter.Dispose timed out after 30 seconds waiting for " +
-                        $"{Volatile.Read(ref _inFlightAdds)} in-flight indexing operation(s) to complete.");
+                {
+                    Diagnostics.LeanCorpusActivitySource.TraceSwallowed(
+                        new TimeoutException(
+                            $"IndexWriter.Dispose timed out after 30 seconds waiting for " +
+                            $"{Volatile.Read(ref _inFlightAdds)} in-flight indexing operation(s) to complete."),
+                        "dispose-drain-timeout");
+                    break;
+                }
                 Thread.Sleep(1);
             }
         }
