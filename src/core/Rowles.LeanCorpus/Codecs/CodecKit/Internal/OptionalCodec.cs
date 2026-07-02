@@ -1,5 +1,6 @@
 using System;
 using System.Buffers;
+using System.Collections.Generic;
 using Rowles.LeanCorpus.Codecs.CodecKit.Enums;
 using Rowles.LeanCorpus.Codecs.CodecKit.Exceptions;
 using Rowles.LeanCorpus.Codecs.CodecKit.Codecs;
@@ -43,7 +44,7 @@ internal sealed class OptionalCodec<T> : ICodec<T?>
     public void Encode(T? value, IBufferWriter<byte> writer, CodecContext context)
     {
 
-        if (value == null)
+        if (EqualityComparer<T?>.Default.Equals(value, default))
         {
             _flagCodec.Encode(false, writer, context);
         }
@@ -72,8 +73,8 @@ internal sealed class OptionalSentinelCodec<T, TSentinel> : ICodec<T?> where TSe
         _innerCodec = innerCodec ?? throw new ArgumentNullException(nameof(innerCodec));
         _sentinelCodec = sentinelCodec ?? throw new ArgumentNullException(nameof(sentinelCodec));
 
-        if (absentValue == null) throw new ArgumentNullException(nameof(absentValue));
-        if (presentValue == null) throw new ArgumentNullException(nameof(presentValue));
+        if (EqualityComparer<TSentinel>.Default.Equals(absentValue, default)) throw new ArgumentNullException(nameof(absentValue));
+        if (EqualityComparer<TSentinel>.Default.Equals(presentValue, default)) throw new ArgumentNullException(nameof(presentValue));
 
         if (absentValue.Equals(presentValue))
             throw new ArgumentException("absentValue and presentValue must be different.");
@@ -114,7 +115,7 @@ internal sealed class OptionalSentinelCodec<T, TSentinel> : ICodec<T?> where TSe
     public void Encode(T? value, IBufferWriter<byte> writer, CodecContext context)
     {
 
-        if (value == null)
+        if (EqualityComparer<T?>.Default.Equals(value, default))
         {
             _sentinelCodec.Encode(_absentValue, writer, context);
         }
