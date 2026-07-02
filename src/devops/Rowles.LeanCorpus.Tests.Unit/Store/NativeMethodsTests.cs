@@ -134,7 +134,7 @@ public sealed class NativeMethodsTests : IDisposable
 
         var parameters = method.GetParameters();
         Assert.Equal(4, parameters.Length);
-        Assert.Equal(typeof(int), parameters[0].ParameterType);
+        Assert.Equal(typeof(SafeFileHandle), parameters[0].ParameterType);
         Assert.Equal(typeof(long), parameters[1].ParameterType);
         Assert.Equal(typeof(long), parameters[2].ParameterType);
         Assert.Equal(typeof(int), parameters[3].ParameterType);
