@@ -68,7 +68,7 @@ return caseDef.Handler.Decode(ref reader, context);
 
     public void Encode(TBase value, IBufferWriter<byte> writer, CodecContext context)
     {
-        if (EqualityComparer<TBase>.Default.Equals(value, default))
+        if (value is null)
             throw new ArgumentNullException(nameof(value));
 
         // Exact runtime type first (amendment #5)
