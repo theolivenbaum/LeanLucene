@@ -215,7 +215,7 @@ public sealed class IndexWriterConfig
         if (MaxBufferedDocs < 0)
             throw new ArgumentException("MaxBufferedDocs must not be negative.", nameof(MaxBufferedDocs));
 
-        if (RamBufferSizeMB == 0 && MaxBufferedDocs == 0)
+        if (RamBufferSizeMB <= 0.0 && MaxBufferedDocs == 0)
             throw new ArgumentException(
                 "At least one flush trigger must be configured. Set RamBufferSizeMB > 0 or MaxBufferedDocs > 0.");
 
