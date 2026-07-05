@@ -143,13 +143,13 @@ if ($Command -eq 'test') {
             elseif ($IsMacOS)    { $RuntimeIdentifier = 'osx-x64' }
             else                 { $RuntimeIdentifier = 'win-x64' }
         }
-        $aotProject = Join-Path $repoRoot 'src\examples\Rowles.LeanCorpus.Example.NativeAot\Rowles.LeanCorpus.Example.NativeAot.csproj'
+        $aotProject = Join-Path $repoRoot 'src\devops\Rowles.LeanCorpus.Tests.AOTSmoke\Rowles.LeanCorpus.Example.NativeAot.csproj'
         Write-Host "Publishing NativeAOT example ($RuntimeIdentifier)..." -ForegroundColor Cyan
         dotnet publish $aotProject -c Release -r $RuntimeIdentifier --self-contained true -p:PublishAot=true
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        $publishDir = Join-Path $repoRoot "src\examples\Rowles.LeanCorpus.Example.NativeAot\bin\Release\net10.0\$RuntimeIdentifier\publish"
+        $publishDir = Join-Path $repoRoot "src\devops\Rowles.LeanCorpus.Tests.AOTSmoke\bin\Release\net10.0\$RuntimeIdentifier\publish"
         $exe = if ($RuntimeIdentifier.StartsWith('win-', [StringComparison]::OrdinalIgnoreCase)) {
-            Join-Path $publishDir 'Rowles.LeanCorpus.Example.NativeAot.exe'
+            Join-Path $publishDir 'Rowles.LeanCorpus.Tests.AOTSmoke.exe'
         } else { Join-Path $publishDir 'Rowles.LeanCorpus.Example.NativeAot' }
         Write-Host "Running NativeAOT executable..." -ForegroundColor Cyan
         & $exe
