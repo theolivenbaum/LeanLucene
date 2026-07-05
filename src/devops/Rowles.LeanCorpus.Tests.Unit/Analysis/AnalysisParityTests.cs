@@ -247,7 +247,7 @@ public class AnalysisParityTests
         tokens.Clear();
         tokens.AddRange(matSink.Tokens);
 
-        Assert.Equal("\u0661\u06F2\uFF134x", tokens[0].Text);
+        Assert.Equal("1234x", tokens[0].Text);
         Assert.Equal(0, tokens[0].StartOffset);
         Assert.Equal(5, tokens[0].EndOffset);
     }
