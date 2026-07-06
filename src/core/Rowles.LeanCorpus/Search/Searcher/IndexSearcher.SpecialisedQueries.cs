@@ -1074,22 +1074,16 @@ public sealed partial class IndexSearcher
     {
         int cap = Math.Max(reader.MaxDoc, 1);
         var inner = new TopNCollector(cap);
-        int savedDocBase = reader.DocBase;
-        try
-        {
-            // Execute filter against this segment with docBase=0 so collected ids are local.
-            reader.DocBase = 0;
-            ExecuteQuery(filter, reader, globalDFs, ref inner);
-        }
-        finally
-        {
-            reader.DocBase = savedDocBase;
-        }
+
+        // Execute the filter query. ExecuteQuery adds reader.DocBase to produce
+        // global doc IDs; subtract it back to recover segment-local IDs for the bitmap.
+        int docBase = reader.DocBase;
+        ExecuteQuery(filter, reader, globalDFs, ref inner);
 
         var bitmap = new Util.RoaringBitmap();
         var topDocs = inner.ToTopDocs();
         foreach (var sd in topDocs.ScoreDocs)
-            bitmap.Add(sd.DocId);
+            bitmap.Add(sd.DocId - docBase);
         return bitmap;
     }
 
