@@ -219,6 +219,18 @@ public static class PackedIntCodec
         if (sortedValues.Length < BlockSize)
             throw new ArgumentException($"Input must contain at least {BlockSize} values.", nameof(sortedValues));
 
+        // Validate monotonic non-negative input so deltas don't wrap.
+        if (sortedValues[0] < offset)
+            throw new ArgumentOutOfRangeException(
+                nameof(sortedValues), "First value must be >= offset for delta encoding.");
+        for (int i = 1; i < BlockSize; i++)
+        {
+            if (sortedValues[i] < sortedValues[i - 1])
+                throw new ArgumentException(
+                    "Values must be monotonically non-decreasing for delta encoding.",
+                    nameof(sortedValues));
+        }
+
         Span<int> deltas = stackalloc int[BlockSize];
         deltas[0] = sortedValues[0] - offset;
 
