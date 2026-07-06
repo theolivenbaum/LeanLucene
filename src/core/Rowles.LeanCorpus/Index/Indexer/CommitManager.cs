@@ -382,6 +382,9 @@ internal static class CommitManager
 
             var protectedSegments = SnapshotManager.GetSnapshotProtectedSegments(writer);
 
+            var allConsumed = new List<SegmentInfo>();
+            SegmentMerger? lastMerger = null;
+
             while (writer.CommittedSegments.Count > maxSegments)
             {
                 var mergeable = writer.CommittedSegments
@@ -397,6 +400,7 @@ internal static class CommitManager
 
                 var merger = new SegmentMerger(writer.Directory, writer.Config.MergePolicy, writer.Config.PostingsSkipInterval,
                     writer.Config.SoftDeleteRetentionSeconds);
+                lastMerger = merger;
                 int localOrdinal = writer.NextSegmentOrdinal;
                 var merged = merger.MergeAll(toMerge, ref localOrdinal);
                 writer.NextSegmentOrdinal = Math.Max(writer.NextSegmentOrdinal, localOrdinal);
@@ -413,11 +417,25 @@ internal static class CommitManager
                     writer.CommittedSegments.Add(merged);
                 }
 
+                allConsumed.AddRange(toMerge);
                 totalMerged += toMerge.Count;
             }
 
             if (totalMerged > 0)
             {
+                // Clean up files for segments that were consumed by merges and
+                // are no longer referenced by any active segment.
+                var activeSegments = new HashSet<string>(
+                    writer.CommittedSegments.Select(static s => s.SegmentId), StringComparer.Ordinal);
+                foreach (var seg in allConsumed)
+                {
+                    if (!activeSegments.Contains(seg.SegmentId) &&
+                        !protectedSegments.Contains(seg.SegmentId))
+                    {
+                        lastMerger!.CleanupSegmentFiles(seg);
+                    }
+                }
+
                 writer.ContentToken++;
                 writer.CommitGeneration++;
                 WriteCommitFile(writer);
