@@ -113,15 +113,21 @@ public static class NumericAggregator
         string fieldName,
         IReadOnlyList<Index.Segment.SegmentReader> readers)
     {
-        // Probe the first reader that has the field to determine its type.
+        // Determine the field type from the first segment that contains the field,
+        // regardless of which documents have values.
         foreach (var reader in readers)
         {
-            // The field must exist in at least one segment.
-            if (reader.TryGetSortedNumericDocValues(fieldName, 0, out _))
+            if (!reader.HasNumericField(fieldName))
+                continue;
+
+            // Sorted-numeric takes priority — it's the multi-value form.
+            if (reader.GetSortedNumericDocValues(fieldName) is not null)
                 return new FieldAccessor(IsSortedNumeric: true, IsSingleNumeric: false);
-            if (reader.TryGetNumericValue(fieldName, 0, out _))
-                return new FieldAccessor(IsSortedNumeric: false, IsSingleNumeric: true);
+
+            // Either sparse .num index or dense .dvn array.
+            return new FieldAccessor(IsSortedNumeric: false, IsSingleNumeric: true);
         }
+
         return default;
     }
 

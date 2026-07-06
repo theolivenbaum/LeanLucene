@@ -216,6 +216,23 @@ public sealed partial class SegmentReader
         => EnsureBinaryDocValues().GetValueOrDefault(field);
 
     /// <summary>
+    /// Returns <see langword="true"/> when a numeric field with the given name exists
+    /// in this segment, regardless of which documents have values for it.
+    /// Checks the sparse numeric index (.num), dense numeric doc values (.dvn),
+    /// and sorted-numeric doc values (.dsn).
+    /// </summary>
+    public bool HasNumericField(string field)
+    {
+        if (EnsureNumericIndex().ContainsKey(field))
+            return true;
+        if (EnsureNumericDocValues().ContainsKey(field))
+            return true;
+        if (EnsureSortedNumericDocValues().ContainsKey(field))
+            return true;
+        return false;
+    }
+
+    /// <summary>
     /// Returns all document IDs that have a numeric value in the given field within the specified range.
     /// </summary>
     public List<(int DocId, double Value)> GetNumericRange(string field, double min, double max)
