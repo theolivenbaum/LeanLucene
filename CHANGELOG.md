@@ -32,6 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - QueryCache is now owned by SearcherManager and shared across searcher refreshes, so cached results survive when content hasn't changed (7ee5f977)
 - FlushDwptPool now asserts that the caller holds WriteLock, making the lock contract explicit and catching misuse in debug builds (84cbc9fc)
 - Moved AOT smoke console project into an xUnit 3 AOT test project. (e6741301, 7a79c1b1)
+- `ShingleFilter` and `SynonymGraphFilter` now buffer tokens in `Apply` and generate expansions in `Finish` instead of being pass-through stubs.
+- `SnowballStemmer` abstract base replaces seven duplicated `RemoveSuffix` implementations with a configurable N-step pipeline, pre/post-processing hooks, and per-language suffix arrays (Italian, Portuguese, Spanish, Dutch, French, German, Russian).
+- `SharedStandardIndex` now builds and caches a shared Lucene.NET index alongside the LeanCorpus one, stripping ~500 lines of duplicated Lucene setup/teardown from ten search benchmark suites.
+- `IndexWriter.Dispose` drain timeout changed from throwing to logging via `TraceSwallowed`.
+- `CombinedFieldsQueryBenchmarks`, `QueryCacheBenchmarks`, and `CollapseAndFacetBenchmarks` use shared `AddDocuments` helpers and pre-built queries to cut duplicated index construction.
 - KStemmer rule lookup uses a `FrozenDictionary` keyed by the last two characters of each suffix, with a one-character fallback, replacing linear scan of all rules. `StemTokenFilter` added a character-based pre-filter that skips buffer allocation for tokens whose last character cannot begin a stemming suffix (~85% of tokens).
 - Wildcard query execution pre-narrows the FST traversal by walking a known literal prefix (≥2 characters) ahead of the automaton intersection, avoiding per-candidate string materialisation for suffix-only pattern matching. `TermDictionaryReader` gained `GetTermsMatchingWithPrefix` and `GetTermOffsetsMatchingWithPrefix`; `IndexSearcher` and `SegmentReader` plumb through the prefix-narrowed overloads.
 - Pending deletion in `IndexWriter` is now applied via a single FST prefix scan per unique field rather than per-term individual lookups, matching against a `HashSet<string>` of bare terms per field. Hard and soft deletes share the same scan infrastructure.
@@ -106,14 +111,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Floating-point equality on `RamBufferSizeMB` and scoring boosts replaced with range comparisons.
 - Generic null checks across CodecKit (`CaseDefinition`, `ChoiceCodec`, `OptionalCodec`, `VersionedCodec`, `VersionEnvelopeCodec`) switched to `is null` so the compiler's nullable analysis stays accurate.
 - Benchmark regex instances include a timeout, silencing ReDoS hotspot noise.
-
-### Changed
-
-- `ShingleFilter` and `SynonymGraphFilter` now buffer tokens in `Apply` and generate expansions in `Finish` instead of being pass-through stubs.
-- `SnowballStemmer` abstract base replaces seven duplicated `RemoveSuffix` implementations with a configurable N-step pipeline, pre/post-processing hooks, and per-language suffix arrays (Italian, Portuguese, Spanish, Dutch, French, German, Russian).
-- `SharedStandardIndex` now builds and caches a shared Lucene.NET index alongside the LeanCorpus one, stripping ~500 lines of duplicated Lucene setup/teardown from ten search benchmark suites.
-- `IndexWriter.Dispose` drain timeout changed from throwing to logging via `TraceSwallowed`.
-- `CombinedFieldsQueryBenchmarks`, `QueryCacheBenchmarks`, and `CollapseAndFacetBenchmarks` use shared `AddDocuments` helpers and pre-built queries to cut duplicated index construction.
 
 ## [1.4.1] - 2026-06-13
 
