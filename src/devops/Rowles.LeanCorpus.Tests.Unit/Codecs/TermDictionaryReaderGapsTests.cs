@@ -1,4 +1,5 @@
 using Rowles.LeanCorpus.Codecs;
+using Rowles.LeanCorpus.Tests.Shared.Fixtures;
 using Rowles.LeanCorpus.Codecs.TermDictionary;
 using System.Text;
 
@@ -22,7 +23,7 @@ public sealed class TermDictionaryReaderGapsTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_dir, true); } catch { }
+        TestDirectoryFixture.TryDeleteDirectory(_dir);
     }
 
     [Fact(DisplayName = "TermDictionaryReader: Open Rejects Bad Magic")]

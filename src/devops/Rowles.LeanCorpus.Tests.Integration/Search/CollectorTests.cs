@@ -1,5 +1,6 @@
 ﻿using Rowles.LeanCorpus.Document;
 using Rowles.LeanCorpus.Document.Fields;
+using Rowles.LeanCorpus.Tests.Shared.Fixtures;
 using Rowles.LeanCorpus.Index.Indexer;
 using Rowles.LeanCorpus.Search;
 using Rowles.LeanCorpus.Search.Queries;
@@ -24,7 +25,7 @@ public sealed class CollectorTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_dir, true); } catch { }
+        TestDirectoryFixture.TryDeleteDirectory(_dir);
     }
 
     [Fact(DisplayName = "Count: Returns correct count for TermQuery")]

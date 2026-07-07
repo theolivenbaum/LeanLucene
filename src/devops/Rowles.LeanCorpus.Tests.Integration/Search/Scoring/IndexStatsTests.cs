@@ -1,4 +1,5 @@
 using Rowles.LeanCorpus.Search.Scoring;
+using Rowles.LeanCorpus.Tests.Shared.Fixtures;
 
 namespace Rowles.LeanCorpus.Tests.Integration.Search.Scoring;
 
@@ -20,7 +21,7 @@ public sealed class IndexStatsTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_dir, true); } catch { }
+        TestDirectoryFixture.TryDeleteDirectory(_dir);
     }
 
     private static IndexStats Build(

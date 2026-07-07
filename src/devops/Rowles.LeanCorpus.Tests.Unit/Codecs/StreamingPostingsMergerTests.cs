@@ -1,4 +1,5 @@
 using Rowles.LeanCorpus.Codecs.CodecKit;
+using Rowles.LeanCorpus.Tests.Shared.Fixtures;
 using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
 using Rowles.LeanCorpus.Codecs.Postings;
 using Rowles.LeanCorpus.Codecs.TermDictionary;
@@ -24,7 +25,7 @@ public sealed class StreamingPostingsMergerTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_dir, true); } catch { }
+        TestDirectoryFixture.TryDeleteDirectory(_dir);
     }
 
     [Fact(DisplayName = "StreamingPostingsMerger: Single Source Copies Terms And Offsets")]

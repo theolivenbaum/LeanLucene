@@ -1,5 +1,7 @@
 using Rowles.LeanCorpus.Document;
+using Rowles.LeanCorpus.Tests.Shared.Fixtures;
 using Rowles.LeanCorpus.Document.Fields;
+using Rowles.LeanCorpus.Tests.Shared.Fixtures;
 using Rowles.LeanCorpus.Index;
 using Rowles.LeanCorpus.Search;
 using Rowles.LeanCorpus.Store;
@@ -22,7 +24,7 @@ public sealed class FaultInjectionTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_root, recursive: true); } catch { }
+        TestDirectoryFixture.TryDeleteDirectory(_root);
     }
 
     // ---- regression test: F2/N3 fix ----

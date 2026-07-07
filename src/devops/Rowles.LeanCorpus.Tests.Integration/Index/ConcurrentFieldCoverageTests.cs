@@ -1,5 +1,6 @@
 ﻿using Rowles.LeanCorpus.Document;
 using Rowles.LeanCorpus.Document.Fields;
+using Rowles.LeanCorpus.Tests.Shared.Fixtures;
 using Rowles.LeanCorpus.Index;
 using Rowles.LeanCorpus.Search;
 using Rowles.LeanCorpus.Search.Geo;
@@ -20,7 +21,7 @@ public sealed class ConcurrentFieldCoverageTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_dir, recursive: true); } catch { }
+        TestDirectoryFixture.TryDeleteDirectory(_dir);
     }
 
     /// <summary>

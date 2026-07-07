@@ -1,4 +1,5 @@
 using System.Buffers;
+using Rowles.LeanCorpus.Tests.Shared.Fixtures;
 using Rowles.LeanCorpus.Codecs.CodecKit;
 using Rowles.LeanCorpus.Codecs.CodecKit.Adapters;
 using Rowles.LeanCorpus.Store;
@@ -21,7 +22,7 @@ public sealed class IndexInputSequenceTests : IDisposable
     public void Dispose()
     {
         _directory.Dispose();
-        try { Directory.Delete(_dir, true); } catch { }
+        TestDirectoryFixture.TryDeleteDirectory(_dir);
     }
 
     private IndexInput WriteAndOpen(string name, byte[] data)

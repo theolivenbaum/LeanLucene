@@ -1,5 +1,7 @@
 using Rowles.LeanCorpus.Codecs;
+using Rowles.LeanCorpus.Tests.Shared.Fixtures;
 using Rowles.LeanCorpus.Document;
+using Rowles.LeanCorpus.Tests.Shared.Fixtures;
 using Rowles.LeanCorpus.Document.Fields;
 using Rowles.LeanCorpus.Index;
 using Rowles.LeanCorpus.Index.Segment;
@@ -27,7 +29,7 @@ public sealed class IndexValidatorGapsTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_root, true); } catch { }
+        TestDirectoryFixture.TryDeleteDirectory(_root);
     }
 
     private string SubDir(string name)

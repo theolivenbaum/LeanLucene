@@ -1,4 +1,5 @@
 using System.Reflection;
+using Rowles.LeanCorpus.Tests.Shared.Fixtures;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 using Rowles.LeanCorpus.Store;
@@ -24,7 +25,7 @@ public sealed class NativeMethodsTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_dir, true); } catch { }
+        TestDirectoryFixture.TryDeleteDirectory(_dir);
     }
 
     // ── Constants ──

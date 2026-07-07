@@ -1,5 +1,6 @@
 ﻿using Rowles.LeanCorpus.Document;
 using Rowles.LeanCorpus.Document.Fields;
+using Rowles.LeanCorpus.Tests.Shared.Fixtures;
 using Rowles.LeanCorpus.Index.Indexer;
 using Rowles.LeanCorpus.Search;
 using Rowles.LeanCorpus.Search.Simd;
@@ -26,7 +27,7 @@ public sealed class QueryCacheTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_dir, true); } catch { }
+        TestDirectoryFixture.TryDeleteDirectory(_dir);
     }
 
     /// <summary>

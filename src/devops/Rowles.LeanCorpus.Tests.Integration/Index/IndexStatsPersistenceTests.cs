@@ -1,5 +1,7 @@
 using Rowles.LeanCorpus.Document;
+using Rowles.LeanCorpus.Tests.Shared.Fixtures;
 using Rowles.LeanCorpus.Document.Fields;
+using Rowles.LeanCorpus.Tests.Shared.Fixtures;
 using Rowles.LeanCorpus.Index;
 using Rowles.LeanCorpus.Index.Indexer;
 using Rowles.LeanCorpus.Search;
@@ -27,7 +29,7 @@ public sealed class IndexStatsPersistenceTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_dir, true); } catch { }
+        TestDirectoryFixture.TryDeleteDirectory(_dir);
     }
 
     /// <summary>

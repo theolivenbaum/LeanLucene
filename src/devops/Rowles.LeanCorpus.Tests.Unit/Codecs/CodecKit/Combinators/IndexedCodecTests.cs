@@ -1,4 +1,5 @@
 using System.Buffers;
+using Rowles.LeanCorpus.Tests.Shared.Fixtures;
 using Rowles.LeanCorpus.Codecs.CodecKit;
 using Rowles.LeanCorpus.Codecs.CodecKit.Codecs;
 using Rowles.LeanCorpus.Codecs.CodecKit.Combinators;
@@ -19,7 +20,7 @@ public sealed class IndexedCodecTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_dir, true); } catch { }
+        TestDirectoryFixture.TryDeleteDirectory(_dir);
     }
 
     private IndexInput WriteAndOpen(string name, byte[] data)

@@ -1,5 +1,7 @@
 using Rowles.LeanCorpus.Codecs.Fst;
+using Rowles.LeanCorpus.Tests.Shared.Fixtures;
 using Rowles.LeanCorpus.Document;
+using Rowles.LeanCorpus.Tests.Shared.Fixtures;
 using Rowles.LeanCorpus.Store;
 
 namespace Rowles.LeanCorpus.Tests.Integration.Index;
@@ -21,7 +23,7 @@ public sealed class SegmentReaderPatternTests: IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_dir, true); } catch { }
+        TestDirectoryFixture.TryDeleteDirectory(_dir);
     }
 
     private (MMapDirectory Dir, IndexSearcher Searcher) BuildAndOpen(Action<IndexWriter> populate)
