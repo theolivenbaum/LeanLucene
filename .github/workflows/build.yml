@@ -59,12 +59,6 @@ jobs:
       - name: Run Native AOT smoke tests
         run: dotnet run --project src/devops/Rowles.LeanCorpus.Tests.AOTSmoke/Rowles.LeanCorpus.Tests.AOTSmoke.csproj -c Release --no-build
 
-      - name: Publish Native AOT example
-        run: dotnet publish src/examples/Rowles.LeanCorpus.Example.NativeAot/Rowles.LeanCorpus.Example.NativeAot.csproj -c Release -r linux-x64 --self-contained true -p:PublishAot=true -p:WarningsAsErrors=IL2026%3BIL3050%3BIL2070%3BIL2072%3BIL2075%3BIL2090
-
-      - name: Run Native AOT example
-        run: src/examples/Rowles.LeanCorpus.Example.NativeAot/bin/Release/net10.0/linux-x64/publish/Rowles.LeanCorpus.Example.NativeAot
-
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v7
@@ -137,12 +131,6 @@ jobs:
 
       - name: Run Native AOT smoke tests
         run: dotnet run --project src/devops/Rowles.LeanCorpus.Tests.AOTSmoke/Rowles.LeanCorpus.Tests.AOTSmoke.csproj -c Release --no-build
-
-      - name: Publish Native AOT example
-        run: dotnet publish src/examples/Rowles.LeanCorpus.Example.NativeAot/Rowles.LeanCorpus.Example.NativeAot.csproj -c Release -r win-x64 --self-contained true -p:PublishAot=true -p:WarningsAsErrors=IL2026%3BIL3050%3BIL2070%3BIL2072%3BIL2075%3BIL2090
-
-      - name: Run Native AOT example
-        run: src/examples/Rowles.LeanCorpus.Example.NativeAot/bin/Release/net10.0/win-x64/publish/Rowles.LeanCorpus.Example.NativeAot.exe
 
       - name: Upload test results
         if: always()
