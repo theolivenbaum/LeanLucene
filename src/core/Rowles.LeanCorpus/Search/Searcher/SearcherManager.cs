@@ -18,6 +18,7 @@ public sealed class SearcherManager : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _refreshTask;
     private readonly ConditionalWeakTable<IndexSearcher, SearcherRef> _searchers = new();
+    private readonly QueryCache? _queryCache;
 
     private volatile SearcherRef _current;
     private int _disposed;
@@ -67,6 +68,13 @@ public sealed class SearcherManager : IDisposable
     {
         _directory = directory;
         _config = config ?? new SearcherManagerConfig();
+
+        // Create a shared query cache so results survive searcher refreshes.
+        if (_config.SearcherConfig.EnableQueryCache)
+        {
+            _queryCache = new QueryCache(_config.SearcherConfig.QueryCacheMaxEntries);
+            _config.SearcherConfig.SharedCache = _queryCache;
+        }
 
         IndexOpenGuard.EnsureNoBlockingMigration(directory, _config.CompatibilityMode);
         // Determine the current commit generation so we don't falsely refresh
@@ -265,6 +273,9 @@ public sealed class SearcherManager : IDisposable
             var newSearcher = new IndexSearcher(_directory, _config.SearcherConfig);
             var newRef = new SearcherRef(newSearcher, latestCommit.Generation, latestCommit.ContentToken);
             _searchers.Add(newSearcher, newRef);
+
+            // Content has changed — any cached results from the old searcher are stale.
+            _queryCache?.Invalidate();
 
             var oldRef = _current;
             _current = newRef;

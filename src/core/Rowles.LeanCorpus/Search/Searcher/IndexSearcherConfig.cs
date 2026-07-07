@@ -39,6 +39,13 @@ public sealed class IndexSearcherConfig
     public int QueryCacheMaxEntries { get; set; } = 1024;
 
     /// <summary>
+    /// Optional shared query cache. When set, <see cref="IndexSearcher"/> uses this
+    /// cache instead of creating a per-instance one. <see cref="SearcherManager"/>
+    /// sets this to persist the cache across searcher refreshes.
+    /// </summary>
+    internal QueryCache? SharedCache { get; set; }
+
+    /// <summary>
     /// Metrics collector for search latency, cache hit/miss, etc.
     /// Default: <see cref="Diagnostics.NullMetricsCollector"/> (no-op).
     /// </summary>

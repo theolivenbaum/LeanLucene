@@ -130,7 +130,7 @@ public sealed partial class IndexSearcher : IDisposable
         _stats = IndexStats.TryLoadFrom(statsPath) ?? ComputeStats();
 
         if (config.EnableQueryCache)
-            _queryCache = new QueryCache(config.QueryCacheMaxEntries);
+            _queryCache = config.SharedCache ?? new QueryCache(config.QueryCacheMaxEntries);
     }
 
     /// <summary>
@@ -173,7 +173,7 @@ public sealed partial class IndexSearcher : IDisposable
         _stats = ComputeStats();
 
         if (config.EnableQueryCache)
-            _queryCache = new QueryCache(config.QueryCacheMaxEntries);
+            _queryCache = config.SharedCache ?? new QueryCache(config.QueryCacheMaxEntries);
     }
 
     private int[] AssignDocBases()
