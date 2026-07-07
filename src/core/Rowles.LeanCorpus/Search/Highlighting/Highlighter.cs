@@ -166,9 +166,40 @@ public sealed class Highlighter : IHighlighter
                 foreach (var t in pq.Terms)
                     terms.Add(t);
                 break;
+            case MultiPhraseQuery mpq:
+                foreach (var group in mpq.TermGroups)
+                    foreach (var t in group)
+                        terms.Add(t);
+                break;
             case PrefixQuery prefixQ:
                 terms.Add(prefixQ.Prefix);
                 break;
+            case WildcardQuery wq:
+                terms.Add(wq.Pattern);
+                break;
+            case FuzzyQuery fq:
+                terms.Add(fq.Term);
+                break;
+            case TermInSetQuery tisq:
+                foreach (var t in tisq.Terms)
+                    terms.Add(t);
+                break;
+            case CombinedFieldsQuery cfq:
+                foreach (var t in cfq.Terms)
+                    terms.Add(t);
+                break;
+            case ConstantScoreQuery csq:
+                CollectTerms(csq.Inner, terms);
+                break;
+            case DisjunctionMaxQuery dmq:
+                foreach (var disjunct in dmq.Disjuncts)
+                    CollectTerms(disjunct, terms);
+                break;
+            case FunctionScoreQuery fsq:
+                CollectTerms(fsq.Inner, terms);
+                break;
+            // Range, vector, regex, span, interval, point-set, match-all/none, and
+            // field-exists queries have no directly extractable text terms — skip silently.
         }
     }
 
