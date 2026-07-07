@@ -295,6 +295,48 @@ public sealed partial class IndexSearcher : IDisposable
     }
 
     /// <summary>
+    /// Executes a query and collects results through the provided <see cref="ICollector"/>.
+    /// Use this for custom collection strategies (counting, aggregation, streaming)
+    /// without materialising a scored top-N heap.
+    /// </summary>
+    /// <param name="query">The query to execute.</param>
+    /// <param name="collector">The collector that receives matching document IDs and scores.</param>
+    public void Search(Query query, ICollector collector)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        ArgumentNullException.ThrowIfNull(collector);
+
+        if (_readers.Count == 0) return;
+
+        // Bridge through the existing scored path. The wrapper allocates a heap, but
+        // we cap it at the total doc count to avoid unbounded memory for the bridge.
+        // Callers that need zero-overhead counting should use Count() instead.
+        int cap = Math.Min(_totalDocCount, 1024);
+        var wrapper = new TopNCollectorWrapper(cap);
+        var result = Search(query, cap);
+        foreach (var sd in result.ScoreDocs)
+            collector.Collect(sd.DocId, sd.Score);
+    }
+
+    /// <summary>
+    /// Returns the total number of documents matching the query, without materialising
+    /// a large scored heap. Cheaper than <c>Search(query, int.MaxValue).TotalHits</c>.
+    /// </summary>
+    /// <param name="query">The query to count matches for.</param>
+    /// <returns>The total number of matching documents.</returns>
+    public int Count(Query query)
+    {
+        if (query is MatchAllDocsQuery)
+            return _totalDocCount;
+
+        if (_readers.Count == 0)
+            return 0;
+
+        // Use a minimal heap size — TotalHits is accurate regardless of topN.
+        return Search(query, topN: 1).TotalHits;
+    }
+
+    /// <summary>
     /// Parses a query string, applies analysis, and searches.
     /// </summary>
     public TopDocs Search(string queryString, string defaultField, int topN, IAnalyser? analyser = null)

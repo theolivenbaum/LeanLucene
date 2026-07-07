@@ -6,9 +6,11 @@
 /// </summary>
 public sealed class CountCollector : ICollector
 {
-    /// <inheritdoc/>
-    public int TotalHits { get; private set; }
+    private int _totalHits;
 
     /// <inheritdoc/>
-    public void Collect(int docId, float score) => TotalHits++;
+    public int TotalHits => Volatile.Read(ref _totalHits);
+
+    /// <inheritdoc/>
+    public void Collect(int docId, float score) => Interlocked.Increment(ref _totalHits);
 }
