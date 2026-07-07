@@ -28,6 +28,7 @@ public sealed class SegmentMerger
     private readonly int _skipInterval;
     private readonly double _softDeleteRetentionSeconds;
     private readonly Diagnostics.IMetricsCollector _metrics;
+    private readonly HnswBuildConfig _hnswBuildConfig;
 
     /// <summary>Default merge threshold: when this many segments exist, merge.</summary>
     public const int DefaultMergeThreshold = 10;
@@ -43,18 +44,21 @@ public sealed class SegmentMerger
     /// <param name="mergePolicy">The merge policy used to select segments for merging.</param>
     /// <param name="skipInterval">Postings skip interval used when writing the merged segment.</param>
     /// <param name="softDeleteRetentionSeconds">Minimum seconds to retain soft-deleted documents during merge.</param>
+    /// <param name="hnswBuildConfig">HNSW build configuration used when rebuilding vector graphs during merge.</param>
     /// <param name="metrics">Optional metrics collector. Defaults to <see cref="Diagnostics.NullMetricsCollector.Instance"/>.</param>
     public SegmentMerger(
         MMapDirectory directory,
         IMergePolicy mergePolicy,
         int skipInterval = DefaultSkipInterval,
         double softDeleteRetentionSeconds = DefaultSoftDeleteRetentionSeconds,
+        HnswBuildConfig? hnswBuildConfig = null,
         Diagnostics.IMetricsCollector? metrics = null)
     {
         _directory = directory;
         _mergePolicy = mergePolicy ?? new TieredMergePolicy(DefaultMergeThreshold);
         _skipInterval = skipInterval;
         _softDeleteRetentionSeconds = softDeleteRetentionSeconds;
+        _hnswBuildConfig = hnswBuildConfig ?? new HnswBuildConfig();
         _metrics = metrics ?? Diagnostics.NullMetricsCollector.Instance;
     }
 
@@ -63,14 +67,16 @@ public sealed class SegmentMerger
     /// <param name="mergeThreshold">Number of segments at one tier before a merge is triggered.</param>
     /// <param name="skipInterval">Postings skip interval used when writing the merged segment.</param>
     /// <param name="softDeleteRetentionSeconds">Minimum seconds to retain soft-deleted documents during merge.</param>
+    /// <param name="hnswBuildConfig">HNSW build configuration used when rebuilding vector graphs during merge.</param>
     /// <param name="metrics">Optional metrics collector. Defaults to <see cref="Diagnostics.NullMetricsCollector.Instance"/>.</param>
     public SegmentMerger(
         MMapDirectory directory,
         int mergeThreshold,
         int skipInterval = DefaultSkipInterval,
         double softDeleteRetentionSeconds = DefaultSoftDeleteRetentionSeconds,
+        HnswBuildConfig? hnswBuildConfig = null,
         Diagnostics.IMetricsCollector? metrics = null)
-        : this(directory, new TieredMergePolicy(mergeThreshold), skipInterval, softDeleteRetentionSeconds, metrics)
+        : this(directory, new TieredMergePolicy(mergeThreshold), skipInterval, softDeleteRetentionSeconds, hnswBuildConfig, metrics)
     {
     }
 
@@ -609,7 +615,7 @@ public sealed class SegmentMerger
                 if (graph is null)
                 {
                     var docIds = perField.Keys.ToArray();
-                    graph = HnswGraphBuilder.Build(src, docIds, new HnswBuildConfig());
+                    graph = HnswGraphBuilder.Build(src, docIds, _hnswBuildConfig);
                 }
                 else
                 {

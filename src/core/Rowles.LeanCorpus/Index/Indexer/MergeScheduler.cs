@@ -29,7 +29,7 @@ internal static class MergeScheduler
         writer.NextSegmentOrdinal += reservation;
 
         var merger = new SegmentMerger(writer.Directory, writer.Config.MergePolicy, writer.Config.PostingsSkipInterval,
-            writer.Config.SoftDeleteRetentionSeconds);
+            writer.Config.SoftDeleteRetentionSeconds, writer.Config.HnswBuildConfig);
         var sourceList = sourceSegments.ToList();
         var merged = merger.MaybeMerge(sourceList, ref localNextOrd, protectedSegments);
 
@@ -117,7 +117,7 @@ internal static class MergeScheduler
                     }
 
                     var merger = new SegmentMerger(writer.Directory, writer.Config.MergePolicy, writer.Config.PostingsSkipInterval,
-                        writer.Config.SoftDeleteRetentionSeconds);
+                        writer.Config.SoftDeleteRetentionSeconds, writer.Config.HnswBuildConfig);
                     var sourceList = sourceSegments.ToList();
                     var merged = merger.MaybeMerge(sourceList, ref localNextOrd, protectedSegments);
 
