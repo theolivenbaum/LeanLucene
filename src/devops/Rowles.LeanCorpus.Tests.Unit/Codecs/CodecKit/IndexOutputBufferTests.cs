@@ -168,4 +168,36 @@ public sealed class IndexOutputBufferTests : IDisposable
         byte[] fileBytes = File.ReadAllBytes(filePath);
         Assert.Equal(data, fileBytes);
     }
+
+    [Fact(DisplayName = "Advance(0) does not discard pending data")]
+    public void AdvanceZero_DoesNotDiscardPendingData()
+    {
+        var filePath = Path.Combine(_tempDirectory, "buf_zero.dat");
+        using (var output = new IndexOutput(filePath))
+        {
+            var buf = new IndexOutputBuffer(output);
+            try
+            {
+                var span = buf.GetSpan(4);
+                span[0] = 0x11;
+                span[1] = 0x22;
+                span[2] = 0x33;
+                span[3] = 0x44;
+                buf.Advance(0);
+
+                // Advance(0) must not flush or reset — data is still pending.
+                // The next Advance with the real count must flush it.
+                buf.Advance(4);
+                output.Flush();
+            }
+            finally
+            {
+                buf.Dispose();
+            }
+        }
+
+        byte[] fileBytes = File.ReadAllBytes(filePath);
+        Assert.Equal(4, fileBytes.Length);
+        Assert.Equal(new byte[] { 0x11, 0x22, 0x33, 0x44 }, fileBytes);
+    }
 }

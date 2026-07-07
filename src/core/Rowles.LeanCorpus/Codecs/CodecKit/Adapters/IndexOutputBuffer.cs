@@ -28,8 +28,11 @@ internal sealed class IndexOutputBuffer : IBufferWriter<byte>, IDisposable
             throw new ArgumentOutOfRangeException(nameof(count));
         if (count > _buffer.Length - _position)
             throw new InvalidOperationException("Advanced past end of buffer.");
-        _output.WriteBytes(_buffer.AsSpan(_position, count));
-        _position = 0;
+        if (count > 0)
+        {
+            _output.WriteBytes(_buffer.AsSpan(_position, count));
+            _position = 0;
+        }
     }
 
     public Memory<byte> GetMemory(int sizeHint = 0)
