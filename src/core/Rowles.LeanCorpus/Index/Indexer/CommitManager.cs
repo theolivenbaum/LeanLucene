@@ -323,7 +323,7 @@ internal static class CommitManager
             var merger = new SegmentMerger(writer.Directory, writer.Config.MergePolicy, writer.Config.PostingsSkipInterval,
                 writer.Config.SoftDeleteRetentionSeconds, writer.Config.HnswBuildConfig);
             int localOrdinal = writer.NextSegmentOrdinal;
-            var merged = merger.MergeAll(mergeable, ref localOrdinal);
+            var merged = merger.MergeAll(mergeable, ref localOrdinal, writer.CommitGeneration);
 
             if (merged is null)
             {
@@ -402,7 +402,7 @@ internal static class CommitManager
                     writer.Config.SoftDeleteRetentionSeconds, writer.Config.HnswBuildConfig);
                 lastMerger = merger;
                 int localOrdinal = writer.NextSegmentOrdinal;
-                var merged = merger.MergeAll(toMerge, ref localOrdinal);
+                var merged = merger.MergeAll(toMerge, ref localOrdinal, writer.CommitGeneration);
                 writer.NextSegmentOrdinal = Math.Max(writer.NextSegmentOrdinal, localOrdinal);
 
                 if (merged is null)

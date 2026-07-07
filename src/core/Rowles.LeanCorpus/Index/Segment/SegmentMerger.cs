@@ -84,7 +84,7 @@ public sealed class SegmentMerger
     /// Checks if a merge is needed and performs it. Returns the updated segment list.
     /// </summary>
     public List<SegmentInfo> MaybeMerge(List<SegmentInfo> segments, ref int nextSegmentOrdinal)
-        => MaybeMerge(segments, ref nextSegmentOrdinal, new HashSet<string>(StringComparer.Ordinal));
+        => MaybeMerge(segments, ref nextSegmentOrdinal, new HashSet<string>(StringComparer.Ordinal), commitGeneration: 0);
 
     /// <summary>
     /// Checks if a merge is needed and performs it, excluding segments protected by held snapshots.
@@ -92,11 +92,13 @@ public sealed class SegmentMerger
     /// <param name="segments">The committed segments currently visible to the writer.</param>
     /// <param name="nextSegmentOrdinal">The next segment ordinal to allocate if a merge is performed.</param>
     /// <param name="protectedSegmentIds">Segment IDs that must not be merged or deleted while snapshots are held.</param>
+    /// <param name="commitGeneration">The commit generation to assign to the merged segment.</param>
     /// <returns>The original list when no merge is needed; otherwise, a new list containing merged replacements.</returns>
     public List<SegmentInfo> MaybeMerge(
         List<SegmentInfo> segments,
         ref int nextSegmentOrdinal,
-        IReadOnlySet<string> protectedSegmentIds)
+        IReadOnlySet<string> protectedSegmentIds,
+        int commitGeneration = 0)
     {
         var result = new List<SegmentInfo>(segments);
         bool anyMerged = false;
@@ -109,7 +111,7 @@ public sealed class SegmentMerger
 
             var merged = MergeSegments(
                 toMerge is List<SegmentInfo> list ? list : new List<SegmentInfo>(toMerge),
-                ref nextSegmentOrdinal);
+                ref nextSegmentOrdinal, commitGeneration);
             if (merged == null)
                 break;
 
@@ -128,16 +130,17 @@ public sealed class SegmentMerger
     /// </summary>
     /// <param name="segments">All segments to merge into one.</param>
     /// <param name="nextSegmentOrdinal">Ordinal counter for naming the output segment.</param>
+    /// <param name="commitGeneration">The commit generation to assign to the merged segment.</param>
     /// <returns>The merged segment, or <c>null</c> if no live documents remain.</returns>
-    public SegmentInfo? MergeAll(List<SegmentInfo> segments, ref int nextSegmentOrdinal)
+    public SegmentInfo? MergeAll(List<SegmentInfo> segments, ref int nextSegmentOrdinal, int commitGeneration = 0)
     {
         if (segments.Count == 0)
             return null;
 
-        return MergeSegments(segments, ref nextSegmentOrdinal);
+        return MergeSegments(segments, ref nextSegmentOrdinal, commitGeneration);
     }
 
-    private SegmentInfo? MergeSegments(List<SegmentInfo> segments, ref int nextSegmentOrdinal)
+    private SegmentInfo? MergeSegments(List<SegmentInfo> segments, ref int nextSegmentOrdinal, int commitGeneration)
     {
         var newSegId = $"seg_{nextSegmentOrdinal++}";
         var basePath = Path.Combine(_directory.DirectoryPath, newSegId);
@@ -152,7 +155,7 @@ public sealed class SegmentMerger
             foreach (var segInfo in segments)
                 readers[segInfo.SegmentId] = new SegmentReader(_directory, segInfo);
 
-            return MergeSegmentsCore(segments, readers, newSegId, basePath);
+            return MergeSegmentsCore(segments, readers, newSegId, basePath, commitGeneration);
         }
         finally
         {
@@ -165,7 +168,8 @@ public sealed class SegmentMerger
         List<SegmentInfo> segments,
         IReadOnlyDictionary<string, SegmentReader> readers,
         string newSegId,
-        string basePath)
+        string basePath,
+        int commitGeneration)
     {
         // Phase 1: build per-segment doc-id remap (live docs only).
         // Use int[] with -1 sentinel; flat arrays beat Dictionary on both lookup
@@ -241,7 +245,7 @@ public sealed class SegmentMerger
             SegmentId = newSegId,
             DocCount = totalDocs,
             LiveDocCount = totalDocs,
-            CommitGeneration = 0,
+            CommitGeneration = commitGeneration,
             FieldNames = fieldNames.ToList(),
             IndexSortFields = segments[0].IndexSortFields,
             VectorFields = mergedVectorFields,
@@ -971,7 +975,8 @@ public sealed class SegmentMerger
         MMapDirectory sourceDirectory,
         List<SegmentInfo> sourceSegments,
         ref int nextSegmentOrdinal,
-        IndexWriterConfig config)
+        IndexWriterConfig config,
+        int commitGeneration = 0)
     {
         var newSegId = $"seg_{nextSegmentOrdinal++}";
         var basePath = Path.Combine(_directory.DirectoryPath, newSegId);
@@ -982,7 +987,7 @@ public sealed class SegmentMerger
             foreach (var segInfo in sourceSegments)
                 readers[segInfo.SegmentId] = new SegmentReader(sourceDirectory, segInfo);
 
-            return MergeSegmentsCore(sourceSegments, readers, newSegId, basePath);
+            return MergeSegmentsCore(sourceSegments, readers, newSegId, basePath, commitGeneration);
         }
         finally
         {

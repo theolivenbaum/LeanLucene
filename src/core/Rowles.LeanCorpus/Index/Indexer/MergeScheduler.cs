@@ -31,7 +31,7 @@ internal static class MergeScheduler
         var merger = new SegmentMerger(writer.Directory, writer.Config.MergePolicy, writer.Config.PostingsSkipInterval,
             writer.Config.SoftDeleteRetentionSeconds, writer.Config.HnswBuildConfig);
         var sourceList = sourceSegments.ToList();
-        var merged = merger.MaybeMerge(sourceList, ref localNextOrd, protectedSegments);
+        var merged = merger.MaybeMerge(sourceList, ref localNextOrd, protectedSegments, writer.CommitGeneration);
 
         bool didMerge = !ReferenceEquals(merged, sourceList) && merged.Count != sourceSegments.Length;
         mergeSw.Stop();
@@ -119,7 +119,7 @@ internal static class MergeScheduler
                     var merger = new SegmentMerger(writer.Directory, writer.Config.MergePolicy, writer.Config.PostingsSkipInterval,
                         writer.Config.SoftDeleteRetentionSeconds, writer.Config.HnswBuildConfig);
                     var sourceList = sourceSegments.ToList();
-                    var merged = merger.MaybeMerge(sourceList, ref localNextOrd, protectedSegments);
+                    var merged = merger.MaybeMerge(sourceList, ref localNextOrd, protectedSegments, writer.CommitGeneration);
 
                     bool didMerge = !ReferenceEquals(merged, sourceList) && merged.Count != sourceSegments.Length;
                     mergeSw.Stop();

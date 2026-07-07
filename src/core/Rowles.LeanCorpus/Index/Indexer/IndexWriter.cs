@@ -485,7 +485,7 @@ public sealed partial class IndexWriter : IDisposable
                 _nextSegmentOrdinal += sourceSegments.Count + 8;
 
                 var merged = merger.MergeSegmentsFromDirectory(
-                    sourceDirectory, sourceSegments, ref localOrdinal, _config);
+                    sourceDirectory, sourceSegments, ref localOrdinal, _config, _commitGeneration);
                 if (merged is not null)
                 {
                     _committedSegments.Add(merged);
