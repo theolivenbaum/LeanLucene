@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Rowles.LeanCorpus.Analysis;
 using Rowles.LeanCorpus.Analysis.Analysers;
 using Rowles.LeanCorpus.Document;
@@ -156,8 +157,13 @@ internal static class DwptManager
         }
     }
 
+    /// <summary>
+    /// Flushes every non-empty DWPT in the pool into committed segments.
+    /// Caller must hold <see cref="IndexWriter.WriteLock"/>.
+    /// </summary>
     public static void FlushDwptPool(IndexWriter writer)
     {
+        Debug.Assert(writer.WriteLock.IsHeldByCurrentThread, "FlushDwptPool requires the caller to hold writer.WriteLock.");
         var pool = writer.DwptPool;
         if (pool == null) return;
 
