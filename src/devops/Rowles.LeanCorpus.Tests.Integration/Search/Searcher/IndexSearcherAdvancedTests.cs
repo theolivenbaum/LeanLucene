@@ -1,7 +1,6 @@
 using Rowles.LeanCorpus.Diagnostics;
 using Rowles.LeanCorpus.Tests.Shared.Fixtures;
 using Rowles.LeanCorpus.Document;
-using Rowles.LeanCorpus.Tests.Shared.Fixtures;
 using Rowles.LeanCorpus.Document.Fields;
 using Rowles.LeanCorpus.Search;
 using Rowles.LeanCorpus.Store;

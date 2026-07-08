@@ -85,9 +85,10 @@ public sealed class CollectorTests : IDisposable
         }
 
         using var searcher = new IndexSearcher(dir, new IndexSearcherConfig());
-        var bq = new BooleanQuery();
-        bq.Add(new TermQuery("body", "alpha"), Occur.Must);
-        bq.Add(new TermQuery("body", "beta"), Occur.Must);
+        var bq = new BooleanQuery.Builder()
+            .Add(new TermQuery("body", "alpha"), Occur.Must)
+            .Add(new TermQuery("body", "beta"), Occur.Must)
+            .Build();
         Assert.Equal(1, searcher.Count(bq));
     }
 
@@ -196,9 +197,10 @@ public sealed class CollectorTests : IDisposable
 
         using var searcher = new IndexSearcher(dir, new IndexSearcherConfig());
 
-        var bq = new BooleanQuery();
-        bq.Add(new TermQuery("body", "item"), Occur.Must);
-        bq.Add(new RangeQuery("price", 5.0, 15.0), Occur.Must);
+        var bq = new BooleanQuery.Builder()
+            .Add(new TermQuery("body", "item"), Occur.Must)
+            .Add(new RangeQuery("price", 5.0, 15.0), Occur.Must)
+            .Build();
 
         ICollector cc = new CountCollector();
         searcher.Search(bq, cc);

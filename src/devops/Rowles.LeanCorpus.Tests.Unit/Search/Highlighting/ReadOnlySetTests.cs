@@ -17,7 +17,6 @@ public sealed class ReadOnlySetTests
     public void Empty_IsEmptySet()
     {
         Assert.Empty(ReadOnlySet.Empty);
-        Assert.Equal(0, ReadOnlySet.Empty.Count);
     }
 
     [Fact(DisplayName = "ReadOnlySet: Empty does not contain any string")]

@@ -166,7 +166,7 @@ public sealed class ConstantFieldDefinitionTests
         var codec = Codec.Record<ValueOnlyRecord>()
             .Constant("hidden", Codec.Magic(0x00, 0x01))
             .Field("value", r => r.Value, Codec.Int32LE)
-            .Build(f => new ValueOnlyRecord((int)f["value"]));
+            .Build(f => new ValueOnlyRecord((int)f["value"]!));
 
         // The FieldValues index should contain only "value", not "hidden"
         byte[] data = [0x00, 0x01, 0x05, 0x00, 0x00, 0x00];

@@ -32,7 +32,7 @@ public sealed class FrameScanResultTests
         Assert.Equal(0, results[0].Offset);
         Assert.Equal(default(int), results[0].Value);
         Assert.NotNull(results[0].Failure);
-        Assert.Equal(CodecErrorCode.Truncated, results[0].Failure.Code);
+        Assert.Equal(CodecErrorCode.Truncated, results[0].Failure!.Code);
     }
 
     [Fact(DisplayName = "FrameScanResult: All frames have Success=true when data is valid")]
@@ -158,8 +158,8 @@ public sealed class FrameScanResultTests
         Assert.NotEmpty(results);
         Assert.False(results[0].Success);
         Assert.NotNull(results[0].Failure);
-        Assert.Equal(CodecErrorCode.Truncated, results[0].Failure.Code);
-        Assert.False(string.IsNullOrEmpty(results[0].Failure.Message));
+        Assert.Equal(CodecErrorCode.Truncated, results[0].Failure!.Code);
+        Assert.False(string.IsNullOrEmpty(results[0].Failure!.Message));
     }
 
     [Fact(DisplayName = "FrameScanResult: Success value is correct type")]
