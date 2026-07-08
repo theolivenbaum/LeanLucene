@@ -81,11 +81,12 @@ internal static class QuantisedVectorWriter
         bodyBuf.WriteSingle(min);
         bodyBuf.WriteSingle(alpha);
 
-        // --- Pass 2: quantise and write corrections ---
+        // --- Pass 2: quantise, write corrections, save packed bytes ---
         Span<float> zero = dimension <= 256 ? stackalloc float[dimension] : new float[dimension];
         zero.Clear();
 
-        // Rent a buffer for the packed bytes of one vector to avoid per-doc allocation
+        // Store each doc's packed bytes so Pass 3 writes them without re-quantising.
+        var packedDocs = new List<byte[]>(docCount);
         byte[] packedBuffer = ArrayPool<byte>.Shared.Rent(dimension);
         try
         {
@@ -95,7 +96,6 @@ internal static class QuantisedVectorWriter
                 if (vectorsByDoc.TryGetValue(docId, out var v))
                     span = v.Span;
 
-                // Quantise each dimension to [0, 255]
                 float correction = 0f;
                 for (int j = 0; j < dimension; j++)
                 {
@@ -110,6 +110,11 @@ internal static class QuantisedVectorWriter
                 }
 
                 bodyBuf.WriteSingle(correction);
+
+                // Save packed bytes for Pass 3.
+                var packed = new byte[dimension];
+                Array.Copy(packedBuffer, 0, packed, 0, dimension);
+                packedDocs.Add(packed);
             }
         }
         finally
@@ -117,29 +122,9 @@ internal static class QuantisedVectorWriter
             ArrayPool<byte>.Shared.Return(packedBuffer, clearArray: false);
         }
 
-        // --- Pass 3: write packed bytes ---
-        byte[] writeBuf = ArrayPool<byte>.Shared.Rent(dimension);
-        try
-        {
-            for (int docId = 0; docId < docCount; docId++)
-            {
-                ReadOnlySpan<float> span = zero;
-                if (vectorsByDoc.TryGetValue(docId, out var v))
-                    span = v.Span;
-
-                for (int j = 0; j < dimension; j++)
-                {
-                    float orig = span[j];
-                    float clamped = Math.Clamp((orig - min) / alpha + 0.5f, 0f, 255f);
-                    writeBuf[j] = (byte)clamped;
-                }
-                bodyBuf.WriteBytes(writeBuf, 0, dimension);
-            }
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(writeBuf, clearArray: false);
-        }
+        // --- Pass 3: write packed bytes (no re-quantisation) ---
+        foreach (var packed in packedDocs)
+            bodyBuf.WriteBytes(packed, 0, packed.Length);
 
         using var output = new IndexOutput(filePath, durable: true);
         CodecFileHeader.Write(output, CodecFormats.QuantisedVectors, bodyBuf.WrittenSpan);
@@ -178,6 +163,8 @@ internal static class QuantisedVectorWriter
         Span<float> zero = dimension <= 256 ? stackalloc float[dimension] : new float[dimension];
         zero.Clear();
 
+        // Store each doc's packed bits so Pass 2 writes them without re-quantising.
+        var packedDocs = new List<byte[]>(docCount);
         byte[] bitBuf = ArrayPool<byte>.Shared.Rent(packedBytes);
         try
         {
@@ -190,9 +177,9 @@ internal static class QuantisedVectorWriter
                 bitBuf.AsSpan(0, packedBytes).Clear();
 
                 // Compute error corrections and binary quantise
-                float corr1 = 0f; // dot(error, centroid_dir)
-                float corr2 = 0f; // dot(error, sign_vec)
-                float corr3 = 0f; // norm of error
+                float corr1 = 0f;
+                float corr2 = 0f;
+                float corr3 = 0f;
                 for (int j = 0; j < dimension; j++)
                 {
                     float residual = span[j] - centroid[j];
@@ -203,8 +190,6 @@ internal static class QuantisedVectorWriter
                         bitBuf[byteIdx] |= (byte)(1 << bitIdx);
                     }
 
-                    // error = orig - (centroid + sign * ||residual||)  -- approximate
-                    // For simplicity, store raw residual for exact reranking
                     float sign = residual > 0f ? 1f : -1f;
                     corr1 += residual;
                     corr2 += sign * residual;
@@ -214,6 +199,11 @@ internal static class QuantisedVectorWriter
                 bodyBuf.WriteSingle(corr1);
                 bodyBuf.WriteSingle(corr2);
                 bodyBuf.WriteSingle(corr3);
+
+                // Save packed bits for Pass 2.
+                var packed = new byte[packedBytes];
+                Array.Copy(bitBuf, 0, packed, 0, packedBytes);
+                packedDocs.Add(packed);
             }
         }
         finally
@@ -221,34 +211,9 @@ internal static class QuantisedVectorWriter
             ArrayPool<byte>.Shared.Return(bitBuf, clearArray: false);
         }
 
-        // --- Write bit-packed data ---
-        byte[] writeBuf = ArrayPool<byte>.Shared.Rent(packedBytes);
-        try
-        {
-            for (int docId = 0; docId < docCount; docId++)
-            {
-                ReadOnlySpan<float> span = zero;
-                if (vectorsByDoc.TryGetValue(docId, out var v))
-                    span = v.Span;
-
-                writeBuf.AsSpan(0, packedBytes).Clear();
-                for (int j = 0; j < dimension; j++)
-                {
-                    float residual = span[j] - centroid[j];
-                    if (residual > 0f)
-                    {
-                        int byteIdx = j / 8;
-                        int bitIdx = j % 8;
-                        writeBuf[byteIdx] |= (byte)(1 << bitIdx);
-                    }
-                }
-                bodyBuf.WriteBytes(writeBuf, 0, packedBytes);
-            }
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(writeBuf, clearArray: false);
-        }
+        // --- Pass 2: write bit-packed data (no re-quantisation) ---
+        foreach (var packed in packedDocs)
+            bodyBuf.WriteBytes(packed, 0, packed.Length);
 
         using var output = new IndexOutput(filePath, durable: true);
         CodecFileHeader.Write(output, CodecFormats.QuantisedVectors, bodyBuf.WrittenSpan);
