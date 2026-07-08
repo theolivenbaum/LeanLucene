@@ -16,7 +16,6 @@ public sealed partial class IndexWriter
         var buffer = Buffer;
         int localDocId = buffer.DocCount;
         buffer.StoredDocStarts.Add(buffer.StoredFieldIds.Count);
-        Dictionary<string, double>? numericDoc = null;
         int storedEntryStart = buffer.StoredFieldIds.Count;
 
         foreach (var field in doc.Fields)
@@ -42,7 +41,6 @@ public sealed partial class IndexWriter
                 case NumericField nf:
                     TrackFieldBoost(nf.Name, localDocId, nf.Boost);
                     IndexNumericField(nf.Name, nf.Value, localDocId, nf.StoreDocValues);
-                    numericDoc ??= new Dictionary<string, double>();
                     if (nf.IsStored)
                     {
                         AppendStoredField(nf.Name, StoredFieldValue.FromString(nf.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)), storeDocValues: nf.StoreDocValues);
@@ -80,9 +78,6 @@ public sealed partial class IndexWriter
                     break;
             }
         }
-
-        if (numericDoc is not null)
-            buffer.NumericFields.Add(numericDoc);
 
         if (Config.TrackSequenceNumbers)
         {

@@ -29,9 +29,6 @@ internal sealed class DocumentBufferState
     public readonly Dictionary<string, int> StoredFieldNameToId = new(StringComparer.Ordinal);
     public readonly List<string> StoredFieldIdToName = new();
 
-    // Buffered numeric fields per document
-    public List<Dictionary<string, double>> NumericFields = [];
-
     // Per-field numeric values for range indexing: field  ->  docId  ->  value
     public Dictionary<string, Dictionary<int, double>> NumericIndex = new();
 
@@ -228,7 +225,6 @@ internal sealed class DocumentBufferState
         StoredFieldIds.Clear();
         StoredFieldValues.Clear();
         StoredDocStarts.Clear();
-        NumericFields.Clear();
         TermPool.Clear();
         FieldNames.Clear();
         NumericIndex.Clear();
