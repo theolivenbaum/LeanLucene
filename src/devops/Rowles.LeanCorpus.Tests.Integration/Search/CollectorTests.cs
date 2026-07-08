@@ -172,9 +172,10 @@ public sealed class CollectorTests : IDisposable
 
         using var searcher = new IndexSearcher(dir, new IndexSearcherConfig());
 
-        var cc = new CountCollector();
+        // CountCollector is a struct; hold as ICollector so the box is updated in-place.
+        ICollector cc = new CountCollector();
         searcher.Search(new TermQuery("body", "target"), cc);
-        Assert.Equal(searcher.Count(new TermQuery("body", "target")), cc.TotalHits);
+        Assert.Equal(searcher.Count(new TermQuery("body", "target")), ((CountCollector)cc).TotalHits);
     }
 
     [Fact(DisplayName = "Search(ICollector): BooleanQuery through collector")]
@@ -199,9 +200,9 @@ public sealed class CollectorTests : IDisposable
         bq.Add(new TermQuery("body", "item"), Occur.Must);
         bq.Add(new RangeQuery("price", 5.0, 15.0), Occur.Must);
 
-        var cc = new CountCollector();
+        ICollector cc = new CountCollector();
         searcher.Search(bq, cc);
-        Assert.Equal(11, cc.TotalHits); // docs 5-15 inclusive
+        Assert.Equal(11, ((CountCollector)cc).TotalHits); // docs 5-15 inclusive
     }
 
     private static LeanDocument Doc(string body)

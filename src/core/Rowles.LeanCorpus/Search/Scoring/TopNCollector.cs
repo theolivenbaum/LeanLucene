@@ -59,6 +59,9 @@ public struct TopNCollector
     {
         TotalHits++;
 
+        // Count-only mode: zero allocation, no heap maintenance.
+        if (_maxSize == 0) return;
+
         if (_size < _maxSize)
         {
             _heap[_size++] = new ScoreDoc(docId, score);

@@ -4,13 +4,11 @@
 /// A simple count-only collector that tracks hit count without storing results.
 /// Useful for count queries where actual documents are not needed.
 /// </summary>
-public sealed class CountCollector : ICollector
+public struct CountCollector : ICollector
 {
-    private int _totalHits;
+    /// <summary>The total number of matching documents.</summary>
+    public int TotalHits { get; set; }
 
     /// <inheritdoc/>
-    public int TotalHits => Volatile.Read(ref _totalHits);
-
-    /// <inheritdoc/>
-    public void Collect(int docId, float score) => Interlocked.Increment(ref _totalHits);
+    public void Collect(int docId, float score) => TotalHits++;
 }

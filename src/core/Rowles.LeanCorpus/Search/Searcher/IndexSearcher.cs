@@ -296,8 +296,8 @@ public sealed partial class IndexSearcher : IDisposable
 
     /// <summary>
     /// Executes a query and collects results through the provided <see cref="ICollector"/>.
-    /// Use this for custom collection strategies (counting, aggregation, streaming)
-    /// without materialising a scored top-N heap.
+    /// When <paramref name="collector"/> is a <see cref="CountCollector"/>, this uses a
+    /// zero-allocation count-only path that avoids materialising a scored heap.
     /// </summary>
     /// <param name="query">The query to execute.</param>
     /// <param name="collector">The collector that receives matching document IDs and scores.</param>
@@ -308,9 +308,18 @@ public sealed partial class IndexSearcher : IDisposable
 
         if (_readers.Count == 0) return;
 
-        // Bridge through the existing scored path. The wrapper allocates a heap, but
-        // we cap it at the total doc count to avoid unbounded memory for the bridge.
-        // Callers that need zero-overhead counting should use Count() instead.
+        // CountCollector: use the zero-allocation count-only path.
+        // CountCollector is a struct; when passed as ICollector it gets boxed.
+        // Unsafe.Unbox gives us a ref to the struct inside the box so we can
+        // update TotalHits without allocating.
+        if (collector is CountCollector)
+        {
+            ref var unboxed = ref Unsafe.Unbox<CountCollector>(collector);
+            unboxed.TotalHits = Count(query);
+            return;
+        }
+
+        // Bridge through the scored path for custom collectors that need actual results.
         int cap = Math.Min(_totalDocCount, 1024);
         var wrapper = new TopNCollectorWrapper(cap);
         var result = Search(query, cap);
@@ -319,8 +328,8 @@ public sealed partial class IndexSearcher : IDisposable
     }
 
     /// <summary>
-    /// Returns the total number of documents matching the query, without materialising
-    /// a large scored heap. Cheaper than <c>Search(query, int.MaxValue).TotalHits</c>.
+    /// Returns the total number of documents matching the query without materialising
+    /// a scored heap. Uses a zero-allocation count-only collector.
     /// </summary>
     /// <param name="query">The query to count matches for.</param>
     /// <returns>The total number of matching documents.</returns>
@@ -332,8 +341,74 @@ public sealed partial class IndexSearcher : IDisposable
         if (_readers.Count == 0)
             return 0;
 
-        // Use a minimal heap size — TotalHits is accurate regardless of topN.
-        return Search(query, topN: 1).TotalHits;
+        // MoreLikeThis is cross-segment — delegate to SearchCore.
+        if (query is MoreLikeThisQuery mlt)
+            return SearchCore(mlt, 1).TotalHits;
+
+        // RRF: execute each child, return max.
+        if (query is RrfQuery rrf)
+            return SearchCore(rrf, 1).TotalHits;
+
+        // Block join: delegate to SearchCore.
+        if (query is BlockJoinQuery bjq)
+            return SearchCore(bjq, 1).TotalHits;
+
+        return CountCore(query);
+    }
+
+    /// <summary>
+    /// Zero-allocation count path. Uses <see cref="TopNCollector"/> with maxSize=0
+    /// so that Collect only increments a counter without heap maintenance.
+    /// </summary>
+    private int CountCore(Query query)
+    {
+        // Fast path: TermQuery — count from postings directly when possible.
+        if (query is TermQuery tq)
+        {
+            int total = 0;
+            foreach (var reader in _readers)
+            {
+                var qt = tq.CachedQualifiedTerm ??= string.Concat(tq.Field, "\x00", tq.Term);
+                using var postings = reader.GetPostingsEnum(qt);
+                if (postings.IsExhausted) continue;
+                if (reader.HasDeletions)
+                {
+                    while (postings.MoveNext())
+                        if (reader.IsLive(postings.DocId))
+                            total++;
+                }
+                else
+                {
+                    total += postings.DocFreq;
+                }
+            }
+            return total;
+        }
+
+        // General path: count-only collector (zero allocation).
+        var globalDFs = PrecomputeGlobalDocFreqsForSearch(query);
+        var collector = new TopNCollector(maxSize: 0);
+
+        if (_readers.Count == 1 || !_config.ParallelSearch)
+        {
+            foreach (var reader in _readers)
+                ExecuteQuery(query, reader, globalDFs, ref collector);
+        }
+        else
+        {
+            int maxDop = _config.MaxConcurrency > 0 ? _config.MaxConcurrency : Environment.ProcessorCount;
+            int total = 0;
+            var lockObj = new object();
+            Parallel.ForEach(_readers, new ParallelOptions { MaxDegreeOfParallelism = maxDop }, reader =>
+            {
+                var localCollector = new TopNCollector(maxSize: 0);
+                ExecuteQuery(query, reader, globalDFs, ref localCollector);
+                lock (lockObj) { total += localCollector.TotalHits; }
+            });
+            return total;
+        }
+
+        return collector.TotalHits;
     }
 
     /// <summary>

@@ -346,9 +346,7 @@ public sealed class LeanQueryProvider<TDocument> : IQueryProvider
         if (args.Count == 1)
         {
             var (query, _, _, _, _) = ParseExpression(args[0]);
-            // Count uses TotalHits — avoid SearchOptions budgeted path
-            // which would allocate a huge collector for int.MaxValue.
-            return _searcher.Search(query, topN: int.MaxValue).TotalHits;
+            return _searcher.Count(query);
         }
 
         // Count(predicate).
@@ -358,7 +356,7 @@ public sealed class LeanQueryProvider<TDocument> : IQueryProvider
             var visitor = new LeanExpressionVisitor(_fieldResolver);
             var predicateQuery = visitor.Translate(predicateLambda);
             var (baseQuery, _, _, _, _) = ParseExpression(args[0]);
-            return _searcher.Search(Combine(baseQuery, predicateQuery), topN: int.MaxValue).TotalHits;
+            return _searcher.Count(Combine(baseQuery, predicateQuery));
         }
 
         throw new NotSupportedException("Count() with unsupported arguments.");
