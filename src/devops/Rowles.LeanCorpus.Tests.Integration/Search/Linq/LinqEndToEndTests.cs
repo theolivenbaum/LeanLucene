@@ -354,6 +354,20 @@ public sealed class LinqEndToEndTests : IClassFixture<TestDirectoryFixture>
         Assert.True(skipped.Count < all.Count);
     }
 
+    [Fact(DisplayName = "Skip: deep pagination does not OOM")]
+    public void Skip_DeepPagination_DoesNotOom()
+    {
+        // A huge skip with a small take should not allocate an enormous collector.
+        var results = BuildQueryable(nameof(Skip_DeepPagination_DoesNotOom))
+            .Where(a => a.Status == "active")
+            .Skip(1_000_000)
+            .Take(5)
+            .ToList();
+
+        // The skip exceeds index size, so result is empty — but we survived.
+        Assert.Empty(results);
+    }
+
     // === Select projection ===
 
     [Fact(DisplayName = "Select: projects to string property")]

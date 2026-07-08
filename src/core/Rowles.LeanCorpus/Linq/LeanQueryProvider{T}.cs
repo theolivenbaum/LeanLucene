@@ -513,9 +513,9 @@ public sealed class LeanQueryProvider<TDocument> : IQueryProvider
     /// </summary>
     private List<TDocument> ExecuteAndMaterialise(Query query, int take, int skip, SortField? sort = null)
     {
-        // Cap unbounded fetches to avoid OOM on match-all queries.
+        // Cap unbounded fetches to avoid OOM on match-all queries and deep pagination.
         int cappedTake = take == int.MaxValue ? DefaultMaxResults : take;
-        int fetchCount = cappedTake + skip;
+        int fetchCount = Math.Min(cappedTake + skip, DefaultMaxResults);
 
         TopDocs topDocs;
         if (_searchOptions is not null)
