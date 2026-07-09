@@ -14,6 +14,7 @@ public sealed partial class IndexWriter
             await BackpressureController.AcquireBackpressureSlotAsync(this, cancellationToken).ConfigureAwait(false);
 
             bool addedToHeldSlots = false;
+            bool throttled = false;
             bool enteredCore = false;
             try
             {
@@ -28,8 +29,10 @@ public sealed partial class IndexWriter
                         addedToHeldSlots = true;
                     }
 
-                    if (ShouldThrottleForMerge() && _buffer.DocCount > 0)
-                        FlushSegment();
+                    if (ShouldThrottleForMerge())
+                    {
+                        throttled = true;
+                    }
 
                     enteredCore = true;
                     AddDocumentCore(doc);
@@ -42,6 +45,9 @@ public sealed partial class IndexWriter
                 BackpressureController.ReleaseFailedBackpressureSlots(this, acquired: 1, addedToHeldSlots);
                 throw;
             }
+
+            if (throttled)
+                ThrottleMerge();
         }
         finally
         {

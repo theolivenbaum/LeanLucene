@@ -125,6 +125,7 @@ public sealed partial class IndexWriter : IDisposable
 
             BackpressureController.AcquireBackpressureSlot(this);
 
+            bool throttled = false;
             bool enteredCore = false;
             try
             {
@@ -133,8 +134,10 @@ public sealed partial class IndexWriter : IDisposable
                     if (_backpressureSemaphore is not null)
                         _semaphoreSlotsHeld++;
 
-                    if (ShouldThrottleForMerge() && _buffer.DocCount > 0)
-                        FlushSegment();
+                    if (ShouldThrottleForMerge())
+                    {
+                        throttled = true;
+                    }
 
                     enteredCore = true;
                     AddDocumentCore(doc);
@@ -155,6 +158,9 @@ public sealed partial class IndexWriter : IDisposable
                 }
                 throw;
             }
+
+            if (throttled)
+                ThrottleMerge();
         }
         finally
         {
@@ -703,6 +709,17 @@ public sealed partial class IndexWriter : IDisposable
     {
         return _config.MergeThrottleSegments > 0
             && _committedSegments.Count >= _config.MergeThrottleSegments;
+    }
+
+    private void ThrottleMerge()
+    {
+        MergeScheduler.ScheduleBackgroundMerge(this);
+        var task = _mergeTask;
+        if (task is not null)
+        {
+            try { task.Wait(TimeSpan.FromMinutes(2)); }
+            catch (AggregateException) { /* merge failed -- do not block indexing forever */ }
+        }
     }
 
     private long ComputeEstimatedRamBytes()

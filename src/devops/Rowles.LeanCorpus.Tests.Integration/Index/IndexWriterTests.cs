@@ -3,6 +3,7 @@ using System.Reflection.Emit;
 using Rowles.LeanCorpus.Document;
 using Rowles.LeanCorpus.Document.Fields;
 using Rowles.LeanCorpus.Index;
+using Rowles.LeanCorpus.Index.Indexer;
 using Rowles.LeanCorpus.Store;
 using Rowles.LeanCorpus.Tests.Shared.Fixtures;
 using Xunit.Abstractions;
@@ -293,6 +294,38 @@ public sealed class IndexWriterTests : IClassFixture<TestDirectoryFixture>
         // Should complete without hanging (backpressure triggers flush, not deadlock)
         var segFiles = System.IO.Directory.GetFiles(SubDir("merge_bp"), "*.seg");
         Assert.NotEmpty(segFiles);
+    }
+
+    /// <summary>
+    /// Verifies that merge throttling reduces segment count when the threshold is exceeded.
+    /// </summary>
+    [Fact(DisplayName = "Merge Throttle: Reduces Segment Count After Threshold")]
+    public void MergeThrottle_ReducesSegmentCount_AfterThreshold()
+    {
+        var dir = new MMapDirectory(SubDir("merge_throttle_count"));
+        // TieredMergePolicy(2): merge when 2+ segments exist in the same tier.
+        var config = new IndexWriterConfig
+        {
+            MaxBufferedDocs = 2,        // flush every 2 docs
+            MergeThrottleSegments = 3,  // throttle at 3 segments
+            MergePolicy = new TieredMergePolicy(2)
+        };
+        using var writer = new IndexWriter(dir, config);
+
+        // Index 12 docs → 6 flushes → 6 segments. Throttle fires at 3, so merges
+        // should reduce the count before we finish.
+        for (int i = 0; i < 12; i++)
+        {
+            var doc = new LeanDocument();
+            doc.Add(new TextField("body", $"doc {i}"));
+            writer.AddDocument(doc);
+        }
+
+        writer.Commit();
+
+        int segmentCount = System.IO.Directory.GetFiles(SubDir("merge_throttle_count"), "*.seg").Length;
+        // With throttle+merge, should be fewer than the 6 unmerged segments.
+        Assert.True(segmentCount < 6, $"Expected fewer than 6 segments, got {segmentCount}");
     }
 
     /// <summary>

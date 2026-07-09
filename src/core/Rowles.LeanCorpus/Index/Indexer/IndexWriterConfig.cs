@@ -145,8 +145,9 @@ public sealed class IndexWriterConfig
     public IndexSort? IndexSort { get; set; }
 
     /// <summary>
-    /// Maximum number of unmerged segments before AddDocument blocks until a merge completes.
-    /// Provides backpressure to prevent unbounded segment accumulation. Default: 0 (disabled).
+    /// Maximum number of unmerged segments before AddDocument schedules a background merge
+    /// and blocks until it completes. Provides backpressure to prevent unbounded segment
+    /// accumulation. Default: 0 (disabled).
     /// </summary>
     public int MergeThrottleSegments { get; set; }
 

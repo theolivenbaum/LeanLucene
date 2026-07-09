@@ -21,9 +21,9 @@ every commit. This regressed the indexing benchmark from 11.1 s / 1.32 GB to
 runs asynchronously via `Task.Factory.StartNew`, exactly as it did at `50d0c68b`.
 No caller waits for the merge.
 
-The merge logic was already extracted from `ScheduleBackgroundMerge` into a
-synchronous `MergeIfNeeded` method during the fix. This is retained for callers that
-genuinely need inline merge (`Compact`, `ForceMerge`).
+The merge logic was already extracted from `ScheduleBackgroundMerge` during the fix.
+It is now invoked synchronously from `IndexWriter.ThrottleMerge` by scheduling
+a background merge and waiting for it.
 
 The five heap-allocated state wrapper objects (`CommitState`, `BackpressureState`,
 `MergeState`, `SnapshotState`, `DwptState`) introduced in `213b48a1` were also
@@ -48,14 +48,16 @@ system operated without it for the entire development cycle.
 
 - `CommitWithLocks` no longer waits for `_mergeTask`. The 10-line merge-wait block
   is deleted.
-- `CommitCore` calls `ScheduleBackgroundMerge` (async), not `MergeIfNeeded` (sync).
+- `CommitCore` calls `ScheduleBackgroundMerge` (async).
+- `IndexWriter.ThrottleMerge` schedules a background merge and blocks until it
+  completes, used by `AddDocument`/`AddDocumentAsync` when
+  `MergeThrottleSegments` is configured.
 - A reader that opens an index while a background merge is deleting segment files
   may encounter `FileNotFoundException` on Windows. This is a pre-existing condition
   that `cce9af27` attempted but failed to fix properly. A proper cross-platform fix
   (segment reference counting in `MMapDirectory`) is deferred.
-- `MergeScheduler.MergeIfNeeded` exists as a public static method for inline merge
-  scenarios where the caller holds all relevant locks and wants synchronous segment
-  consolidation.
+- `MergeScheduler.MergeIfNeeded` was removed in favour of `ScheduleBackgroundMerge`
+  plus `Task.Wait` in `IndexWriter.ThrottleMerge`, avoiding duplicated merge logic.
 - The five state wrapper classes (`CommitState`, `BackpressureState`, `MergeState`,
   `SnapshotState`, `DwptState`) are deleted. Manager classes access `IndexWriter`
   fields directly through a single `IndexWriter writer` parameter.
