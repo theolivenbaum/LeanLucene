@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `IndexSearcher.Search(Query, SearchOptions)` and `SearchAsync(Query, SearchOptions, CancellationToken)` overloads that honour `StreamResults` for per-segment streaming without a global top-N heap (5573b0c1)
+- `IndexOpenGuard` integration tests (877682f5)
 - Added `FieldType.Int64` and `Int64Field`, and the pipeline infrastructure (3dfb10a1)
 - Added codec constants, format entries, and file extension table entries for `.numl`, `.dvnl`, `.dsnl`, and `.bkdl` (3dfb10a1)
 - `ConcurrentVsSequentialBenchmarks` suite comparing `AddDocumentsConcurrent` and `AddDocumentLockFree` throughput against sequential `AddDocument` at batch sizes of 100, 1000, and 10 000 documents. The `concurrent-write` suite name is registered in both `benchmark.ps1` and `benchmark.sh`.
@@ -26,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Test cleanup across 33 files now uses `TestDirectoryFixture.TryDeleteDirectory` with a GC+retry loop instead of silently swallowing `Directory.Delete` failures (6421de1b)
 - Highlighter.ExtractTerms now collects terms from WildcardQuery, FuzzyQuery, TermInSetQuery, MultiPhraseQuery, CombinedFieldsQuery, and wrapper queries (ConstantScoreQuery, DisjunctionMaxQuery, FunctionScoreQuery), so highlighting works across more query families (503be7c2)
 - IndexCodecMigrator now uses a mandatory staging directory for all migrations, writes migrated segments under new IDs, and atomically publishes the new commit; --in-place flag removed from CLI (d97a9927)
 - ICollector is now wired into IndexSearcher via Search(Query, ICollector); Count(Query) returns total hits without materialising a scored heap; CountCollector is now thread-safe (19bf3cdb)
@@ -68,6 +71,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Range and Int64 range queries no longer allocate a `HashSet<string>` per document when falling back to stored fields (234ab977)
+- `CombinedFieldsQuery.FieldWeights` no longer allocates a new dictionary on every access (944b03f4)
+- Prefix, wildcard, fuzzy, range, regex, and automaton term dictionary lookups no longer allocate UTF-8 byte arrays per call (d5f77b6f)
+- Duplicate Meter instances with name `Rowles.LeanCorpus` that could cause telemetry listener collisions (4f23137a)
+- `IndexOpenGuard` no longer silently skips segments whose codec files cannot be read; IO exceptions and data-corruption errors now propagate so that corrupt or unreadable segment files are detected rather than bypassed as if they were unsupported versions (485fe74a)
+- HNSW
+  - `QuantisedVectorWriter` no longer quantises every vector twice; packed bytes (Int8) and bit-packed data (BBQ) are stored during the first quantisation pass and written directly in the second, eliminating the duplicate computation pass  (3a0a5ec7)
+  - HNSW graph construction for BBQ-quantised vectors now uses Hamming distance (via PopCount on raw bit-packed data) for stored-vs-stored comparisons, matching the query-time distance metric and eliminating the recall degradation caused by optimising the graph for dot-product on dequantised vectors (c1e9344d)
+  - HNSW graph construction and search no longer repeatedly dequantises the same stored vectors (c9aeb7ae)
+  - `SelectNeighboursHeuristic` now caches dequantised vectors per call, eliminating the inner-loop `O(m * k)` allocations for quantised formats (BBQ, Int8) (c9aeb7ae)
+- `NumericDocValuesReader` and `SortedNumericDocValuesReader` now reject `bitsPerValue > 64` and validate packed-bytes length, preventing out-of-bounds reads on malformed doc-value files (7f7525b2)
+- `TermVectorHighlighter` now validates the full phrase window instead of only checking immediate neighbours, so phrase highlighting no longer triggers on terms that are adjacent but in the wrong order or from different phrases (087e58d6) 
 - Merged segments now inherit the active commit generation instead of being hard-coded to 0, so retention, backup, and migration tooling sees correct metadata (bda24522)
 - SegmentMerger.MergeVectors now uses the configured HnswBuildConfig instead of defaults when rebuilding vector graphs during merge (2737b7e9)
 - ReverseStringFilter now uses `ArrayPool<char>` for tokens longer than 128 characters instead of unbounded stackalloc, preventing stack overflow on pathologically long tokens (14b5406c)
@@ -75,9 +90,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - IndexOutputBuffer.Advance(0) no longer discards unflushed buffered bytes by resetting the write position (b03f761b)
 - AddIndexes now correctly reads source segment files from the foreign directory instead of the target, fixing cross-directory index import (c24efd41)
 - BlockMaxWandScorer
-	- now uses per-document norms in block skip entries for tighter upper bounds; deleted documents are correctly excluded from WAND results (52a553c5)
-	- now uses LM scoring with proper block-max upper bounds and is wired into the disjunctive query path behind EnableBlockMaxWand (6a3aa769)
-	- now scores with proper BM25 and block-max bounds; stateful filters reset between documents and clone correctly for concurrent use (42862187)
+  - now uses per-document norms in block skip entries for tighter upper bounds; deleted documents are correctly excluded from WAND results (52a553c5)
+  - now uses LM scoring with proper block-max upper bounds and is wired into the disjunctive query path behind EnableBlockMaxWand (6a3aa769)
+  - now scores with proper BM25 and block-max bounds; stateful filters reset between documents and clone correctly for concurrent use (42862187)
 - Analyser.Clone() now deep-clones every filter so LanguageAnalyser is safe for concurrent use; stateful filters reset in Finish() and return fresh instances from Clone() (42862187)
 - Stateful analysis filters (SynonymGraphFilter, ShingleFilter, LimitTokenCountFilter, CachingTokenFilter) now reset their state between documents, preventing token leakage across multi-document pipelines (94fec8cf)
 - PackDelta now validates monotonic non-negative input, catching corrupt postings data before it gets packed (345854c4)
@@ -111,6 +126,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Floating-point equality on `RamBufferSizeMB` and scoring boosts replaced with range comparisons.
 - Generic null checks across CodecKit (`CaseDefinition`, `ChoiceCodec`, `OptionalCodec`, `VersionedCodec`, `VersionEnvelopeCodec`) switched to `is null` so the compiler's nullable analysis stays accurate.
 - Benchmark regex instances include a timeout, silencing ReDoS hotspot noise.
+
+### Removed
+
+- Dead `NumericFields` buffer (`List<Dictionary<string, double>>`) from `DocumentBufferState` and `IndexWriter.FieldProcessing`; it allocated an empty dictionary for every document containing a numeric field but was never read, while the actual numeric index lives in `NumericIndex` (614846ad)
 
 ## [1.4.1] - 2026-06-13
 
