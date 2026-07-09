@@ -75,10 +75,18 @@ internal sealed class TermDictionaryReader : IDisposable
 
     public List<(string Term, long Offset)> GetTermsWithPrefix(ReadOnlySpan<char> qualifiedPrefix)
     {
-        var prefixUtf8 = Encoding.UTF8.GetBytes(qualifiedPrefix.ToArray());
+        Span<byte> stackBuf = stackalloc byte[256];
+        var prefixUtf8 = EncodeUtf8(qualifiedPrefix, stackBuf, out byte[]? rented);
         var results = new List<(string, long)>();
-        foreach (var (key, output) in _fst.EnumerateWithPrefix(prefixUtf8))
-            results.Add((Encoding.UTF8.GetString(key), output));
+        try
+        {
+            foreach (var (key, output) in _fst.EnumerateWithPrefix(prefixUtf8))
+                results.Add((Encoding.UTF8.GetString(key), output));
+        }
+        finally
+        {
+            if (rented is not null) System.Buffers.ArrayPool<byte>.Shared.Return(rented);
+        }
         return results;
     }
 
@@ -102,11 +110,19 @@ internal sealed class TermDictionaryReader : IDisposable
 
     public List<(string Term, long Offset)> GetTermsMatching(string fieldPrefix, ReadOnlySpan<char> pattern)
     {
-        var qualifier = Encoding.UTF8.GetBytes(fieldPrefix);
+        Span<byte> qualStack = stackalloc byte[256];
+        var qualifier = EncodeUtf8(fieldPrefix.AsSpan(), qualStack, out byte[]? rented);
         var wildcard = new WildcardAutomaton(pattern.ToString());
         var results = new List<(string, long)>();
-        foreach (var (key, output, _) in _fst.IntersectAutomaton(wildcard, qualifier))
-            results.Add((Encoding.UTF8.GetString(key), output));
+        try
+        {
+            foreach (var (key, output, _) in _fst.IntersectAutomaton(wildcard, qualifier))
+                results.Add((Encoding.UTF8.GetString(key), output));
+        }
+        finally
+        {
+            if (rented is not null) System.Buffers.ArrayPool<byte>.Shared.Return(rented);
+        }
         return results;
     }
 
@@ -148,10 +164,18 @@ internal sealed class TermDictionaryReader : IDisposable
         qualChars[field.Length] = '\0';
         leadingPrefix.CopyTo(qualChars.Slice(field.Length + 1));
 
-        var qualifierUtf8 = Encoding.UTF8.GetBytes(qualChars.ToArray());
+        Span<byte> qualStack = stackalloc byte[256];
+        var qualifierUtf8 = EncodeUtf8(qualChars, qualStack, out byte[]? rented);
         var results = new List<(string, long)>();
-        foreach (var (key, output, _) in _fst.IntersectAutomaton(wildcard, qualifierUtf8))
-            results.Add((Encoding.UTF8.GetString(key), output));
+        try
+        {
+            foreach (var (key, output, _) in _fst.IntersectAutomaton(wildcard, qualifierUtf8))
+                results.Add((Encoding.UTF8.GetString(key), output));
+        }
+        finally
+        {
+            if (rented is not null) System.Buffers.ArrayPool<byte>.Shared.Return(rented);
+        }
         return results;
     }
 
@@ -231,15 +255,23 @@ internal sealed class TermDictionaryReader : IDisposable
         var key = new FuzzyCacheKey(fieldPrefix, queryTerm.ToString(), maxEdits, maxExpansions);
         if (TryGetFuzzyCache(key, out var cached)) return cached;
 
-        var qualifier = Encoding.UTF8.GetBytes(fieldPrefix);
+        Span<byte> qualStack = stackalloc byte[256];
+        var qualifier = EncodeUtf8(fieldPrefix.AsSpan(), qualStack, out byte[]? rented);
         var lev = new LevenshteinAutomaton(queryTerm.ToString(), maxEdits);
 
         var results = new List<(string, long, int)>();
-        foreach (var (k, output, finalState) in _fst.IntersectAutomaton(lev, qualifier))
+        try
         {
-            int distance = lev.MinDistance(finalState);
-            if (distance > maxEdits) continue;
-            results.Add((Encoding.UTF8.GetString(k), output, distance));
+            foreach (var (k, output, finalState) in _fst.IntersectAutomaton(lev, qualifier))
+            {
+                int distance = lev.MinDistance(finalState);
+                if (distance > maxEdits) continue;
+                results.Add((Encoding.UTF8.GetString(k), output, distance));
+            }
+        }
+        finally
+        {
+            if (rented is not null) System.Buffers.ArrayPool<byte>.Shared.Return(rented);
         }
 
         // Cap to maxExpansions closest matches.
@@ -282,35 +314,51 @@ internal sealed class TermDictionaryReader : IDisposable
     public List<(string Term, long Offset)> GetTermsInRange(
         string fieldPrefix, string? lower, string? upper, bool includeLower = true, bool includeUpper = true)
     {
-        var qualifier = Encoding.UTF8.GetBytes(fieldPrefix);
+        Span<byte> qualStack = stackalloc byte[256];
+        var qualifier = EncodeUtf8(fieldPrefix.AsSpan(), qualStack, out byte[]? rented);
         var results = new List<(string, long)>();
-        foreach (var (key, output) in _fst.EnumerateWithPrefix(qualifier))
+        try
         {
-            var bare = Encoding.UTF8.GetString(key.AsSpan(qualifier.Length));
-            if (lower is not null)
+            foreach (var (key, output) in _fst.EnumerateWithPrefix(qualifier))
             {
-                int cmp = string.CompareOrdinal(bare, lower);
-                if (cmp < 0 || (cmp == 0 && !includeLower)) continue;
+                var bare = Encoding.UTF8.GetString(key.AsSpan(qualifier.Length));
+                if (lower is not null)
+                {
+                    int cmp = string.CompareOrdinal(bare, lower);
+                    if (cmp < 0 || (cmp == 0 && !includeLower)) continue;
+                }
+                if (upper is not null)
+                {
+                    int cmp = string.CompareOrdinal(bare, upper);
+                    if (cmp > 0 || (cmp == 0 && !includeUpper)) continue;
+                }
+                results.Add((Encoding.UTF8.GetString(key), output));
             }
-            if (upper is not null)
-            {
-                int cmp = string.CompareOrdinal(bare, upper);
-                if (cmp > 0 || (cmp == 0 && !includeUpper)) continue;
-            }
-            results.Add((Encoding.UTF8.GetString(key), output));
+        }
+        finally
+        {
+            if (rented is not null) System.Buffers.ArrayPool<byte>.Shared.Return(rented);
         }
         return results;
     }
 
     public List<(string Term, long Offset)> GetTermsMatchingRegex(string fieldPrefix, Regex regex)
     {
-        var qualifier = Encoding.UTF8.GetBytes(fieldPrefix);
+        Span<byte> qualStack = stackalloc byte[256];
+        var qualifier = EncodeUtf8(fieldPrefix.AsSpan(), qualStack, out byte[]? rented);
         var results = new List<(string, long)>();
-        foreach (var (key, output) in _fst.EnumerateWithPrefix(qualifier))
+        try
         {
-            var bare = Encoding.UTF8.GetString(key.AsSpan(qualifier.Length));
-            if (regex.IsMatch(bare))
-                results.Add((Encoding.UTF8.GetString(key), output));
+            foreach (var (key, output) in _fst.EnumerateWithPrefix(qualifier))
+            {
+                var bare = Encoding.UTF8.GetString(key.AsSpan(qualifier.Length));
+                if (regex.IsMatch(bare))
+                    results.Add((Encoding.UTF8.GetString(key), output));
+            }
+        }
+        finally
+        {
+            if (rented is not null) System.Buffers.ArrayPool<byte>.Shared.Return(rented);
         }
         return results;
     }
@@ -340,10 +388,18 @@ internal sealed class TermDictionaryReader : IDisposable
     /// </summary>
     public List<(string Term, long Offset)> IntersectAutomaton(string fieldPrefix, IAutomaton automaton)
     {
-        var qualifier = Encoding.UTF8.GetBytes(fieldPrefix);
+        Span<byte> qualStack = stackalloc byte[256];
+        var qualifier = EncodeUtf8(fieldPrefix.AsSpan(), qualStack, out byte[]? rented);
         var results = new List<(string, long)>();
-        foreach (var (key, output, _) in _fst.IntersectAutomaton(automaton, qualifier))
-            results.Add((Encoding.UTF8.GetString(key), output));
+        try
+        {
+            foreach (var (key, output, _) in _fst.IntersectAutomaton(automaton, qualifier))
+                results.Add((Encoding.UTF8.GetString(key), output));
+        }
+        finally
+        {
+            if (rented is not null) System.Buffers.ArrayPool<byte>.Shared.Return(rented);
+        }
         return results;
     }
 
