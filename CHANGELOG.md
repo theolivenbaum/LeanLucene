@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Postings (`.pos`) now uses a v2 streaming format without a body-length prefix, eliminating full-body buffering during merge, flush and migration (285c54f72)
 - Test cleanup across 33 files now uses `TestDirectoryFixture.TryDeleteDirectory` with a GC+retry loop instead of silently swallowing `Directory.Delete` failures (6421de1b)
 - Highlighter.ExtractTerms now collects terms from WildcardQuery, FuzzyQuery, TermInSetQuery, MultiPhraseQuery, CombinedFieldsQuery, and wrapper queries (ConstantScoreQuery, DisjunctionMaxQuery, FunctionScoreQuery), so highlighting works across more query families (503be7c2)
 - IndexCodecMigrator now uses a mandatory staging directory for all migrations, writes migrated segments under new IDs, and atomically publishes the new commit; --in-place flag removed from CLI (d97a9927)
@@ -73,6 +74,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+-  `HnswReader` now validates header and per-node counts against `nodeCount` to prevent OOM/corrupt reads from malformed `.hnsw` files (f86b7c37f)
+- `FstReader` arc decoder now validates buffer bounds on corrupt FST data, and `Count()` correctly excludes soft-deleted documents (34e903cd0)
+- `MergeThrottleSegments` now blocks `AddDocument` until a background merge completes rather than performing a pointless extra flush (1b7a7b3a8)
 - Range and Int64 range queries no longer allocate a `HashSet<string>` per document when falling back to stored fields (234ab977)
 - `CombinedFieldsQuery.FieldWeights` no longer allocates a new dictionary on every access (944b03f4)
 - Prefix, wildcard, fuzzy, range, regex, and automaton term dictionary lookups no longer allocate UTF-8 byte arrays per call (d5f77b6f)
@@ -131,6 +135,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- Dead second deletion pass in `CommitCore` that flushed and re-checked an already-cleared pending-deletes list (d6bfc72da)
 - CodecFormats.StoredFields static field — the stored-fields format no longer uses the CodecKit envelope and writes headers directly through StoredFieldsFileHeader (b69a4c0f)
 - Dead `NumericFields` buffer (`List<Dictionary<string, double>>`) from `DocumentBufferState` and `IndexWriter.FieldProcessing`; it allocated an empty dictionary for every document containing a numeric field but was never read, while the actual numeric index lives in `NumericIndex` (614846ad)
 
