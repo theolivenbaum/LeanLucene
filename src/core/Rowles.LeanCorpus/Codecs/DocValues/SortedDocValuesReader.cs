@@ -59,6 +59,10 @@ internal static class SortedDocValuesReader
             }
 
             int bitsPerOrd = input.ReadByte();
+            if (bitsPerOrd > 63)
+                throw new InvalidDataException(
+                    $"Sorted DocValues field '{fieldName}' has bitsPerOrd={bitsPerOrd}, max is 63.");
+
             var fieldValues = new string[docCount];
 
             if (bitsPerOrd == 0)
@@ -80,6 +84,9 @@ internal static class SortedDocValuesReader
                     int ord = (int)(buffer & mask);
                     buffer >>= bitsPerOrd;
                     bitsInBuffer -= bitsPerOrd;
+                    if ((uint)ord >= (uint)ordTable.Length)
+                        throw new InvalidDataException(
+                            $"Sorted DocValues field '{fieldName}' has ordinal {ord} but ordTable has {ordTable.Length} entries.");
                     fieldValues[i] = ordTable[ord];
                 }
             }
