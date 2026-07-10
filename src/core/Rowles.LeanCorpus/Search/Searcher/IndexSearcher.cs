@@ -433,8 +433,18 @@ public sealed partial class IndexSearcher : IDisposable
 
         cancellationToken.ThrowIfCancellationRequested();
 
+        // Cross-segment / composite queries: dispatch before the generic ExecuteQuery path
+        if (query is MoreLikeThisQuery mlt)
+            return ExecuteMoreLikeThis(mlt, topN);
+        if (query is RrfQuery rrf)
+            return ExecuteRrfQuery(rrf, topN);
+        if (query is BlockJoinQuery bjq)
+            return ExecuteBlockJoinQuery(bjq, topN);
         if (query is TermQuery tq)
             return SearchTermQuery(tq, topN);
+        // Fast path for BooleanQuery with all-TermQuery clauses
+        if (query is BooleanQuery bq && IsAllTermQueryBoolean(bq))
+            return SearchBooleanTermQueryFast(bq, topN);
 
         var globalDFs = PrecomputeGlobalDocFreqsForSearch(query);
         var collector = new TopNCollector(topN);
@@ -494,19 +504,24 @@ public sealed partial class IndexSearcher : IDisposable
 
         var result = SearchCoreBudgeted(query, topN, options, deadlineTicks, sw);
 
-        sw.Stop();
-        _config.Metrics.RecordSearchLatency(sw.Elapsed);
-        activity?.SetTag("search.total_hits", result.TotalHits);
-        activity?.SetTag("search.is_partial", result.IsPartial);
-
         _config.SlowQueryLog?.MaybeLog(query, sw.Elapsed, result.TotalHits);
         _config.SearchAnalytics?.Record(query, sw.Elapsed, result.TotalHits, cacheHit: false);
+
         return result;
     }
+
 
     private TopDocs SearchCoreBudgeted(Query query, int topN, SearchOptions options,
         long? deadlineTicks, System.Diagnostics.Stopwatch sw)
     {
+        // Cross-segment / composite queries: dispatch before the generic ExecuteQuery path
+        if (query is MoreLikeThisQuery mlt)
+            return ExecuteMoreLikeThis(mlt, topN);
+        if (query is RrfQuery rrf)
+            return ExecuteRrfQuery(rrf, topN);
+        if (query is BlockJoinQuery bjq)
+            return ExecuteBlockJoinQuery(bjq, topN);
+
         var globalDFs = PrecomputeGlobalDocFreqsForSearch(query);
         var collector = new TopNCollector(topN);
         bool partial = false;
