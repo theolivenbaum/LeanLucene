@@ -460,13 +460,15 @@ public class IndexSmokeTests : IClassFixture<IndexSmokeFixture>
             }
 
             {
-                var sorted = searcher.Search(new MatchAllDocsQuery(), 10, SortField.DocId, TestContext.Current.CancellationToken);
+                var sorted = searcher.Search(new MatchAllDocsQuery(), 10, SortField.DocId,
+                    new SearchOptions { CancellationToken = TestContext.Current.CancellationToken });
                 Assert.True(sorted.ScoreDocs.Length >= 1,
                     $"docid sort returned {sorted.ScoreDocs.Length} doc(s), expected >=1.");
             }
 
             {
-                var sorted = searcher.Search(new MatchAllDocsQuery(), 10, SortField.Score, TestContext.Current.CancellationToken);
+                var sorted = searcher.Search(new MatchAllDocsQuery(), 10, SortField.Score,
+                    new SearchOptions { CancellationToken = TestContext.Current.CancellationToken });
                 Assert.True(sorted.ScoreDocs.Length >= 1,
                     $"score sort returned {sorted.ScoreDocs.Length} doc(s), expected >=1.");
             }
