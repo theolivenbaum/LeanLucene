@@ -29,7 +29,7 @@ public sealed class Int64RangeQuery : Query
     public override bool Equals(object? obj) =>
         obj is Int64RangeQuery other &&
         string.Equals(Field, other.Field, StringComparison.Ordinal) &&
-        Min == other.Min && Max == other.Max && Boost == other.Boost;
+        Min == other.Min && Max == other.Max && Math.Abs(Boost - other.Boost) < 1e-6f;
 
     /// <inheritdoc/>
     public override int GetHashCode() => CombineBoost(HashCode.Combine(nameof(Int64RangeQuery), Field, Min, Max));

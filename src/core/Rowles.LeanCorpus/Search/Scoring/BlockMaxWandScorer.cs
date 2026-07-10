@@ -229,7 +229,7 @@ internal sealed class BlockMaxWandScorer
             if (_fieldBoosts is not null && (uint)docId < (uint)_fieldBoosts.Length)
             {
                 float boost = _fieldBoosts[docId];
-                if (boost != 1.0f) score *= boost;
+                if (Math.Abs(boost - 1.0f) > 1e-6f) score *= boost;
             }
 
             return score;

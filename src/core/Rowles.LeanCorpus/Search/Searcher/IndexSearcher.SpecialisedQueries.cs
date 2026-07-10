@@ -274,7 +274,7 @@ public sealed partial class IndexSearcher
     private void ExecuteInt64RangeQuery(Int64RangeQuery query, SegmentReader reader, ref TopNCollector collector)
     {
         int docBase = reader.DocBase;
-        float score = query.Boost != 1.0f ? query.Boost : 1.0f;
+        float score = Math.Abs(query.Boost - 1.0f) > 1e-6f ? query.Boost : 1.0f;
         var localCollector = collector;
         if (reader.VisitInt64Range(query.Field, query.Min, query.Max, (docId, _) =>
             localCollector.Collect(docBase + docId, ApplyFieldBoost(reader, docId, query.Field, score))))

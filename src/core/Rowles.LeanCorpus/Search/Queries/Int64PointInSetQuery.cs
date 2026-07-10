@@ -38,7 +38,7 @@ public sealed class Int64PointInSetQuery : Query
     public override bool Equals(object? obj) =>
         obj is Int64PointInSetQuery other &&
         string.Equals(Field, other.Field, StringComparison.Ordinal) &&
-        Boost == other.Boost &&
+        Math.Abs(Boost - other.Boost) < 1e-6f &&
         _points.AsSpan().SequenceEqual(other._points);
 
     /// <inheritdoc/>
