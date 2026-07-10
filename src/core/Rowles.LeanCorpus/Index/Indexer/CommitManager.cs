@@ -323,15 +323,14 @@ internal static class CommitManager
 
             if (merged is null)
             {
-                foreach (var seg in mergeable)
-                    writer.CommittedSegments.Remove(seg);
+                // All docs in the source segments are dead. Preserve source
+                // segments rather than silently dropping them.
+                return 0;
             }
-            else
-            {
-                foreach (var seg in mergeable)
-                    writer.CommittedSegments.Remove(seg);
-                writer.CommittedSegments.Add(merged);
-            }
+
+            foreach (var seg in mergeable)
+                writer.CommittedSegments.Remove(seg);
+            writer.CommittedSegments.Add(merged);
 
             writer.ContentToken++;
             writer.CommitGeneration++;
@@ -403,15 +402,15 @@ internal static class CommitManager
 
                 if (merged is null)
                 {
-                    foreach (var seg in toMerge)
-                        writer.CommittedSegments.Remove(seg);
+                    // All docs in the source segments are dead (deleted or soft-deleted
+                    // past retention). Preserve source segments rather than silently
+                    // dropping them with no replacement.
+                    break;
                 }
-                else
-                {
-                    foreach (var seg in toMerge)
-                        writer.CommittedSegments.Remove(seg);
-                    writer.CommittedSegments.Add(merged);
-                }
+
+                foreach (var seg in toMerge)
+                    writer.CommittedSegments.Remove(seg);
+                writer.CommittedSegments.Add(merged);
 
                 allConsumed.AddRange(toMerge);
                 totalMerged += toMerge.Count;

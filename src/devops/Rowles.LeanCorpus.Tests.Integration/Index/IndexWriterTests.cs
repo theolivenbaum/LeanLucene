@@ -499,4 +499,94 @@ public sealed class IndexWriterTests : IClassFixture<TestDirectoryFixture>
         var finalSegs = System.IO.Directory.GetFiles(SubDir("compact_snapshot"), "*.seg");
         Assert.Single(finalSegs);
     }
+
+
+    /// <summary>
+    /// Verifies that ForceMerge preserves source segments when MergeAll returns null.
+    /// Segments are created by explicit commit after each batch, which ensures the
+    /// term dictionary is fully written before deletes are applied.
+    /// </summary>
+    [Fact(DisplayName = "ForceMerge preserves source segments when all docs are dead")]
+    public void ForceMerge_PreservesSourceSegments_WhenAllDocsDead()
+    {
+        var dir = new MMapDirectory(SubDir("fm_preserve"));
+        var config = new IndexWriterConfig { MaxBufferedDocs = 100, MergeThreshold = 10 };
+
+        using var writer = new IndexWriter(dir, config);
+
+        // Create 3 segments explicitly: commit after each batch
+        for (int batch = 0; batch < 3; batch++)
+        {
+            for (int i = 1; i <= 3; i++)
+            {
+                var doc = new LeanDocument();
+                doc.Add(new StringField("id", $"batch{batch}-doc{i}"));
+                doc.Add(new TextField("body", $"content {batch * 3 + i}"));
+                writer.AddDocument(doc);
+            }
+            writer.Commit();
+        }
+
+        var initialSegs = System.IO.Directory.GetFiles(SubDir("fm_preserve"), "*.seg");
+        Assert.True(initialSegs.Length >= 3, $"Expected at least 3 segments, got {initialSegs.Length}");
+
+        // Hard-delete all documents by body field
+        for (int batch = 0; batch < 3; batch++)
+            for (int i = 1; i <= 3; i++)
+                writer.DeleteDocuments(new Rowles.LeanCorpus.Search.Queries.TermQuery("id", $"batch{batch}-doc{i}"));
+        writer.Commit();
+        // Verify deletes took effect
+        Assert.All(writer.CommittedSegments, s => Assert.Equal(0, s.LiveDocCount));
+
+        // ForceMerge to 1 segment. All docs are dead so merge returns null.
+        // Source segments must be preserved, not dropped.
+        int merged = writer.ForceMerge(1);
+        Assert.Equal(0, merged);
+
+        var finalSegs = System.IO.Directory.GetFiles(SubDir("fm_preserve"), "*.seg");
+        Assert.True(finalSegs.Length >= 3, $"Expected source segments preserved, got {finalSegs.Length}");
+    }
+
+    /// <summary>
+    /// Verifies that Compact preserves source segments when all documents
+    /// in those segments are dead.
+    /// </summary>
+    [Fact(DisplayName = "Compact preserves source segments when all docs are dead")]
+    public void Compact_PreservesSourceSegments_WhenAllDocsDead()
+    {
+        var dir = new MMapDirectory(SubDir("compact_preserve"));
+        var config = new IndexWriterConfig { MaxBufferedDocs = 100, MergeThreshold = 10 };
+
+        using var writer = new IndexWriter(dir, config);
+
+        // Create 3 segments explicitly
+        for (int batch = 0; batch < 3; batch++)
+        {
+            for (int i = 1; i <= 3; i++)
+            {
+                var doc = new LeanDocument();
+                doc.Add(new StringField("id", $"batch{batch}-doc{i}"));
+                doc.Add(new TextField("body", $"content {batch * 3 + i}"));
+                writer.AddDocument(doc);
+            }
+            writer.Commit();
+        }
+
+        var initialSegs = System.IO.Directory.GetFiles(SubDir("compact_preserve"), "*.seg");
+        Assert.True(initialSegs.Length >= 3, $"Expected at least 3 segments, got {initialSegs.Length}");
+
+        // Hard-delete all documents
+        for (int batch = 0; batch < 3; batch++)
+            for (int i = 1; i <= 3; i++)
+                writer.DeleteDocuments(new Rowles.LeanCorpus.Search.Queries.TermQuery("id", $"batch{batch}-doc{i}"));
+        writer.Commit();
+
+        Assert.All(writer.CommittedSegments, s => Assert.Equal(0, s.LiveDocCount));
+
+        int merged = writer.Compact();
+        Assert.Equal(0, merged);
+
+        var finalSegs = System.IO.Directory.GetFiles(SubDir("compact_preserve"), "*.seg");
+        Assert.True(finalSegs.Length >= 3, $"Expected source segments preserved, got {finalSegs.Length}");
+    }
 }
