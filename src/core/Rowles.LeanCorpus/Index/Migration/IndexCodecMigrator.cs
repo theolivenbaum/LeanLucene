@@ -443,15 +443,13 @@ public static class IndexCodecMigrator
     private static void TryDeleteDirectory(string directoryPath)
     {
         try { Directory.Delete(directoryPath, recursive: true); }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
+        catch (Exception ex) { Diagnostics.LeanCorpusActivitySource.TraceSwallowed(ex, "migrator directory delete"); }
     }
 
     private static void TryDeleteFile(string path)
     {
         try { File.Delete(path); }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
+        catch (Exception ex) { Diagnostics.LeanCorpusActivitySource.TraceSwallowed(ex, "migrator file delete"); }
     }
 
     private static bool IsMigrationFailure(Exception ex)

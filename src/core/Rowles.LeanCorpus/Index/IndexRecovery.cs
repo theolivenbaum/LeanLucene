@@ -237,13 +237,13 @@ public static class IndexRecovery
             if (!File.Exists(finalPath))
             {
                 try { File.Move(pendingFile, finalPath); }
-                catch (IOException) { } catch (UnauthorizedAccessException) { }
+                catch (Exception ex) { Diagnostics.LeanCorpusActivitySource.TraceSwallowed(ex, "pending commit promote move"); }
             }
             else
             {
                 // Both .pending and final exist — the final commit won, discard the stale pending.
                 try { File.Delete(pendingFile); }
-                catch (IOException) { } catch (UnauthorizedAccessException) { }
+                catch (Exception ex) { Diagnostics.LeanCorpusActivitySource.TraceSwallowed(ex, "stale pending file delete"); }
             }
         }
     }
@@ -261,7 +261,7 @@ public static class IndexRecovery
             if (!IsRecognisedTemporaryFile(Path.GetFileName(tmpFile)))
                 continue;
 
-            try { File.Delete(tmpFile); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            try { File.Delete(tmpFile); } catch (Exception ex) { Diagnostics.LeanCorpusActivitySource.TraceSwallowed(ex, "temp file cleanup"); }
         }
     }
 

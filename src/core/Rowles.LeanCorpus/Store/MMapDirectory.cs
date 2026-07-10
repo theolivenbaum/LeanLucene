@@ -102,7 +102,7 @@ public sealed class MMapDirectory : LeanDirectory, IDisposable
         foreach (var kvp in _pendingDeletes)
         {
             try { File.Delete(kvp.Key); }
-            catch { /* best-effort on teardown */ }
+            catch (Exception ex) { Diagnostics.LeanCorpusActivitySource.TraceSwallowed(ex, "deferred file delete during dispose"); }
         }
         _pendingDeletes.Clear();
         _openFileCounts.Clear();
@@ -141,7 +141,7 @@ public sealed class MMapDirectory : LeanDirectory, IDisposable
             if (_pendingDeletes.TryRemove(filePath, out _))
             {
                 try { File.Delete(filePath); }
-                catch { /* best-effort — will retry on next Dispose/teardown */ }
+                catch (Exception ex) { Diagnostics.LeanCorpusActivitySource.TraceSwallowed(ex, "deferred file delete on input disposed"); }
             }
         }
     }
@@ -157,7 +157,7 @@ public sealed class MMapDirectory : LeanDirectory, IDisposable
         if (!_openFileCounts.ContainsKey(filePath))
         {
             try { File.Delete(filePath); }
-            catch { /* best-effort */ }
+            catch (Exception ex) { Diagnostics.LeanCorpusActivitySource.TraceSwallowed(ex, "fast-path file delete"); }
             return;
         }
 
@@ -175,7 +175,7 @@ public sealed class MMapDirectory : LeanDirectory, IDisposable
             {
                 _pendingDeletes.TryRemove(filePath, out _);
                 try { File.Delete(filePath); }
-                catch { /* best-effort */ }
+                catch (Exception ex) { Diagnostics.LeanCorpusActivitySource.TraceSwallowed(ex, "TOCTOU retry file delete"); }
             }
         }
     }

@@ -57,7 +57,7 @@ internal static class IndexAtomicFileWriter
         }
         catch
         {
-            try { File.Delete(tempPath); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            try { File.Delete(tempPath); } catch (Exception ex) { Diagnostics.LeanCorpusActivitySource.TraceSwallowed(ex, "atomic-write temp file cleanup"); }
             throw;
         }
     }

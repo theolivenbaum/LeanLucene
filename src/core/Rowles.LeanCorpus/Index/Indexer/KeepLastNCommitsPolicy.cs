@@ -1,4 +1,6 @@
-﻿namespace Rowles.LeanCorpus.Index.Indexer;
+﻿using Rowles.LeanCorpus.Diagnostics;
+
+namespace Rowles.LeanCorpus.Index.Indexer;
 
 /// <summary>Keeps the last N commit generations, deleting older ones.</summary>
 public sealed class KeepLastNCommitsPolicy : IIndexDeletionPolicy
@@ -38,7 +40,7 @@ public sealed class KeepLastNCommitsPolicy : IIndexDeletionPolicy
             // If a concurrent reader (background searcher refresh) holds a handle
             // on the old segments_N without FileShare.Delete, Windows raises
             // IOException. Tolerate transient failures; the next commit will retry.
-            try { File.Delete(file); } catch { /* best-effort */ }
+            try { File.Delete(file); } catch (Exception ex) { LeanCorpusActivitySource.TraceSwallowed(ex, "commit file delete"); }
         }
 
         // Prune old stats files. If a concurrent reader (background
@@ -54,7 +56,7 @@ public sealed class KeepLastNCommitsPolicy : IIndexDeletionPolicy
             if (CommitDeletionPolicy.ReferencesProtectedSegment(commitFile, protectedSegmentIds))
                 continue;
 
-            try { File.Delete(file); } catch { /* best-effort */ }
+            try { File.Delete(file); } catch (Exception ex) { LeanCorpusActivitySource.TraceSwallowed(ex, "stats file delete"); }
         }
     }
 }
