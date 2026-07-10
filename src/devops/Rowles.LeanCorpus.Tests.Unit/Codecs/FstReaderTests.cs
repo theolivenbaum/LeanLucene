@@ -589,6 +589,36 @@ public sealed class FstReaderTests
         Assert.Empty(reader.EnumerateWithPrefix("z"u8));
     }
 
+
+    /// <summary>
+    /// Terms that share common suffixes must survive node deduplication with correct outputs.
+    /// The FST builder compiles suffix nodes once and reuses them via hash lookup; this test
+    /// ensures that the content comparison guards against any theoretical hash collision.
+    /// </summary>
+    [Fact]
+    public void SuffixSharing_Dedup_Preserves_Outputs()
+    {
+        // Groups sharing suffixes:
+        //   "aaaaa" (1), "baaaa" (2), "caaaa" (3)  -- share "aaaa" suffix
+        //   "aaabb" (4), "bbabb" (5), "ccabb" (6)  -- share "abb" suffix
+        //   "zzzzz" (7)                             -- unique
+        var entries = new (string Key, long Output)[]
+        {
+            ("aaaaa", 1), ("aaabb", 4), ("baaaa", 2), ("bbabb", 5),
+            ("caaaa", 3), ("ccabb", 6), ("zzzzz", 7),
+        };
+        var blob = Build(entries);
+        var reader = FstReader.Open(blob);
+        Assert.Equal(entries.Length, reader.Count);
+
+        foreach (var (key, expectedOutput) in entries)
+        {
+            var keyBytes = Encoding.UTF8.GetBytes(key);
+            Assert.True(reader.TryGetOutput(keyBytes, out long got),
+                $"Lookup failed for '{key}'");
+            Assert.Equal(expectedOutput, got);
+        }
+    }
     private static byte[] MakeBlob(long rootAddress, long count, byte[] nodes)
     {
         // Build a minimal FST1 blob: [magic 4B][rootAddress VarInt][count VarInt][nodes...]
