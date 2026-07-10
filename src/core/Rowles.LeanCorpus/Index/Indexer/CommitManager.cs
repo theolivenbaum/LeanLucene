@@ -62,18 +62,14 @@ internal static class CommitManager
 
     private static void CommitCore(IndexWriter writer)
     {
-        var preFlushSegmentCount = writer.CommittedSegments.Count;
-
-        if (preFlushSegmentCount > 0 && writer.PendingDeletes.Count > 0)
-            DeletionApplier.ApplyPendingDeletions(
-                writer.PendingDeletes, writer.CommittedSegments.GetRange(0, preFlushSegmentCount),
-                writer.Directory, writer.CommitGeneration,
-                writer.Config.DurableCommits);
-
         DwptManager.FlushDwptPool(writer);
 
         IndexWriter.FlushSegmentStatic(writer);
 
+        // Apply pending deletes to all committed segments after flush.
+        // This covers both: queued deletes targeting previously committed
+        // docs, and deletes queued before any segment existed (preFlushCount
+        // was 0, so the old pre-flush pass would have skipped them).
         if (writer.PendingDeletes.Count > 0)
             DeletionApplier.ApplyPendingDeletions(
                 writer.PendingDeletes, writer.CommittedSegments,
@@ -451,13 +447,6 @@ internal static class CommitManager
         lock (writer.MergeIoLock)
         lock (writer.WriteLock)
         {
-            var preFlushSegmentCount = writer.CommittedSegments.Count;
-            if (preFlushSegmentCount > 0 && writer.PendingDeletes.Count > 0)
-                DeletionApplier.ApplyPendingDeletions(
-                    writer.PendingDeletes, writer.CommittedSegments.GetRange(0, preFlushSegmentCount),
-                    writer.Directory, writer.CommitGeneration,
-                    writer.Config.DurableCommits);
-
             DwptManager.FlushDwptPool(writer);
 
             IndexWriter.FlushSegmentStatic(writer);
