@@ -858,6 +858,44 @@ public sealed class IndexCodecMigratorTests : IClassFixture<TestDirectoryFixture
         Assert.Equal(originalCommit.FilePath, afterCommit.FilePath);
     }
 
+    [Fact(DisplayName = "Migrate: Stale source files absent from staging are deleted")]
+    public void Migrate_StaleSourceFiles_Deleted()
+    {
+        var path = CreateCurrentVersionIndex("migrate_stale_cleanup");
+        DowngradeVersionByte(path, "*.fln", 0);
+
+        var originalSegmentIds = IndexRecovery.RecoverLatestCommit(path, cleanupOrphans: false)!.SegmentIds;
+        Assert.NotEmpty(originalSegmentIds);
+
+        var result = IndexCodecMigrator.Migrate(
+            new MMapDirectory(path),
+            new IndexCodecMigrationOptions
+            {
+                DryRun = false,
+                ValidateBeforeMigration = false,
+                ValidateAfterMigration = false,
+            });
+
+        Assert.True(result.Succeeded);
+
+        // After migration, no old-format files (segment ID + ".ext") should remain.
+        // New migrated files have "_migrated_" in the name and are expected.
+        foreach (var oldId in originalSegmentIds)
+        {
+            var stale = Directory.EnumerateFiles(path).FirstOrDefault(f =>
+            {
+                var name = Path.GetFileName(f);
+                if (!name.StartsWith(oldId, StringComparison.Ordinal)) return false;
+                var tail = name.AsSpan(oldId.Length);
+                return (tail.StartsWith(".") || tail.StartsWith("_gen_") || tail.StartsWith("_v_"))
+                       && !tail.Contains("_migrated_", StringComparison.Ordinal);
+            });
+            Assert.Null(stale);
+        }
+
+        AssertIndexReadable(path);
+    }
+
     [Fact(DisplayName = "Migrate: Recovery completes an already-published migration")]
     public void Migrate_Recovery_CompletesInterruptedPublish()
     {

@@ -637,17 +637,31 @@ public static class IndexCodecMigrator
 
     private static void PublishStagingFiles(string sourceDirectory, string stagingDirectory)
     {
+        // Collect staging file names, excluding the recovery marker.
+        var stagingFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var file in Directory.EnumerateFiles(stagingDirectory))
         {
             var name = Path.GetFileName(file);
             if (string.Equals(name, IndexMigrationRecovery.MarkerFileName, StringComparison.Ordinal))
                 continue;
+            stagingFiles.Add(name);
+        }
 
-            var targetPath = Path.Combine(sourceDirectory, name);
-            if (File.Exists(targetPath))
+        // Delete source files absent from staging (preserve write.lock and marker).
+        foreach (var file in Directory.EnumerateFiles(sourceDirectory))
+        {
+            var name = Path.GetFileName(file);
+            if (string.Equals(name, "write.lock", StringComparison.Ordinal) ||
+                string.Equals(name, IndexMigrationRecovery.MarkerFileName, StringComparison.Ordinal))
                 continue;
+            if (!stagingFiles.Contains(name))
+                TryDeleteFile(file);
+        }
 
-            PublishFileAtomically(file, targetPath);
+        // Copy all staging files to source, overwriting when content differs.
+        foreach (var name in stagingFiles)
+        {
+            PublishFileAtomically(Path.Combine(stagingDirectory, name), Path.Combine(sourceDirectory, name));
         }
     }
 
