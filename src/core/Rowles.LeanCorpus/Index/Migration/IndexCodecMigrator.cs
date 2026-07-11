@@ -864,15 +864,13 @@ public static class IndexCodecMigrator
 
     private static void RewriteNumericDocValues(string sourcePath, string targetPath)
     {
-        // First pass: count fields, find max docCount, collect presence metadata.
+        // First pass: count fields, find max docCount.
         int fieldCount = 0;
         int maxDocCount = 0;
-        var presenceSets = new Dictionary<string, IReadOnlySet<int>>(StringComparer.Ordinal);
-        foreach (var (name, values, pres) in NumericDocValuesReader.EnumerateFields(sourcePath))
+        foreach (var (_, values, _) in NumericDocValuesReader.EnumerateFields(sourcePath))
         {
             fieldCount++;
             if (values.Length > maxDocCount) maxDocCount = values.Length;
-            if (pres is not null) presenceSets[name] = pres.ToHashSet();
         }
 
         var temporaryPath = targetPath + ".tmp";
@@ -882,11 +880,11 @@ public static class IndexCodecMigrator
             using var output = new IndexOutput(temporaryPath, durable: true);
             using var scope = CodecFileHeader.BeginStreamingWrite(output, CodecConstants.NumericDocValuesVersion);
             scope.Output.WriteInt32(fieldCount);
-            foreach (var (fieldName, fieldValues, _) in NumericDocValuesReader.EnumerateFields(sourcePath))
+            foreach (var (fieldName, fieldValues, pres) in NumericDocValuesReader.EnumerateFields(sourcePath))
             {
-                presenceSets.TryGetValue(fieldName, out var pres);
+                var presenceSet = pres is not null ? pres.ToHashSet() : null;
                 fieldBuf.Clear();
-                NumericDocValuesWriter.WriteFieldBlock(fieldBuf, fieldName, fieldValues, maxDocCount, pres);
+                NumericDocValuesWriter.WriteFieldBlock(fieldBuf, fieldName, fieldValues, maxDocCount, presenceSet);
                 scope.Output.WriteBytes(fieldBuf.WrittenSpan);
             }
             File.Move(temporaryPath, targetPath, overwrite: true);
@@ -925,17 +923,14 @@ public static class IndexCodecMigrator
 
     private static void RewriteNorms(string sourcePath, string targetPath)
     {
-        // First pass: count fields, find max docCount, collect boosts.
+        // First pass: count fields, find max docCount.
         int fieldCount = 0;
         int maxDocCount = 0;
-        var boosts = new Dictionary<string, float[]>(StringComparer.Ordinal);
-        foreach (var (name, normBytes, fieldBoosts) in NormsReader.EnumerateFields(sourcePath))
+        foreach (var (_, normBytes, _) in NormsReader.EnumerateFields(sourcePath))
         {
             fieldCount++;
             if (normBytes.Length > maxDocCount) maxDocCount = normBytes.Length;
-            if (fieldBoosts is not null) boosts[name] = fieldBoosts;
         }
-        var fieldBoostsRef = boosts.Count > 0 ? boosts : null;
 
         var temporaryPath = targetPath + ".tmp";
         var fieldBuf = new ArrayBufferWriter<byte>(4096);
@@ -944,15 +939,13 @@ public static class IndexCodecMigrator
             using var output = new IndexOutput(temporaryPath, durable: true);
             using var scope = CodecFileHeader.BeginStreamingWrite(output, CodecConstants.NormsVersion);
             scope.Output.WriteInt32(fieldCount);
-            foreach (var (fieldName, normBytes, _) in NormsReader.EnumerateFields(sourcePath))
+            foreach (var (fieldName, normBytes, fieldBoosts) in NormsReader.EnumerateFields(sourcePath))
             {
                 var norms = new float[normBytes.Length];
                 for (int i = 0; i < normBytes.Length; i++)
                     norms[i] = normBytes[i] / 255f;
-                float[]? fb = null;
-                fieldBoostsRef?.TryGetValue(fieldName, out fb);
                 fieldBuf.Clear();
-                NormsWriter.WriteFieldBlock(fieldBuf, fieldName, norms, fb, maxDocCount);
+                NormsWriter.WriteFieldBlock(fieldBuf, fieldName, norms, fieldBoosts, maxDocCount);
                 scope.Output.WriteBytes(fieldBuf.WrittenSpan);
             }
             File.Move(temporaryPath, targetPath, overwrite: true);
