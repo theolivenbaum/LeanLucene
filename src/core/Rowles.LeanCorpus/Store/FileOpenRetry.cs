@@ -11,8 +11,8 @@ namespace Rowles.LeanCorpus.Store;
 /// </summary>
 internal static class FileOpenRetry
 {
-    private const int MaxRetries = 5;
-    private const int RetryDelayMs = 10;
+    private const int MaxRetries = 25;
+    private const int RetryDelayMs = 50;
 
     /// <summary>
     /// Opens a file for reading with <see cref="FileShare.Read"/>,
@@ -53,7 +53,7 @@ internal static class FileOpenRetry
 
     /// <summary>
     /// Opens a file with the specified mode, access, and share,
-    /// retrying on <see cref="UnauthorizedAccessException"/>.
+    /// retrying on <see cref="IOException"/> and <see cref="UnauthorizedAccessException"/>.
     /// </summary>
     internal static FileStream Open(string path, FileMode mode, FileAccess access, FileShare share)
     {
@@ -64,7 +64,28 @@ internal static class FileOpenRetry
             {
                 return new FileStream(path, mode, access, share);
             }
-            catch (UnauthorizedAccessException) when (retries-- > 0)
+            catch (Exception ex) when ((ex is UnauthorizedAccessException or IOException) && retries-- > 0)
+            {
+                Thread.Sleep(RetryDelayMs);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Opens a file with the specified mode, access, share, buffer size, and options,
+    /// retrying on <see cref="IOException"/> and <see cref="UnauthorizedAccessException"/>.
+    /// </summary>
+    internal static FileStream Open(string path, FileMode mode, FileAccess access, FileShare share,
+        int bufferSize, FileOptions options)
+    {
+        int retries = MaxRetries;
+        while (true)
+        {
+            try
+            {
+                return new FileStream(path, mode, access, share, bufferSize, options);
+            }
+            catch (Exception ex) when ((ex is UnauthorizedAccessException or IOException) && retries-- > 0)
             {
                 Thread.Sleep(RetryDelayMs);
             }
