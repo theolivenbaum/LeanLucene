@@ -531,6 +531,27 @@ public sealed class IndexCodecMigratorTests : IClassFixture<TestDirectoryFixture
         AssertIndexReadable(path);
     }
 
+    [Fact(DisplayName = "Migrate: Rewrite term dictionary from old version")]
+    public void Migrate_Rewrite_TermDictionary()
+    {
+        var path = CreateIndexWithMultipleDocuments("migrate_rewrite_dic");
+        DowngradeVersionByte(path, "*.dic", 0);
+
+        var result = IndexCodecMigrator.Migrate(
+            new MMapDirectory(path),
+            new IndexCodecMigrationOptions
+            {
+                DryRun = false,
+                ValidateBeforeMigration = false,
+                ValidateAfterMigration = false,
+            });
+
+        Assert.True(result.Succeeded,
+            $"Term dictionary rewrite failed. Issues: {string.Join("; ", result.Issues.Select(i => $"{i.Code}: {i.Message}"))}");
+        Assert.Equal(CodecConstants.TermDictionaryVersion, ReadVersionByte(path, "*.dic"));
+        AssertIndexReadable(path, "document");
+    }
+
     [Fact(DisplayName = "Migrate: Unsupported format version produces inspection issue not action")]
     public void Migrate_UnsupportedFormatVersion_ProducesIssue()
     {

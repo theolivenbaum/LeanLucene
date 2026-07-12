@@ -711,7 +711,7 @@ public static class IndexCodecMigrator
         switch (Path.GetExtension(targetFileName))
         {
             case ".dic":
-                RewriteTermDictionary(sourcePath);
+                RewriteTermDictionary(sourcePath, targetPath);
                 break;
             case ".pos":
                 RewritePostings(targetDirectory, action, segmentIdMap);
@@ -752,25 +752,46 @@ public static class IndexCodecMigrator
         }
     }
 
-    private static void RewriteTermDictionary(string path)
+    private static void RewriteTermDictionary(string sourcePath, string targetPath)
     {
         byte version;
-        using var probe = new IndexInput(path);
+        using (var probe = new IndexInput(sourcePath))
+        {
+            try
+            {
+                version = CodecFileHeader.ReadVersion(probe, CodecFormats.TermDictionary);
+            }
+            catch (Exception ex) when (ex is InvalidDataException)
+            {
+                throw new InvalidDataException(
+                    $"Invalid term dictionary file '{sourcePath}': {ex.Message}", ex);
+            }
+        }
+
+        if (version == CodecConstants.TermDictionaryVersion)
+        {
+            // No format change; copy to target if the segment ID was renamed.
+            if (!string.Equals(sourcePath, targetPath, StringComparison.Ordinal))
+                File.Copy(sourcePath, targetPath, overwrite: true);
+            return;
+        }
+
+        var temporaryPath = targetPath + ".tmp";
         try
         {
-            version = CodecFileHeader.ReadVersion(probe, CodecFormats.TermDictionary);
-        }
-        catch (Exception ex) when (ex is InvalidDataException)
-        {
-            throw new InvalidDataException(
-                $"Invalid term dictionary file '{path}': {ex.Message}", ex);
-        }
+            using var reader = TermDictionaryReader.Open(sourcePath);
+            var allTerms = reader.EnumerateAllTerms();
 
-        if (version == CodecConstants.TermDictionaryVersion) return;
+            var offsets = new Dictionary<string, long>(allTerms.Count, StringComparer.Ordinal);
+            foreach (var (term, offset) in allTerms)
+                offsets[term] = offset;
 
-        throw new InvalidDataException(
-            $"Unsupported term dictionary version {version}. Only version {CodecConstants.TermDictionaryVersion} is supported. " +
-            "Re-index the data with the current version of LeanCorpus.");
+            var sorted = new List<string>(offsets.Keys);
+            sorted.Sort(StringComparer.Ordinal);
+            TermDictionaryWriter.Write(temporaryPath, sorted, offsets, durable: true);
+            File.Move(temporaryPath, targetPath, overwrite: true);
+        }
+        catch { TryDeleteTemporaryFile(temporaryPath); throw; }
     }
 
     private static void RewritePostings(string targetDirectory, IndexCodecMigrationAction action, IReadOnlyDictionary<string, string> segmentIdMap)
