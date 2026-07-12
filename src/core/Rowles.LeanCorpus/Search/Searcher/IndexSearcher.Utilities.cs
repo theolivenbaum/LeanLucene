@@ -241,7 +241,21 @@ public sealed partial class IndexSearcher
         Query query, int topN, params string[] facetFields)
     {
         var sideCollector = new FacetsSideCollector(facetFields);
-        var (results, _) = SearchWithSideCollector(query, topN, sideCollector);
+        var (results, side) = SearchWithSideCollector(query, topN, sideCollector);
+        if (side == null)
+        {
+            // Fallback: non-TermQuery, use two-pass
+            var matches = SearchAllMatches(query, results.TotalHits);
+            var seenDocs = new HashSet<int>();
+            foreach (var sd in matches.ScoreDocs)
+            {
+                int readerIdx = ResolveReaderIndex(sd.DocId);
+                var reader = _readers[readerIdx];
+                int localDocId = sd.DocId - _docBases[readerIdx];
+                sideCollector.Collect(sd.DocId, sd.Score, reader, localDocId);
+            }
+            return (results, sideCollector.GetResults());
+        }
         return (results, sideCollector.GetResults());
     }
 
