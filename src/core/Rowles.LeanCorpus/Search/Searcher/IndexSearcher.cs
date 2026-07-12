@@ -1,9 +1,12 @@
 using Rowles.LeanCorpus.Analysis.Analysers;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using Rowles.LeanCorpus.Index;
 using Rowles.LeanCorpus.Index.Compatibility;
 using Rowles.LeanCorpus.Store;
+using System.Collections.Concurrent;
 using Rowles.LeanCorpus.Search.Parsing;
+using Rowles.LeanCorpus.Search.Scoring;
 namespace Rowles.LeanCorpus.Search.Searcher;
 
 /// <summary>
@@ -25,6 +28,12 @@ public sealed partial class IndexSearcher : IDisposable
     private static readonly Dictionary<(string Field, string Term), int> EmptyGlobalDFs = new();
     private const string CombinedFieldsDocFreqKey = "\u0001combined-fields";
     private readonly QueryCache? _queryCache;
+    private ConcurrentDictionary<MltCacheKey, (string Field, string Term, float Score)[]>? _mltCache;
+    private int _mltCacheCount;
+    private const int MltCacheSoftCap = 64;
+
+    private readonly record struct MltCacheKey(
+        int DocId, int MaxQueryTerms, int MinTermFreq, int MinDocFreq, int MinWordLength);
 
     /// <summary>Corpus-wide statistics computed at construction.</summary>
     public IndexStats Stats => _stats;
@@ -972,7 +981,7 @@ public sealed partial class IndexSearcher : IDisposable
         }
     }
 
-    private TopDocs SearchTermQuery(TermQuery query, int topN)
+    private TopDocs SearchTermQuery(TermQuery query, int topN, ISideCollector? sideCollector = null)
     {
         var qt = query.CachedQualifiedTerm ??= string.Concat(query.Field, "\x00", query.Term);
         int readerCount = _readers.Count;
@@ -1031,6 +1040,7 @@ public sealed partial class IndexSearcher : IDisposable
                     if (boost != 1.0f) score *= boost;
                     score = ApplyFieldBoost(reader, docId, query.Field, score);
                     collector.Collect(docBase + docId, score);
+                    sideCollector?.Collect(docBase + docId, score, reader, docId);
                 }
             }
         }

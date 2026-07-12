@@ -46,6 +46,14 @@ public sealed partial class IndexSearcher
         if (deadlineTicks.HasValue && sw.ElapsedTicks > deadlineTicks.Value)
             return TopDocs.Empty;
 
+        // Fast path: if the sort matches the index sort, iterate postings in doc-ID
+        // order (which is sort-key order) and stop after collecting topN live docs.
+        if (_readers.Count > 0 && query is TermQuery tq
+            && TryGetIndexSort(out var indexSort) && MatchesSort(sort, indexSort))
+        {
+            return SearchWithIndexSortEarlyTermination(tq, topN);
+        }
+
         // We still need every match to pick the top-N by sort key, but topN itself
         // bounds how many we return. _totalDocCount is the upper bound on matches.
         var allDocs = Search(query, _totalDocCount);
@@ -166,5 +174,42 @@ public sealed partial class IndexSearcher
         if (stored.TryGetValue(fieldName, out var sv) && sv.Count > 0)
             return sv[0];
         return string.Empty;
+    }
+
+    private bool TryGetIndexSort(out SortField indexSortField)
+    {
+        indexSortField = default!;
+        if (_readers.Count == 0) return false;
+        var fields = _readers[0].Info.IndexSortFields;
+        if (fields is not { Count: 1 }) return false;
+        var parts = fields[0].Split(':');
+        if (parts.Length != 3) return false;
+        if (!Enum.TryParse<SortFieldType>(parts[0], out var type)) return false;
+        indexSortField = new SortField(type, parts[1], bool.Parse(parts[2]));
+        return true;
+    }
+
+    private static bool MatchesSort(SortField a, SortField b)
+        => a.Type == b.Type && a.FieldName == b.FieldName && a.Descending == b.Descending;
+
+    private TopDocs SearchWithIndexSortEarlyTermination(TermQuery tq, int topN)
+    {
+        var collector = new TopNCollector(topN);
+        var qt = tq.CachedQualifiedTerm ??= string.Concat(tq.Field, "\x00", tq.Term);
+        foreach (var reader in _readers)
+        {
+            if (collector.IsFull) break;
+            using var pe = reader.GetPostingsEnum(qt);
+            if (pe.IsExhausted) continue;
+            int docBase = reader.DocBase;
+            bool hasDeletions = reader.HasDeletions;
+            while (pe.MoveNext() && !collector.IsFull)
+            {
+                int docId = pe.DocId;
+                if (hasDeletions && !reader.IsLive(docId)) continue;
+                collector.Collect(docBase + docId, 1.0f);
+            }
+        }
+        return collector.ToTopDocs();
     }
 }

@@ -1,3 +1,4 @@
+
 using Rowles.LeanCorpus.Codecs.Postings;
 
 namespace Rowles.LeanCorpus.Search.Searcher;
@@ -1141,7 +1142,13 @@ public sealed partial class IndexSearcher
     private void ExecuteFunctionScoreQuery(FunctionScoreQuery query, SegmentReader reader,
         Dictionary<(string Field, string Term), int> globalDFs, ref TopNCollector collector)
     {
-        // Execute inner query into temporary collector.
+        if (query.Inner is TermQuery tq)
+        {
+            ExecuteFunctionScoreForTermQuery(tq, query, reader, globalDFs, ref collector);
+            return;
+        }
+
+        // Non-TermQuery inner: existing path
         var innerCollector = new TopNCollector(Math.Max(reader.MaxDoc, 1));
         ExecuteQuery(query.Inner, reader, globalDFs, ref innerCollector);
         var innerDocs = innerCollector.ToTopDocs();
@@ -1159,6 +1166,46 @@ public sealed partial class IndexSearcher
             {
                 collector.Collect(sd.DocId, sd.Score * query.Boost);
             }
+        }
+    }
+
+    /// <summary>Single-pass FunctionScore execution for TermQuery inners.
+    /// Ingests BM25, combines with the numeric field value, then feeds the top-N collector.</summary>
+    private void ExecuteFunctionScoreForTermQuery(TermQuery tq, FunctionScoreQuery fsq,
+        SegmentReader reader, Dictionary<(string Field, string Term), int> globalDFs,
+        ref TopNCollector collector)
+    {
+        var qt = tq.CachedQualifiedTerm ??= string.Concat(tq.Field, "\x00", tq.Term);
+        using var postings = reader.GetPostingsEnum(qt);
+
+        // Use global DF for correct IDF in multi-segment indexes.
+        int docFreq = globalDFs.GetValueOrDefault((tq.Field, tq.Term), postings.DocFreq);
+        long globalCollectionFreq = _useLmScoring ? GetGlobalCollectionFreq(qt) : 0;
+        float avgDocLength = _stats.GetAvgFieldLength(tq.Field);
+        var (f1, f2, f3) = ComputeTermFactors(docFreq, avgDocLength, globalCollectionFreq, tq.Field);
+        float boost = tq.Boost;
+
+        int docBase = reader.DocBase;
+        bool hasDeletions = reader.HasDeletions;
+        reader.TryGetFieldLengths(tq.Field, out var fieldLengths);
+
+        while (postings.MoveNext())
+        {
+            int docId = postings.DocId;
+            if (hasDeletions && !reader.IsLive(docId)) continue;
+
+            int tf = postings.Freq;
+            int docLength = fieldLengths is not null && (uint)docId < (uint)fieldLengths.Length
+                ? fieldLengths[docId] : 1;
+            float score = ScoreTerm(f1, f2, f3, tf, docLength);
+            if (boost != 1.0f) score *= boost;
+            score = ApplyFieldBoost(reader, docId, tq.Field, score);
+
+            // Modify the field-boosted BM25 score using the numeric doc value.
+            if (reader.TryGetNumericValue(fsq.NumericField, docId, out double fieldValue))
+                score = FunctionScoreQuery.Combine(score, fieldValue, fsq.Mode);
+
+            collector.Collect(docBase + docId, score * fsq.Boost);
         }
     }
 

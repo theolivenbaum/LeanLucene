@@ -1,3 +1,6 @@
+using System.Collections.Concurrent;
+using System.Threading;
+using Rowles.LeanCorpus.Search.Scoring;
 namespace Rowles.LeanCorpus.Search.Searcher;
 
 /// <summary>
@@ -237,55 +240,9 @@ public sealed partial class IndexSearcher
     public (TopDocs Results, IReadOnlyList<FacetResult> Facets) SearchWithFacets(
         Query query, int topN, params string[] facetFields)
     {
-        var results = Search(query, topN);
-        var matches = SearchAllMatches(query, results.TotalHits);
-        var facetsCollector = new FacetsCollector();
-        var seenDocs = new HashSet<int>();
-
-        foreach (var sd in matches.ScoreDocs)
-        {
-            int globalDocId = sd.DocId;
-            if (!seenDocs.Add(globalDocId)) continue;
-            int readerIndex = ResolveReaderIndex(globalDocId);
-            var reader = _readers[readerIndex];
-            int localDocId = globalDocId - _docBases[readerIndex];
-
-            foreach (var facetField in facetFields)
-            {
-                if (reader.TryGetSortedSetDocValues(facetField, localDocId, out var setValues))
-                {
-                    foreach (var value in setValues)
-                    {
-                        if (!string.IsNullOrEmpty(value))
-                            facetsCollector.Collect(facetField, value);
-                    }
-                }
-                else if (reader.TryGetSortedDocValue(facetField, localDocId, out string val) && !string.IsNullOrEmpty(val))
-                {
-                    facetsCollector.Collect(facetField, val);
-                }
-                else if (reader.TryGetBinaryDocValues(facetField, localDocId, out var binaryValues))
-                {
-                    foreach (var value in binaryValues)
-                    {
-                        var decoded = System.Text.Encoding.UTF8.GetString(value);
-                        if (!string.IsNullOrEmpty(decoded))
-                            facetsCollector.Collect(facetField, decoded);
-                    }
-                }
-                else
-                {
-                    var stored = reader.GetStoredFields(localDocId, new HashSet<string> { facetField });
-                    if (stored.TryGetValue(facetField, out var values))
-                    {
-                        foreach (var v in values)
-                            facetsCollector.Collect(facetField, v);
-                    }
-                }
-            }
-        }
-
-        return (results, facetsCollector.GetResults());
+        var sideCollector = new FacetsSideCollector(facetFields);
+        var (results, _) = SearchWithSideCollector(query, topN, sideCollector);
+        return (results, sideCollector.GetResults());
     }
 
     // --- Aggregations ---
@@ -296,16 +253,22 @@ public sealed partial class IndexSearcher
     public (TopDocs Results, AggregationResult[] Aggregations) SearchWithAggregations(
         Query query, int topN, params AggregationRequest[] aggregations)
     {
-        var results = Search(query, topN);
-        if (aggregations.Length == 0 || results.TotalHits == 0)
-            return (results, []);
+        if (aggregations.Length == 0)
+            return (Search(query, topN), []);
 
-        var matches = SearchAllMatches(query, results.TotalHits);
-
-        var aggs = NumericAggregator.Aggregate(
-            matches.ScoreDocs.AsSpan(), aggregations, _readers, _docBases, _totalDocCount);
-
-        return (results, aggs);
+        var sideCollector = new AggregationSideCollector();
+        var (results, side) = SearchWithSideCollector(query, topN, sideCollector);
+        if (side == null)
+        {
+            // Fallback: non-TermQuery — use two-pass
+            if (results.TotalHits == 0) return (results, []);
+            var matches = SearchAllMatches(query, results.TotalHits);
+            return (results, NumericAggregator.Aggregate(
+                matches.ScoreDocs.AsSpan(), aggregations, _readers, _docBases, _totalDocCount));
+        }
+        if (results.TotalHits == 0) return (results, []);
+        return (results, NumericAggregator.Aggregate(
+            sideCollector.DocIds, aggregations, _readers, _docBases, _totalDocCount));
     }
 
     // --- Result Collapsing ---
@@ -316,43 +279,28 @@ public sealed partial class IndexSearcher
     /// </summary>
     public TopDocs SearchWithCollapse(Query query, int topN, CollapseField collapse)
     {
-        var topResults = Search(query, topN);
-        var allResults = SearchAllMatches(query, topResults.TotalHits);
-        if (allResults.TotalHits == 0)
-            return allResults;
-
-        var bestPerGroup = new Dictionary<string, ScoreDoc>(StringComparer.Ordinal);
-        bool isTopScore = collapse.Mode == CollapseMode.TopScore;
-
-        foreach (var scoreDoc in allResults.ScoreDocs)
+        int candidateN = Math.Min(_totalDocCount, topN * 10);
+        var sideCollector = new CollapseSideCollector(collapse, topN);
+        var (results, side) = SearchWithSideCollector(query, candidateN, sideCollector);
+        if (side == null)
         {
-            int readerIdx = ResolveReaderIndex(scoreDoc.DocId);
-            var reader = _readers[readerIdx];
-            int localDocId = scoreDoc.DocId - _docBases[readerIdx];
-
-            string groupValue = ResolveCollapseValue(reader, collapse.FieldName, localDocId);
-
-            if (!bestPerGroup.TryGetValue(groupValue, out var existing))
+            // Fallback: non-TermQuery — use two-pass
+            var topResults = Search(query, topN);
+            var allResults = SearchAllMatches(query, topResults.TotalHits);
+            if (allResults.TotalHits == 0) return allResults;
+            foreach (var sd in allResults.ScoreDocs)
             {
-                bestPerGroup[groupValue] = scoreDoc;
+                int readerIdx = ResolveReaderIndex(sd.DocId);
+                var reader = _readers[readerIdx];
+                int localDocId = sd.DocId - _docBases[readerIdx];
+                sideCollector.Collect(sd.DocId, sd.Score, reader, localDocId);
             }
-            else
-            {
-                bool replace = isTopScore
-                    ? scoreDoc.Score > existing.Score
-                    : scoreDoc.Score < existing.Score;
-                if (replace)
-                    bestPerGroup[groupValue] = scoreDoc;
-            }
+            return sideCollector.ToTopDocs();
         }
-
-        var collapsed = bestPerGroup.Values
-            .OrderByDescending(sd => sd.Score)
-            .Take(topN)
-            .ToArray();
-
-        return new TopDocs(bestPerGroup.Count, collapsed);
+        if (results.TotalHits == 0) return TopDocs.Empty;
+        return sideCollector.ToTopDocs();
     }
+
 
     private static string ResolveCollapseValue(Index.Segment.SegmentReader reader, string fieldName, int localDocId)
     {
@@ -406,6 +354,29 @@ public sealed partial class IndexSearcher
         int localDocId = mlt.DocId - _docBases[readerIdx];
         int segmentCount = _readers.Count;
 
+        // Check the MLT term cache for a previous extraction with the same parameters.
+        var cacheKey = new MltCacheKey(mlt.DocId, p.MaxQueryTerms,
+            p.MinTermFreq, p.MinDocFreq, p.MinWordLength);
+        if (_mltCache != null && _mltCache.TryGetValue(cacheKey, out var cachedTerms))
+        {
+            var cachedBuilder = new BooleanQuery.Builder();
+            for (int i = cachedTerms.Length - 1; i >= 0; i--)
+                cachedBuilder.Add(new TermQuery(cachedTerms[i].Field, cachedTerms[i].Term), Occur.Should);
+            var cachedBoolQ = cachedBuilder.Build();
+            var cachedResults = SearchCore(cachedBoolQ, topN);
+            var cachedScoreDocs = cachedResults.ScoreDocs;
+            int cachedSrcIdx = -1;
+            for (int i = 0; i < cachedScoreDocs.Length; i++)
+                if (cachedScoreDocs[i].DocId == mlt.DocId) { cachedSrcIdx = i; break; }
+            if (cachedSrcIdx < 0) return cachedResults;
+            var cachedFiltered = new ScoreDoc[cachedScoreDocs.Length - 1];
+            if (cachedSrcIdx > 0) Array.Copy(cachedScoreDocs, 0, cachedFiltered, 0, cachedSrcIdx);
+            if (cachedSrcIdx < cachedScoreDocs.Length - 1)
+                Array.Copy(cachedScoreDocs, cachedSrcIdx + 1, cachedFiltered, cachedSrcIdx,
+                    cachedScoreDocs.Length - cachedSrcIdx - 1);
+            return new TopDocs(cachedResults.TotalHits - 1, cachedFiltered, cachedResults.IsPartial);
+        }
+
         // Bounded min-heap (priority = score). We keep the smallest score at the
         // top so we can evict the weakest candidate when the heap exceeds MaxQueryTerms.
         int capacity = p.MaxQueryTerms;
@@ -442,12 +413,12 @@ public sealed partial class IndexSearcher
                     buf[fieldLen] = '\0';
                     entry.Term.AsSpan().CopyTo(buf.AsSpan(fieldLen + 1));
                     ReadOnlySpan<char> qt = buf.AsSpan(0, qtLen);
-
+                    string qtStr = new string(buf, 0, qtLen);
                     // Fast path: MinDocFreq <= 1 with multiple segments — use local
                     // segment's docFreq scaled by segment count as an IDF approximation.
                     if (p.MinDocFreq <= 1 && segmentCount > 1)
                     {
-                        int currDocFreq = reader.GetDocFreqByQualified(qt);
+                        int currDocFreq = reader.GetDocFreqByQualified(qtStr);
                         if (currDocFreq < 1) continue;
                         float estimatedGlobal = (float)currDocFreq * segmentCount;
                         float idf = MathF.Log((float)_totalDocCount / (estimatedGlobal + 1));
@@ -461,7 +432,7 @@ public sealed partial class IndexSearcher
                         int docFreq = 0;
                         foreach (var r in _readers)
                         {
-                            docFreq += r.GetDocFreqByQualified(qt);
+                            docFreq += r.GetDocFreqByQualified(qtStr);
                             if (docFreq > p.MaxDocFreq)
                                 goto nextTerm;
                         }
@@ -490,6 +461,19 @@ public sealed partial class IndexSearcher
         // Ensure we have capacity to hold all entries temporarily when dequeuing.
         while (heap.TryDequeue(out var c, out _))
             candidates.Add(c);
+
+        // Cache the extracted candidate terms for reuse.
+        var cacheTerms = new (string Field, string Term, float Score)[termCount];
+        for (int i = 0; i < termCount; i++)
+            cacheTerms[i] = (candidates[i].Field, candidates[i].Term, candidates[i].Score);
+        _mltCache ??= new ConcurrentDictionary<MltCacheKey, (string, string, float)[]>();
+        _mltCache[cacheKey] = cacheTerms;
+        if (Interlocked.Increment(ref _mltCacheCount) >= MltCacheSoftCap)
+        {
+            Interlocked.Exchange(ref _mltCache,
+                new ConcurrentDictionary<MltCacheKey, (string, string, float)[]>());
+            Interlocked.Exchange(ref _mltCacheCount, 0);
+        }
 
         // Build a BooleanQuery with Should clauses (highest score first).
         var boolQBuilder = new BooleanQuery.Builder();
@@ -547,5 +531,125 @@ public sealed partial class IndexSearcher
             heap.Dequeue();
             heap.Enqueue((score, field, term), score);
         }
+    }
+
+    // --- Side collectors (Phase 1a) ---
+
+    private sealed class AggregationSideCollector : ISideCollector
+    {
+        private readonly List<int> _docIds = new();
+
+        public void Collect(int globalDocId, float score, Index.Segment.SegmentReader reader, int localDocId)
+        {
+            _docIds.Add(globalDocId);
+        }
+
+        public ReadOnlySpan<int> DocIds => System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_docIds);
+    }
+
+    private (TopDocs Results, ISideCollector? Side) SearchWithSideCollector(
+        Query query, int topN, ISideCollector? sideCollector)
+    {
+        if (query is TermQuery tq)
+        {
+            var results = SearchTermQuery(tq, topN, sideCollector);
+            return (results, sideCollector);
+        }
+
+        var topResults = Search(query, topN);
+        return (topResults, null);
+    }
+
+    private sealed class CollapseSideCollector : ISideCollector
+    {
+        private readonly CollapseField _collapse;
+        private readonly int _topN;
+        private readonly Dictionary<string, ScoreDoc> _bestPerGroup = new(StringComparer.Ordinal);
+
+        public CollapseSideCollector(CollapseField collapse, int topN)
+        {
+            _collapse = collapse;
+            _topN = topN;
+        }
+
+        public void Collect(int globalDocId, float score, Index.Segment.SegmentReader reader, int localDocId)
+        {
+            string groupValue = ResolveCollapseValue(reader, _collapse.FieldName, localDocId);
+
+            if (!_bestPerGroup.TryGetValue(groupValue, out var existing))
+            {
+                _bestPerGroup[groupValue] = new ScoreDoc(globalDocId, score);
+            }
+            else
+            {
+                bool replace = _collapse.Mode == CollapseMode.TopScore
+                    ? score > existing.Score
+                    : score < existing.Score;
+                if (replace)
+                    _bestPerGroup[groupValue] = new ScoreDoc(globalDocId, score);
+            }
+        }
+
+        public TopDocs ToTopDocs()
+        {
+            var collapsed = _bestPerGroup.Values
+                .OrderByDescending(sd => sd.Score)
+                .Take(_topN)
+                .ToArray();
+            return new TopDocs(_bestPerGroup.Count, collapsed);
+        }
+    }
+
+    private sealed class FacetsSideCollector : ISideCollector
+    {
+        private readonly string[] _facetFields;
+        private readonly FacetsCollector _facetsCollector = new();
+        private readonly HashSet<int> _seenDocs = [];
+
+        public FacetsSideCollector(string[] facetFields)
+        {
+            _facetFields = facetFields;
+        }
+
+        public void Collect(int globalDocId, float score, Index.Segment.SegmentReader reader, int localDocId)
+        {
+            if (!_seenDocs.Add(globalDocId)) return;
+
+            foreach (var facetField in _facetFields)
+            {
+                if (reader.TryGetSortedSetDocValues(facetField, localDocId, out var setValues))
+                {
+                    foreach (var value in setValues)
+                    {
+                        if (!string.IsNullOrEmpty(value))
+                            _facetsCollector.Collect(facetField, value);
+                    }
+                }
+                else if (reader.TryGetSortedDocValue(facetField, localDocId, out string val) && !string.IsNullOrEmpty(val))
+                {
+                    _facetsCollector.Collect(facetField, val);
+                }
+                else if (reader.TryGetBinaryDocValues(facetField, localDocId, out var binaryValues))
+                {
+                    foreach (var value in binaryValues)
+                    {
+                        var decoded = System.Text.Encoding.UTF8.GetString(value);
+                        if (!string.IsNullOrEmpty(decoded))
+                            _facetsCollector.Collect(facetField, decoded);
+                    }
+                }
+                else
+                {
+                    var stored = reader.GetStoredFields(localDocId, new HashSet<string> { facetField });
+                    if (stored.TryGetValue(facetField, out var values))
+                    {
+                        foreach (var v in values)
+                            _facetsCollector.Collect(facetField, v);
+                    }
+                }
+            }
+        }
+
+        public IReadOnlyList<FacetResult> GetResults() => _facetsCollector.GetResults();
     }
 }

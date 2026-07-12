@@ -128,7 +128,7 @@ public class IndexSortIndexBenchmarks
         var analyser = new StandardAnalyzer(LuceneVersion.LUCENE_48);
         using var writer = new LuceneIndexWriter(
             dir, new LuceneIndexWriterConfig(LuceneVersion.LUCENE_48, analyser));
-        // Pre-sort by price to simulate index-time sort.
+        // Pre-sort by price to simulate index-time sort (Lucene.Net 4.8 has no native index sort).
         var sorted = _documentsWithPrices.OrderBy(d => d.Price).ToArray();
         for (int i = 0; i < sorted.Length; i++)
         {

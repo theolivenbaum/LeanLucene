@@ -135,8 +135,8 @@ public class AggregationBenchmarks
     public int LuceneNet_SearchWithStats()
     {
         var q = new LuceneTermQuery(new LuceneTerm("body", "government"));
-        var hits = _luceneSearcher!.Search(q, TopN);
-        // Manual stats aggregation over DocValues for matching docs.
+        // Aggregate over all matching docs, not just top-N.
+        var allHits = _luceneSearcher!.Search(q, _luceneReader!.MaxDoc);
         var reader = _luceneReader!;
         var leaves = reader.Leaves;
         NumericDocValues? dv = null;
@@ -146,7 +146,7 @@ public class AggregationBenchmarks
         int count = 0;
         if (dv is not null)
         {
-            foreach (var sd in hits.ScoreDocs)
+            foreach (var sd in allHits.ScoreDocs)
             {
                 var price = dv.Get(sd.Doc);
                 sum += price;

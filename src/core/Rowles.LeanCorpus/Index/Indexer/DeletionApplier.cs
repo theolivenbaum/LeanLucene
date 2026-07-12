@@ -44,7 +44,16 @@ internal static class DeletionApplier
         int pendingGen = commitGeneration + 1;
         var dirPath = directory.DirectoryPath;
 
-        foreach (var seg in segments)
+        // Pre-compute doc-ID ranges for segment routing of "id"-field deletes.
+        int docBase = 0;
+        var segmentRanges = new (int Min, int Max, SegmentInfo Seg)[segments.Count];
+        for (int i = 0; i < segments.Count; i++)
+        {
+            segmentRanges[i] = (docBase, docBase + segments[i].DocCount - 1, segments[i]);
+            docBase += segments[i].DocCount;
+        }
+
+        foreach (var (min, max, seg) in segmentRanges)
         {
             var basePath = Path.Combine(dirPath, seg.SegmentId);
             var dicPath = basePath + ".dic";
@@ -67,10 +76,14 @@ internal static class DeletionApplier
             using var posInput = new IndexInput(posPath);
             byte postingsVersion = PostingsEnum.ValidateFileHeader(posInput);
 
+            // Route "id"-field terms to only the segment containing their doc ID.
+            var routedHard = RouteDeletesBySegment(hardDeleteTermsByField, min, max);
+            var routedSoft = RouteDeletesBySegment(softDeleteTermsByField, min, max);
+
             ApplyDeletesByField(dicReader, posInput, postingsVersion, liveDocs,
-                hardDeleteTermsByField, softDelete: false, 0, ref changed);
+                routedHard, softDelete: false, 0, ref changed);
             ApplyDeletesByField(dicReader, posInput, postingsVersion, liveDocs,
-                softDeleteTermsByField, softDelete: true, softDeleteTimestamp, ref changed);
+                routedSoft, softDelete: true, softDeleteTimestamp, ref changed);
 
             if (changed)
             {
@@ -133,5 +146,43 @@ internal static class DeletionApplier
                     liveDocs, ref changed, softDelete, softDeleteTimestamp);
             }
         }
+    }
+
+    /// <summary>Routes delete terms to the segment containing their doc ID.
+    /// Terms in the "id" field that parse as integers are filtered to the matching range;
+    /// all other terms pass through to every segment unchanged.</summary>
+    private static Dictionary<string, HashSet<string>> RouteDeletesBySegment(
+        Dictionary<string, HashSet<string>> termsByField,
+        int minDocId, int maxDocId)
+    {
+        var routed = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        foreach (var (field, terms) in termsByField)
+        {
+            if (field == "id")
+            {
+                var inRange = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var term in terms)
+                {
+                    if (int.TryParse(term, System.Globalization.NumberStyles.None,
+                            System.Globalization.CultureInfo.InvariantCulture, out int docId))
+                    {
+                        if (docId >= minDocId && docId <= maxDocId)
+                            inRange.Add(term);
+                    }
+                    else
+                    {
+                        // Non-numeric id terms cannot be routed; pass through to all segments.
+                        inRange.Add(term);
+                    }
+                }
+                if (inRange.Count > 0)
+                    routed[field] = inRange;
+            }
+            else
+            {
+                routed[field] = terms;
+            }
+        }
+        return routed;
     }
 }

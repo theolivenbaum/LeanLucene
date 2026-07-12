@@ -386,7 +386,7 @@ public sealed partial class IndexSearcher
             else
             {
                 // Should-only: streaming OR merge across all Should PostingsEnums.
-                const int HeapThreshold = 16;
+                const int HeapThreshold = 64;
                 var localShouldEnums = shouldEnums!;
 
                 // WAND path: use block-max scoring to skip non-competitive blocks.
@@ -916,81 +916,39 @@ public sealed partial class IndexSearcher
         while (heapSize > 0)
         {
             int minDoc = heapDocs[0];
+            float score = 0f;
+            bool anyLive = false;
 
-            if (!hasDeletions || reader.IsLive(minDoc))
+            // Extract all enums at minDoc from the heap root.
+            while (heapSize > 0 && heapDocs[0] == minDoc)
             {
-                // Sum scores for all enums at minDoc — scan the full array (shouldCount is small enough)
-                float score = 0f;
-                bool advanced = false;
-                for (int i = 0; i < shouldCount; i++)
+                int idx = PopRoot(heapDocs, heapIdx, ref heapSize);
+
+                if (!hasDeletions || reader.IsLive(minDoc))
                 {
-                    if (se[i].DocId == minDoc)
-                    {
-                        int docLength = sfl[i] is { } fl && (uint)minDoc < (uint)fl.Length ? fl[minDoc] : 1;
-                        score += ApplyFieldBoost(sfb[i], minDoc, ScoreTerm(
-                            shouldFactors[i].Idf, shouldFactors[i].K1BOverAvgDL, shouldFactors[i].CollectionProb,
-                            se[i].Freq, docLength));
-                        // Advance this enum out of the current doc
-                        if (se[i].MoveNext())
-                            advanced = true;
-                    }
+                    anyLive = true;
+                    int docLength = sfl[idx] is { } fl && (uint)minDoc < (uint)fl.Length ? fl[minDoc] : 1;
+                    score += ApplyFieldBoost(sfb[idx], minDoc, ScoreTerm(
+                        shouldFactors[idx].Idf, shouldFactors[idx].K1BOverAvgDL,
+                        shouldFactors[idx].CollectionProb, se[idx].Freq, docLength));
                 }
 
-                // Check MustNot
+                // Advance and re-insert if not exhausted.
+                if (se[idx].MoveNext())
+                    InsertHeap(heapDocs, heapIdx, ref heapSize, se[idx].DocId, idx);
+            }
+
+            // Check MustNot.
+            if (anyLive)
+            {
                 bool excluded = false;
                 for (int i = 0; i < mustNotCount; i++)
                 {
                     if (mustNotEnums![i].Advance(minDoc) && mustNotEnums[i].DocId == minDoc)
-                    {
-                        excluded = true;
-                        break;
-                    }
+                    { excluded = true; break; }
                 }
                 if (!excluded)
                     collector.Collect(docBase + minDoc, score);
-
-                // If any enum advanced, we must be at a new doc — rebuild heap
-                if (advanced)
-                {
-                    heapSize = 0;
-                    for (int i = 0; i < shouldCount; i++)
-                    {
-                        if (!se[i].IsExhausted)
-                        {
-                            heapDocs[heapSize] = se[i].DocId;
-                            heapIdx[heapSize] = i;
-                            heapSize++;
-                        }
-                    }
-                    // Heapify: sift down from the middle
-                    for (int i = (heapSize >> 1) - 1; i >= 0; i--)
-                        SiftDown(heapDocs, heapIdx, i, heapSize);
-                }
-                else
-                {
-                    break; // all enums exhausted
-                }
-            }
-            else
-            {
-                // Deleted doc — advance all enums at minDoc and rebuild
-                for (int i = 0; i < shouldCount; i++)
-                {
-                    if (se[i].DocId == minDoc)
-                        se[i].MoveNext();
-                }
-                heapSize = 0;
-                for (int i = 0; i < shouldCount; i++)
-                {
-                    if (!se[i].IsExhausted)
-                    {
-                        heapDocs[heapSize] = se[i].DocId;
-                        heapIdx[heapSize] = i;
-                        heapSize++;
-                    }
-                }
-                for (int i = (heapSize >> 1) - 1; i >= 0; i--)
-                    SiftDown(heapDocs, heapIdx, i, heapSize);
             }
         }
     }
@@ -1030,5 +988,28 @@ public sealed partial class IndexSearcher
         }
         heapDocs[idx] = doc;
         heapIdx[idx] = enumIdx;
+    }
+
+    /// <summary>Removes and returns the enum index at the heap root, then restores the heap invariant.</summary>
+    private static int PopRoot(Span<int> heapDocs, Span<int> heapIdx, ref int heapSize)
+    {
+        int result = heapIdx[0];
+        heapSize--;
+        if (heapSize > 0)
+        {
+            heapDocs[0] = heapDocs[heapSize];
+            heapIdx[0] = heapIdx[heapSize];
+            SiftDown(heapDocs, heapIdx, 0, heapSize);
+        }
+        return result;
+    }
+
+    /// <summary>Inserts a doc ID and enum index into the heap.</summary>
+    private static void InsertHeap(Span<int> heapDocs, Span<int> heapIdx, ref int heapSize, int docId, int enumIdx)
+    {
+        heapDocs[heapSize] = docId;
+        heapIdx[heapSize] = enumIdx;
+        SiftUp(heapDocs, heapIdx, heapSize);
+        heapSize++;
     }
 }

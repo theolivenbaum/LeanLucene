@@ -102,7 +102,8 @@ public class CollapseAndFacetBenchmarks
     public int LeanCorpus_SearchWithCollapseAndFacets()
     {
         var collapsed = _leanSearcher!.SearchWithCollapse(_leanQuery!, TopN, _leanCollapse!);
-        return collapsed.TotalHits;
+        var (_, facets) = _leanSearcher!.SearchWithFacets(_leanQuery!, TopN, FieldCategory);
+        return collapsed.TotalHits + facets.Count;
     }
 
     [Benchmark]
@@ -114,7 +115,7 @@ public class CollapseAndFacetBenchmarks
     [MethodImpl(MethodImplOptions.NoInlining)]
     public int LuceneNet_SearchWithCollapse()
     {
-        var hits = _luceneSearcher!.Search(_luceneQuery!, TopN);
+        var hits = _luceneSearcher!.Search(_luceneQuery!, _luceneReader!.MaxDoc);
         var seen = new HashSet<string>();
         int collapsedCount = 0;
         foreach (var sd in hits.ScoreDocs)

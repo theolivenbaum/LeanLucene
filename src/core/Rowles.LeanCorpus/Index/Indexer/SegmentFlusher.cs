@@ -629,6 +629,13 @@ internal static class SegmentFlusher
             }
         }
 
+
+        // Fast path: single numeric ascending sort — use keyed sort to avoid delegate per compare.
+        if (fieldCount == 1 && sortTypes[0] == SortFieldType.Numeric && !descFlags[0])
+        {
+            Array.Sort(numericKeys[0], perm);
+            return perm;
+        }
         Array.Sort(perm, (a, b) =>
         {
             for (int f = 0; f < fieldCount; f++)
