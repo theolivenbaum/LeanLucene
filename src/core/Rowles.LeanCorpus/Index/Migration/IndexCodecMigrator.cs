@@ -819,56 +819,59 @@ public static class IndexCodecMigrator
         try
         {
             // Open input and output together so lazy enumeration can stream.
-            using var dictionary = TermDictionaryReader.Open(sourceBase + ".dic");
-            using var input = new IndexInput(sourceBase + ".pos");
-            _ = PostingsEnum.ValidateFileHeader(input);
-
-            using var bodyOutput = new IndexOutput(temporaryPosPath, durable: true);
-            using var scope = CodecFileHeader.BeginStreamingWrite(bodyOutput, CodecConstants.PostingsVersion);
-            using var blockWriter = new BlockPostingsWriter(bodyOutput);
-
-            foreach (var (term, offset) in dictionary.EnumerateTerms())
+            using (var dictionary = TermDictionaryReader.Open(sourceBase + ".dic"))
+            using (var input = new IndexInput(sourceBase + ".pos"))
             {
-                var postings = ReadPostingRows(input, offset);
-                termList.Add(term);
+                _ = PostingsEnum.ValidateFileHeader(input);
 
-                bool hasFreqs = postings.Any(static p => p.Frequency != 1);
-                bool hasPositions = postings.Any(static p => p.Positions.Length > 0);
-                bool hasPayloads = postings.Any(static p => p.Payloads.Any(static pl => pl.Length > 0));
+                using var bodyOutput = new IndexOutput(temporaryPosPath, durable: true);
+                using var scope = CodecFileHeader.BeginStreamingWrite(bodyOutput, CodecConstants.PostingsVersion);
+                using var blockWriter = new BlockPostingsWriter(bodyOutput);
 
-                string fieldName = QualifiedTermHelpers.GetFieldName(term).ToString();
-                normsData.Norms.TryGetValue(fieldName, out var fieldNormBytes);
-
-                long headerPos = bodyOutput.Position;
-                postingsOffsets[term] = headerPos;
-                bodyOutput.WriteInt32(0);     // docFreq placeholder
-                bodyOutput.WriteInt64(0L);    // skipOffset placeholder
-                bodyOutput.WriteBoolean(hasFreqs);
-                bodyOutput.WriteBoolean(hasPositions);
-                bodyOutput.WriteBoolean(hasPayloads);
-
-                blockWriter.StartTerm();
-                foreach (var posting in postings)
+                foreach (var (term, offset) in dictionary.EnumerateTerms())
                 {
-                    int docId = posting.DocId;
-                    byte norm = fieldNormBytes is not null && (uint)docId < (uint)fieldNormBytes.Length
-                        ? fieldNormBytes[docId]
-                        : (byte)0;
-                    blockWriter.AddPosting(docId, hasFreqs ? posting.Frequency : 1, norm);
+                    var postings = ReadPostingRows(input, offset);
+                    termList.Add(term);
+
+                    bool hasFreqs = postings.Any(static p => p.Frequency != 1);
+                    bool hasPositions = postings.Any(static p => p.Positions.Length > 0);
+                    bool hasPayloads = postings.Any(static p => p.Payloads.Any(static pl => pl.Length > 0));
+
+                    string fieldName = QualifiedTermHelpers.GetFieldName(term).ToString();
+                    normsData.Norms.TryGetValue(fieldName, out var fieldNormBytes);
+
+                    long headerPos = bodyOutput.Position;
+                    postingsOffsets[term] = headerPos;
+                    bodyOutput.WriteInt32(0);     // docFreq placeholder
+                    bodyOutput.WriteInt64(0L);    // skipOffset placeholder
+                    bodyOutput.WriteBoolean(hasFreqs);
+                    bodyOutput.WriteBoolean(hasPositions);
+                    bodyOutput.WriteBoolean(hasPayloads);
+
+                    blockWriter.StartTerm();
+                    foreach (var posting in postings)
+                    {
+                        int docId = posting.DocId;
+                        byte norm = fieldNormBytes is not null && (uint)docId < (uint)fieldNormBytes.Length
+                            ? fieldNormBytes[docId]
+                            : (byte)0;
+                        blockWriter.AddPosting(docId, hasFreqs ? posting.Frequency : 1, norm);
+                    }
+                    var metadata = blockWriter.FinishTerm();
+
+                    if (hasPositions)
+                        WritePositionRows(bodyOutput, postings, hasPayloads);
+
+                    // Patch term header in place; trailer has no VarInt64, offsets are file-absolute.
+                    long endPos = bodyOutput.Position;
+                    bodyOutput.Seek(headerPos);
+                    bodyOutput.WriteInt32(metadata.DocFreq);
+                    bodyOutput.WriteInt64(metadata.SkipOffset);
+                    bodyOutput.Seek(endPos);
                 }
-                var metadata = blockWriter.FinishTerm();
-
-                if (hasPositions)
-                    WritePositionRows(bodyOutput, postings, hasPayloads);
-
-                // Patch term header in place; trailer has no VarInt64, offsets are file-absolute.
-                long endPos = bodyOutput.Position;
-                bodyOutput.Seek(headerPos);
-                bodyOutput.WriteInt32(metadata.DocFreq);
-                bodyOutput.WriteInt64(metadata.SkipOffset);
-                bodyOutput.Seek(endPos);
+                // scope.Dispose() writes 8-byte trailer here.
             }
-            // scope.Dispose() writes 8-byte trailer here.
+            // dictionary and input are now disposed, MMF handles released.
 
             // Terms are in FST sorted byte order; TermDictionaryWriter re-encodes + re-sorts.
             TermDictionaryWriter.Write(temporaryDicPath, termList, postingsOffsets);
