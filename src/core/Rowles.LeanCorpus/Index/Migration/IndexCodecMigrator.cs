@@ -871,7 +871,11 @@ public static class IndexCodecMigrator
                 }
                 // scope.Dispose() writes 8-byte trailer here.
             }
-            // dictionary and input are now disposed, MMF handles released.
+            // Force finalizer cleanup of MMF handles before we move files over
+            // the same paths. Windows can stall releasing memory-mapped file handles
+            // even after Dispose, especially under CI with AV scanners.
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
 
             // Terms are in FST sorted byte order; TermDictionaryWriter re-encodes + re-sorts.
             TermDictionaryWriter.Write(temporaryDicPath, termList, postingsOffsets);
