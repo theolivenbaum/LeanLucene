@@ -1,5 +1,6 @@
 using Rowles.LeanCorpus.Codecs.CodecKit;
 using System.IO;
+using System.Threading;
 using System.Buffers;
 using Rowles.LeanCorpus.Codecs.CodecKit.Formats;
 using System.Diagnostics;
@@ -772,7 +773,7 @@ public static class IndexCodecMigrator
         {
             // No format change; copy to target if the segment ID was renamed.
             if (!string.Equals(sourcePath, targetPath, StringComparison.Ordinal))
-                File.Copy(sourcePath, targetPath, overwrite: true);
+                RetryFileOperation(() => File.Copy(sourcePath, targetPath, overwrite: true));
             return;
         }
 
@@ -789,7 +790,7 @@ public static class IndexCodecMigrator
             var sorted = new List<string>(offsets.Keys);
             sorted.Sort(StringComparer.Ordinal);
             TermDictionaryWriter.Write(temporaryPath, sorted, offsets, durable: true);
-            File.Move(temporaryPath, targetPath, overwrite: true);
+            RetryFileOperation(() => File.Move(temporaryPath, targetPath, overwrite: true));
         }
         catch { TryDeleteTemporaryFile(temporaryPath); throw; }
     }
@@ -1172,6 +1173,30 @@ public static class IndexCodecMigrator
         }
     }
 
+
+    /// <summary>
+    /// Executes <paramref name="operation"/> with retry on <see cref="IOException"/>,
+    /// matching the <see cref="Store.FileOpenRetry"/> backoff pattern so that callers
+    /// are resilient to transient Windows file-locking after memory-mapped reads.
+    /// </summary>
+    private static void RetryFileOperation(Action operation)
+    {
+        const int maxRetries = 5;
+        const int delayMs = 10;
+        int retries = maxRetries;
+        while (true)
+        {
+            try
+            {
+                operation();
+                return;
+            }
+            catch (IOException) when (retries-- > 0)
+            {
+                Thread.Sleep(delayMs);
+            }
+        }
+    }
     private static void TryDeleteTemporaryFile(string path)
     {
         try
