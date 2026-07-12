@@ -638,6 +638,18 @@ public readonly struct LeanExpressionVisitor
     /// </summary>
     private static object EvaluateMemberExpression(Expression memberExpr)
     {
+        var member = (MemberExpression)memberExpr;
+
+        // Only evaluate fields on constant expressions (closure-captured locals,
+        // this fields). Properties and chained member access would execute
+        // arbitrary code at translation time.
+        if (member.Expression is not ConstantExpression || member.Member is not System.Reflection.FieldInfo)
+        {
+            throw new NotSupportedException(
+                "Only captured local variables and simple fields are supported as values in query predicates. " +
+                "Extract the value to a local variable before the query, e.g. 'var val = obj.Prop; ... .Where(d => d.Field == val)'.");
+        }
+
         var accessor = Expression.Lambda<Func<object?>>(
             Expression.Convert(memberExpr, typeof(object))
         ).Compile(preferInterpretation: true);

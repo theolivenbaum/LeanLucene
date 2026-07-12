@@ -473,6 +473,32 @@ public sealed class LeanExpressionVisitorTests
         Assert.Equal(2, bq.Clauses.Count);
     }
 
+    [Fact(DisplayName = "Translate: static property access throws NotSupportedException")]
+    public void Translate_StaticProperty_ThrowsNotSupported()
+    {
+        var ex = Assert.Throws<NotSupportedException>(() =>
+            Translate(d => d.Year == Environment.ProcessorCount));
+        Assert.Contains("captured local", ex.Message);
+    }
+
+    [Fact(DisplayName = "Translate: captured object property access throws NotSupportedException")]
+    public void Translate_CapturedObjectProperty_ThrowsNotSupported()
+    {
+        var obj = new Captured { Value = 42 };
+        var ex = Assert.Throws<NotSupportedException>(() =>
+            Translate(d => d.Year == obj.Value));
+        Assert.Contains("captured local", ex.Message);
+    }
+
+    [Fact(DisplayName = "Translate: chained property access on captured object throws NotSupportedException")]
+    public void Translate_ChainedPropertyOnCaptured_ThrowsNotSupported()
+    {
+        var wrapper = new Captured { Inner = new Captured { Value = 99 } };
+        var ex = Assert.Throws<NotSupportedException>(() =>
+            Translate(d => d.Year == wrapper.Inner!.Value));
+        Assert.Contains("captured local", ex.Message);
+    }
+
     [Fact(DisplayName = "Translate: unsupported method throws NotSupportedException")]
     public void Translate_UnsupportedMethod_ThrowsNotSupported()
     {
@@ -513,5 +539,11 @@ public sealed class LeanExpressionVisitorTests
             IsIndexed = isIndexed;
             IsRequired = isRequired;
         }
+    }
+
+    private sealed class Captured
+    {
+        public int Value { get; set; }
+        public Captured? Inner { get; set; }
     }
 }
