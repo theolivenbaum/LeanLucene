@@ -12,6 +12,16 @@ Seven built-in field types. All implement `IField`.
 | `StoredField` | values-only | yes | String, int, long, double — retrieval only |
 | `GeoPointField` | yes (two numeric) | yes | Latitude/longitude — geo queries |
 
+
+## StoreDocValues
+
+Every field type accepts a `StoreDocValues` flag (default `true`). Set to `false` to skip DocValues population, cutting buffer overhead and flush I/O for fields that only need the inverted index:
+
+```csharp
+doc.Add(new TextField("body", "Full text goes here") { StoreDocValues = false });
+```
+Turn it off for fields you never sort, facet, collapse, or aggregate on. The inverted index still serves queries; only column-store operations are affected.
+
 ## Index a document
 
 ```csharp

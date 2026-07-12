@@ -19,13 +19,13 @@ var analyser = new Analyser(
 ## Filters by role
 
 | Role | Filters |
-|---|---|
-| Normalisation | `LowercaseFilter`, `AccentFoldingFilter`, `DecimalDigitFilter`, `ReverseStringFilter`, `WordDelimiterFilter`, `TruncateTokenFilter` |
+| Normalisation | `LowercaseFilter`, `AccentFoldingFilter`, `ClassicFilter`, `DecimalDigitFilter`, `HyphenatedWordsFilter`, `PatternReplaceFilter`, `ReverseStringFilter`, `WordDelimiterFilter`, `TruncateTokenFilter` |
 | Selection | `StopWordFilter`, `LengthFilter`, `UniqueTokenFilter`, `KeepWordFilter`, `TypeTokenFilter`, `LimitTokenCountFilter` |
 | Stemming | `PorterStemmerFilter`, `HunspellStemFilter`, `KeywordMarkerFilter` |
-| Synonyms | `SynonymGraphFilter`, `FlattenGraphFilter`, `ShingleFilter` |
+| Synonyms | `SynonymGraphFilter`, `FlattenGraphFilter`, `CommonGramsFilter`, `ShingleFilter` |
 | Language | `ElisionFilter` |
 | Phonetics | `MetaphoneFilter`, `PhoneticAlternatesFilter` |
+| Caching | `CachingTokenFilter` |
 
 `KeywordMarkerFilter` marks tokens that compatible stemmers should skip.
 

@@ -14,6 +14,7 @@ Tokenisers split raw text into token boundaries. Choose based on the input struc
 | `IcuTokeniser` | Unicode-aware segmentation. Thai opt-in via constructor |
 | `Uax29UrlEmailTokeniser` | Preserves URLs, emails, hashtags, and mentions as single tokens. Thai opt-in |
 | `ThaiTokeniser` | Thai segmentation with dictionary. Needs a lexicon loaded from file or stream |
+| `PatternTokeniser` | Regex-based tokenisation. Accepts a pattern string and optional group index |
 | `MediaWikiTokeniser` | MediaWiki markup: headings, links, categories, citations |
 
 ## Picking one

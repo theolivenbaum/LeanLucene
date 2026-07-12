@@ -66,6 +66,29 @@ var query = new VectorQuery("embedding", queryVector, topK: 10, filter: filter);
 
 If no HNSW graph exists, falls back to a flat SIMD scan. Vector readers are opened lazily, so non-vector searches don't pay the mmap cost.
 
+## Quantisation
+
+BBQ (binary quantisation) compresses float32 vectors 32× into single-bit buckets. The HNSW graph is built over the compressed space, and the shortlist is reranked with exact cosine distance:
+
+```csharp
+var config = new IndexWriterConfig
+{
+    BuildHnswOnFlush = true,
+    VectorQuantisation = new BBQVectorQuantisationConfig()
+};
+```
+
+Int8 scalar quantisation is also available, compressing 4× with a per-vector min/max scale:
+
+```csharp
+var config = new IndexWriterConfig
+{
+    VectorQuantisation = new Int8QuantisationConfig()
+};
+```
+
+Quantised vectors reduce storage and HNSW graph memory at the cost of a small recall penalty. Use BBQ for disk-bound workloads; Int8 when precision matters more.
+
 ## See also
 
 - [Filtered vector search](08-filtered-vector-search.md)

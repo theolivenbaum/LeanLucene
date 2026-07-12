@@ -1,5 +1,3 @@
-
-
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
@@ -10,8 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- v2 stored-fields format that streams compressed blocks directly to disk instead of buffering the entire segment body, eliminating out-of-memory risk on large segments (b69a4c0f)
-- StoredFieldsReader.DocCount and StoredFieldsReader.Compression properties exposing metadata from the stored-fields file headers (b69a4c0f)
+- `Search(Query, int, SortField)` detects index-sort match and returns early after collecting topN live docs from postings iteration without scoring (dfecfdd58)
+- `FileOpenRetry.Move`, `.Copy`, `.Delete`, `.DeleteDirectory`, `.CreateDirectory`, `.ReadLines`, `.FileExists`, `.EnumerateFiles`, `.GetFiles` with 5×10ms retry on `IOException`/`UnauthorizedAccessException` to absorb transient Windows file locks from Defender and mmap handle release (839078bcb)
+- `ScheduleBackgroundMerge` now logs merge exceptions via `TraceSwallowed("background-merge")` for diagnosability (d50b1f881)
+- CodecKit trailer format (`[version][body][bodyLen:int64]`) enabling zero-buffer streaming writes across all codec types (b69a4c0f, 3d3c1524c)
+- `StoredFieldsReader.DocCount` and `StoredFieldsReader.Compression` properties exposing metadata from the stored-fields file headers (b69a4c0f)
 - `IndexSearcher.Search(Query, SearchOptions)` and `SearchAsync(Query, SearchOptions, CancellationToken)` overloads that honour `StreamResults` for per-segment streaming without a global top-N heap (5573b0c1)
 - `IndexOpenGuard` integration tests (877682f5)
 - Added `FieldType.Int64` and `Int64Field`, and the pipeline infrastructure (3dfb10a1)
@@ -30,6 +31,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `SearchWithAggregations`, `SearchWithCollapse`, and `SearchWithFacets` now use a single-pass postings iteration with side-collectors instead of executing two full searches (dfecfdd58)
+- `ExecuteFunctionScoreQuery` uses inline scoring for TermQuery inners, eliminating the intermediate `TopNCollector(reader.MaxDoc)` allocation (dfecfdd58)
+- `ExecuteShouldOnlyHeap` uses proper multi-way heap merge instead of full heap rebuild per iteration, and the heap threshold is raised from 16 to 64 (dfecfdd58)
+- `ExecuteMoreLikeThis` caches extracted candidate terms with ConcurrentDictionary generation-swap eviction and uses string-based qualified term lookups for FST cache hits (dfecfdd58)
+- `ApplyPendingDeletions` routes numeric id-field delete terms to only the segment containing the target document, reducing FST lookups from O(K*S) to O(K); non-numeric id terms pass through to all segments unchanged (dfecfdd58)
+- `ComputeSortPermutation` uses `Array.Sort(keys, perm)` for single-numeric-field sorts, avoiding 133K delegate invocations per 10K-doc flush (dfecfdd58)
+- LuceneNet `AggregationBenchmarks` and `CollapseAndFacetBenchmarks` now aggregate over all matching documents instead of only top-25, matching LeanCorpus semantics (dfecfdd58)
+- `LeanCorpus_SearchWithCollapseAndFacets` benchmark now exercises both the collapse and facets search paths (dfecfdd58)
+- All `File.*/Directory.*/FileStream` calls across 15 files now route through FileOpenRetry wrappers, including IndexCodecMigrator, IndexRecovery, CommitManager, IndexWriter, deletion policies, SegmentMerger, IndexStats, IndexBackup, IndexMigrationRecovery, StoredFieldsStreamWriter, ParentBitSet, RoaringBitmap, SlowQueryLog, KStemLexicon, and ThaiTokeniser (839078bcb)
+- IndexAtomicFileWriter.Write uses FileOpenRetry.Move and FileOpenRetry.Delete instead of its own inline retry loop (839078bcb)
+- During file teardown and cleanup bare exceptions are now routed through `TraceSwallowed` so suppressed IO and permission errors are observable in diagnostic tooling (7f373517e)
+- Replaced exact float equality checks on Boost with `Math.Abs` epsilon comparison (`1e-6f`) in four locations flagged by SonarQube (190de56de)
 - Postings (`.pos`) now uses a v2 streaming format without a body-length prefix, eliminating full-body buffering during merge, flush and migration (285c54f72)
 - Test cleanup across 33 files now uses `TestDirectoryFixture.TryDeleteDirectory` with a GC+retry loop instead of silently swallowing `Directory.Delete` failures (6421de1b)
 - Highlighter.ExtractTerms now collects terms from WildcardQuery, FuzzyQuery, TermInSetQuery, MultiPhraseQuery, CombinedFieldsQuery, and wrapper queries (ConstantScoreQuery, DisjunctionMaxQuery, FunctionScoreQuery), so highlighting works across more query families (503be7c2)
@@ -74,7 +87,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
--  `HnswReader` now validates header and per-node counts against `nodeCount` to prevent OOM/corrupt reads from malformed `.hnsw` files (f86b7c37f)
+- `FileOpenRetry.Open` now catches `IOException` (the exception Windows throws for file-locking) in addition to `UnauthorizedAccessException`, so the retry backoff actually fires instead of propagating immediately to callers (c892a4362)
+- `RewriteTermDictionary` no longer holds an MMF-backed `IndexInput` open on the source `.dic` file after the version probe, preventing `IOException` ("file in use by another process") when the subsequent `File.Copy` or `File.Move` runs on Windows (e064ac2f4)
+- `QueryParser` now supports backslash escaping (`\:`, `\\`, `\+`, etc.) in term tokens so values containing colons such as URLs, timestamps, and file paths are not prematurely split at `:` (2f3318d7d)
+- `EvaluateMemberExpression` now rejects non-field member access (properties, static members, chained access) with a clear `NotSupportedException` instead of silently compiling and invoking arbitrary code such as `DateTime.Now` or `someObj.ExpensiveProperty` during query translation (2961ef826)
+- `RewriteTermDictionary` now correctly rewrites `.dic` files from older CodecKit versions by re-encoding the FST at the current envelope version instead of throwing `InvalidDataException` (904be6020)
+- `IndexWriter.Dispose` no longer throws `ObjectDisposedException` from `SemaphoreSlim.Release` when the 30-second drain timeout expires while in-flight threads are still flushing segments (81ab65fa5)
+- Concurrently indexed segments (via `AddDocumentLockFree`/`AddDocumentsConcurrent`) now write `.tvd`/`.tvx` term vectors, apply char filters, and conditionally drop token offsets when `StoreTermVectors` is false, matching the sequential indexing output (bcfd778d6)
+- Async indexing methods no longer block thread-pool threads on `_writeLock` after await, preventing pool starvation under concurrent `async` writes (42c2e01fb)
+- `AcquireBackpressureSlotAsync` swallowed `ObjectDisposedException` during shutdown and returned without a backpressure slot; removed and replaced by channel-based serialisation (42c2e01fb)
+- `RewriteNorms` no longer buffers every field's boost arrays in a dictionary during migration, preventing OOM on indexes with many boosted fields (9f989508a)
+- `RewriteNumericDocValues` no longer buffers every field's presence sets in a dictionary during migration, preventing OOM on indexes with many sparse numeric fields (9f989508a)
+- Background segment merge failures no longer go unobserved; the writer is marked as failed and future operations throw `InvalidOperationException` with a clear message instead of silently accumulating segments (d50b1f881)
+- `PublishStagingFiles` no longer skips existing files or leaves source files absent from staging, preventing mixed-format indexes after codec migration (ba3fb8dc1)
+- LZ4, Snappy, and Zstandard compression codecs now survive Native AOT trimming with `DynamicDependency` annotations and AOT smoke coverage for explicit `Register()` calls Bumped all three: 1.0.0 to 1.0.1 (6baef8281)
+- Floating-point inequality comparisons with exact values in boost checks (3d3c1524c)
+- `StoredFieldsReader` no longer allocates unbounded byte arrays from file-declared lengths, enabling compression-bomb denial-of-service (7efc69fc8)
+- `SearcherManager` refresh loop caught and suppressed fatal exceptions, causing thrashing on `OutOfMemoryException` (d1ebf824b)
+- `RrfQuery`, `MoreLikeThisQuery`, and `BlockJoinQuery` no longer return zero results when searched via the `CancellationToken` or `SearchOptions` overloads (2011ed19b)
+- `ForceMerge` and `Compact` could silently drop segments when merging segments containing only dead documents (adfce1628)
+- Resolved all xUnit2020 and xUnit1051 analyser warnings in the AOT smoke test project (56a1db09a)
+- `SortedDocValuesReader` now validates unpacked ordinals against the ord-table size and rejects `bitsPerOrd > 63,` preventing crashes on corrupt or empty sorted `DocValues` fields (2ae3dd75b)
+- `BKDReader` now validates node markers, leaf counts against remaining file bytes, and caps recursion depth at 64 to prevent crashes from corrupt `.bkd` files (6811f49fe)
+- `BlockPostingsEnum` now validates `skipCount`, `docNumBits`, `freqNumBits`, and `tailCount` before consuming them, preventing crashes from corrupt `.pos` files (5b891d42b)
+- Validate position/payload VarInt reads, payload length advances, and payload span bounds against file length in PostingsEnum to prevent access violations from corrupt postings data (ee12b524d)
+- Verify `FstBuilder` node content equality on hash hit to prevent silent suffix corruption from 64-bit FNV-1a collisions (25ba8d2fb)
+- `HnswReader` now validates header and per-node counts against `nodeCount` to prevent OOM/corrupt reads from malformed `.hnsw` files (f86b7c37f)
 - `FstReader` arc decoder now validates buffer bounds on corrupt FST data, and `Count()` correctly excludes soft-deleted documents (34e903cd0)
 - `MergeThrottleSegments` now blocks `AddDocument` until a background merge completes rather than performing a pointless extra flush (1b7a7b3a8)
 - Range and Int64 range queries no longer allocate a `HashSet<string>` per document when falling back to stored fields (234ab977)

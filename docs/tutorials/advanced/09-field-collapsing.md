@@ -19,9 +19,7 @@ The collapse field must be backed by `SortedDocValues`. `StringField` and `TextF
 | `TopScore` (default) | Highest-scoring document per group |
 | `MinScore` | Lowest-scoring document per group |
 
-## How it works
-
-Collects all matching documents via `SearchAllMatches`, walks them in score order, reads the collapse field value, and keeps the best per value. The final top-N is drawn from the survivors, still ordered by score.
+Collects matching documents during the search pass with a side-collector, reads the collapse field value per match, and keeps the best-scoring document per unique value. The final top-N is drawn from the survivors, still ordered by score.
 
 ## Collapsing vs faceting
 

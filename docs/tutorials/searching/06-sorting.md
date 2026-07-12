@@ -32,6 +32,10 @@ var config = new IndexWriterConfig
 
 `SortFieldType.Score` is not allowed for `IndexSort`.
 
+## Early termination
+
+When the search sort matches the index sort (same field, same direction), the searcher walks postings in document-ID order without scoring. Document IDs are already in sort-key order, so the first topN live documents are the correct topN results. No score computation, no key extraction, no heap selection.
+
 ## See also
 
 - <xref:Rowles.LeanCorpus.Search.Scoring.SortField>
