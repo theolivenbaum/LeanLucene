@@ -506,6 +506,10 @@ public sealed class IndexCodecMigratorTests : IClassFixture<TestDirectoryFixture
     public void Migrate_Rewrite_BinaryDocValues()
         => AssertRewriteRestoresVersion("migrate_rewrite_dvb", "*.dvb", CodecConstants.BinaryDocValuesVersion);
 
+    [Fact(DisplayName = "Migrate: Rewrite norms")]
+    public void Migrate_Rewrite_Norms()
+        => AssertRewriteRestoresVersion("migrate_rewrite_nrm", "*.nrm", CodecConstants.NormsVersion);
+
     // ═══════════════════════════════════════════════════
     //  Term dictionary and stored fields
     // ═══════════════════════════════════════════════════

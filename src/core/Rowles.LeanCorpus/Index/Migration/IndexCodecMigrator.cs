@@ -756,16 +756,18 @@ public static class IndexCodecMigrator
     private static void RewriteTermDictionary(string sourcePath, string targetPath)
     {
         byte version;
-        using var fs = FileOpenRetry.OpenReadDelete(sourcePath);
-        using var br = new BinaryReader(fs);
-        try
         {
-            version = CodecFileHeader.ReadVersion(br, CodecFormats.TermDictionary);
-        }
-        catch (Exception ex) when (ex is InvalidDataException)
-        {
-            throw new InvalidDataException(
-                $"Invalid term dictionary file '{sourcePath}': {ex.Message}", ex);
+            using var fs = FileOpenRetry.OpenReadDelete(sourcePath);
+            using var br = new BinaryReader(fs);
+            try
+            {
+                version = CodecFileHeader.ReadVersion(br, CodecFormats.TermDictionary);
+            }
+            catch (Exception ex) when (ex is InvalidDataException)
+            {
+                throw new InvalidDataException(
+                    $"Invalid term dictionary file '{sourcePath}': {ex.Message}", ex);
+            }
         }
 
         if (version == CodecConstants.TermDictionaryVersion)
@@ -949,14 +951,16 @@ public static class IndexCodecMigrator
 
     private static void RewriteNorms(string sourcePath, string targetPath)
     {
-        // First pass: count fields, find max docCount.
-        int fieldCount = 0;
+        // Single pass: enumerate once into memory, so the MMF handle releases
+        // before the Move. Two-pass enumeration opens IndexInput twice on the
+        // same file, causing LLIDX040 on Windows.
+        var allFields = NormsReader.EnumerateFields(sourcePath).ToList();
+        if (allFields.Count == 0)
+            return;
+
         int maxDocCount = 0;
-        foreach (var (_, normBytes, _) in NormsReader.EnumerateFields(sourcePath))
-        {
-            fieldCount++;
+        foreach (var (_, normBytes, _) in allFields)
             if (normBytes.Length > maxDocCount) maxDocCount = normBytes.Length;
-        }
 
         var temporaryPath = targetPath + ".tmp";
         var fieldBuf = new ArrayBufferWriter<byte>(4096);
@@ -964,8 +968,8 @@ public static class IndexCodecMigrator
         {
             using var output = new IndexOutput(temporaryPath, durable: true);
             using var scope = CodecFileHeader.BeginStreamingWrite(output, CodecConstants.NormsVersion);
-            scope.Output.WriteInt32(fieldCount);
-            foreach (var (fieldName, normBytes, fieldBoosts) in NormsReader.EnumerateFields(sourcePath))
+            scope.Output.WriteInt32(allFields.Count);
+            foreach (var (fieldName, normBytes, fieldBoosts) in allFields)
             {
                 var norms = new float[normBytes.Length];
                 for (int i = 0; i < normBytes.Length; i++)

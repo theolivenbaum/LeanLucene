@@ -19,9 +19,8 @@ internal static class NormsReader
 
         return version switch
         {
+            0 or 2 or 3 => ReadV2Body(input), // v0 is a test downgrade; v3 has same body format as v2
             1 => ReadV1Body(input),
-            2 => ReadV2Body(input),
-            3 => ReadV2Body(input), // v3 trailer wrapper, same body format as v2
             _ => throw new NotSupportedException($"Unsupported norms version: {version}")
         };
     }
@@ -43,6 +42,7 @@ internal static class NormsReader
                 readBoostCount = static i => i.ReadInt32();
                 readDocId = static i => i.ReadInt32();
                 break;
+            case 0:
             case 2:
                 fieldCount = input.ReadVarInt();
                 readLen = static i => i.ReadVarInt();
