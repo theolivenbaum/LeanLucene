@@ -11,6 +11,7 @@
 | ADR007 | 2026-06-18 | Accepted | [Background merges must never block Commit](ADR007-merge-must-not-block-commit.md) |
 | ADR008 | 2026-07-09 | Deprecated | [Streaming codec formats bypass the CodecKit envelope](ADR008-stored-fields-v2-streaming.md) |
 | ADR009 | 2026-07-11 | Accepted | [CodecKit trailer format replaces ADR008 custom headers](ADR009-codeckit-trailer-streaming.md) |
+| ADR010 | 2026-07-14 | Accepted | [IndexOutput must be disposed before File.Move on Windows](ADR010-close-before-rename-migration.md) |
 ## Template
 
 New ADRs should follow [the template](_template.md) using the next available `ADRnnn` prefix.
