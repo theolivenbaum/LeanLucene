@@ -4,7 +4,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [2.0.0] - Work In Progress
+## [2.0.0] - 2026-07-14
 
 ### Added
 
@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Read, move, delete, copy, and directory-delete operations now use platform-aware transient retry with 5×200ms on Windows and zero overhead on Linux (e633ca4b)
 - `FunctionScoreQuery` with a `TermQuery` inner now takes a dedicated `SearchCore` fast path, reusing `ThreadStatic` buffers and eliminating the generic-path `PrecomputeGlobalDocFreqs` and `Parallel.ForEach` overhead (a04036a42)
 - `SearchWithAggregations`, `SearchWithCollapse`, and `SearchWithFacets` now use a single-pass postings iteration with side-collectors instead of executing two full searches (dfecfdd58)
 - `ExecuteFunctionScoreQuery` uses inline scoring for TermQuery inners, eliminating the intermediate `TopNCollector(reader.MaxDoc)` allocation (dfecfdd58)
@@ -84,7 +85,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- SearchWithFacets now falls back to a two-pass search for non-TermQuery queries, fixing facet collection for MatchAllDocsQuery and other complex query types (9d653096b)
+- `FileOpenRetry.Open` no longer retries write/create operations, eliminating the 5s-per-thread stall that caused `WriteLock_ConcurrentWriterConstruction_AllowsExactlyOneWriter` to time out on Windows (e633ca4b)
+- `TestDirectoryFixture` cleanup uses `FileOpenRetry.DeleteDirectory` so transient AV scan locks on leftover test files do not cascade into CI errors (e633ca4b)
+- All `Rewrite*` methods in `IndexCodecMigrator` now enumerate source files once into memory instead of opening `IndexInput` twice, fixing `LLIDX040` file-locking failures on Windows CI (69af2fdf7)
+- `RewritePostings` now releases memory-mapped file handles and forces finalizer cleanup before overwriting source files, fixing `LLIDX040` failures in IndexCodecMigrator tests on Windows CI (5d7e9b58b, 70343f724)
+- `SearchWithFacets` now falls back to a two-pass search for non-`TermQuery` queries, fixing facet collection for `MatchAllDocsQuery` and other complex query types (9d653096b)
 - `FileOpenRetry.Open` now catches `IOException` (the exception Windows throws for file-locking) in addition to `UnauthorizedAccessException`, so the retry backoff actually fires instead of propagating immediately to callers (c892a4362)
 - `RewriteTermDictionary` no longer holds an MMF-backed `IndexInput` open on the source `.dic` file after the version probe, preventing `IOException` ("file in use by another process") when the subsequent `File.Copy` or `File.Move` runs on Windows (e064ac2f4)
 - `QueryParser` now supports backslash escaping (`\:`, `\\`, `\+`, etc.) in term tokens so values containing colons such as URLs, timestamps, and file paths are not prematurely split at `:` (2f3318d7d)
