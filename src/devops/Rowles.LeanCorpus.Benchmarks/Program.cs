@@ -133,6 +133,12 @@ internal static class Program
             RunSuite<IndexSortSearchBenchmarks>("indexsort-search", runDir, benchmarkArgs, suiteSummaries, gcDump);
         }
 
+        if (suites.Contains(BenchmarkSuite.IndexSortIndex))
+            RunSuite<IndexSortIndexBenchmarks>("indexsort-index", runDir, benchmarkArgs, suiteSummaries, gcDump);
+
+        if (suites.Contains(BenchmarkSuite.IndexSortSearch))
+            RunSuite<IndexSortSearchBenchmarks>("indexsort-search", runDir, benchmarkArgs, suiteSummaries, gcDump);
+
         if (runAll || suites.Contains(BenchmarkSuite.BlockJoin) || suites.Contains(BenchmarkSuite.BlockJoinIndex))
             RunSuite<BlockJoinIndexBenchmarks>("blockjoin-index", runDir, benchmarkArgs, suiteSummaries, gcDump);
 
@@ -600,11 +606,13 @@ internal static class Program
             "deletion" => BenchmarkSuite.Deletion,
             "deletionqueue" or "deletion-queue" => BenchmarkSuite.DeletionQueue,
             "deletioncommit" or "deletion-commit" => BenchmarkSuite.DeletionCommit,
+            "indexsort" => BenchmarkSuite.IndexSort,
+            "indexsortindex" or "indexsort-index" => BenchmarkSuite.IndexSortIndex,
+            "indexsortsearch" or "indexsort-search" => BenchmarkSuite.IndexSortSearch,
             "tokenbudget" => BenchmarkSuite.TokenBudget,
             "diagnostics" => BenchmarkSuite.Diagnostics,
             "suggester" => BenchmarkSuite.Suggester,
             "schemajson" => BenchmarkSuite.SchemaJson,
-            "indexsort" => BenchmarkSuite.IndexSort,
             "blockjoin" => BenchmarkSuite.BlockJoin,
             "blockjoinindex" or "blockjoin-index" => BenchmarkSuite.BlockJoinIndex,
             "blockjoinsearch" or "blockjoin-search" => BenchmarkSuite.BlockJoinSearch,
@@ -683,6 +691,8 @@ internal static class Program
         Suggester,
         SchemaJson,
         IndexSort,
+        IndexSortIndex,
+        IndexSortSearch,
         BlockJoin,
         BlockJoinIndex,
         BlockJoinSearch,

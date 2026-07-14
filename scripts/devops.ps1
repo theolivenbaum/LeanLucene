@@ -209,6 +209,8 @@ if ($Command -eq 'benchmark') {
         suggester            = 'SuggesterBenchmarks'
         schemajson           = 'SchemaAndJsonBenchmarks'
         indexsort            = 'IndexSortIndex/Search'
+        'indexsort-index'   = 'IndexSortIndexBenchmarks'
+        'indexsort-search'  = 'IndexSortSearchBenchmarks'
         blockjoin            = 'BlockJoinIndex/Search'
         'blockjoin-index'    = 'BlockJoinIndexBenchmarks'
         'blockjoin-search'   = 'BlockJoinSearchBenchmarks'
