@@ -3,3 +3,6 @@ contact_links:
   - name: LeanCorpus Discussions
     url: https://github.com/jordansrowles/leancorpus/discussions
     about: Ask questions, request features, or discuss ideas before opening an issue.
+  - name: Report a security vulnerability
+    url: https://github.com/jordansrowles/leancorpus/security/advisories/new
+    about: Please report security issues privately; do not open a public issue.
