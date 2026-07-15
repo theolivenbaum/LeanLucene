@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         Thanks for taking the time to fill out this bug report.
-        Please search [existing issues](https://github.com/rowles/leancorpus/issues) before opening a new one.
+        Please search [existing issues](https://github.com/jordansrowles/leancorpus/issues) before opening a new one.
 
   - type: dropdown
     id: subsystem
@@ -55,9 +55,9 @@ body:
       label: .NET runtime
       options:
         - .NET 10
-        - .NET 9
+        - .NET 11
         - .NET 10 (Native AOT)
-        - .NET 9 (Native AOT)
+        - .NET 11 (Native AOT)
         - Other
     validations:
       required: true
